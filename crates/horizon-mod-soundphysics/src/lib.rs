@@ -50,7 +50,7 @@ impl Default for Settings {
             on: true,
             strength: 100,
             loud_test: false,
-            log_every: 16,
+            log_every: 32,
         }
     }
 }
@@ -232,7 +232,8 @@ fn shape(client: &Client) {
         let model = f64::from(environment.direct_gain).clamp(0.0, 1.0);
         let occluded = 1.0 - model;
         let scaled = occluded * f64::from(strength) / 100.0 * if loud_test { 3.0 } else { 1.0 };
-        let gain = (1.0 - scaled).clamp(0.02, 1.0);
+        // Never quite silence: a sound a player cannot hear at all reads as a bug, not as a wall.
+        let gain = (1.0 - scaled).clamp(0.15, 1.0);
         // SAFETY: a plain call; the client owns the sound it names.
         let applied = unsafe { (table.set_sound)(sound.instance, gain as f32, 1.0) } == 1;
         let shaped = SHAPED.fetch_add(1, Ordering::Relaxed) + 1;
@@ -240,9 +241,7 @@ fn shape(client: &Client) {
         if !applied {
             MISSED.fetch_add(1, Ordering::Relaxed);
         }
-        let plain = shaped <= 12
-            || (log_every > 0 && shaped % log_every as usize == 0)
-            || (occluded > 0.02 && shaped <= 200);
+        let plain = shaped <= 12 || (log_every > 0 && shaped % log_every as usize == 0);
         if plain {
             log(
                 client,
@@ -317,9 +316,9 @@ unsafe extern "C" fn settings_click(button: u32) {
         2 => settings.loud_test = !settings.loud_test,
         3 => {
             settings.log_every = match settings.log_every {
-                16 => 1,
-                1 => 0,
-                _ => 16,
+                32 => 8,
+                8 => 0,
+                _ => 32,
             }
         }
         _ => {}
