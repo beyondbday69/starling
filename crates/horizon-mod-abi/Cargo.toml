@@ -7,3 +7,6 @@ rust-version.workspace = true
 description = "The boundary between this client and a mod built as a shared library"
 
 [dependencies]
+
+[lints]
+workspace = true

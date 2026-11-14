@@ -41,7 +41,7 @@ jobs:
       - name: Build the hello mod and load it
         run: |
           cargo +stable build -p horizon-mod-hello
-          cargo +stable run -p horizon-mod-loader --example load_hello -- target/debug/libhello.so
+          cargo +stable run -p horizon-mod-loader --example load_hello -- target/debug
   android:
     runs-on: ubuntu-latest
     timeout-minutes: 25

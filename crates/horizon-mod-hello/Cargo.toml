@@ -12,3 +12,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 horizon-mod-abi = { path = "../horizon-mod-abi" }
+
+[lints]
+workspace = true

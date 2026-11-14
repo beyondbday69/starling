@@ -10,3 +10,6 @@ description = "Loads a mod built as a shared library, instead of compiling it in
 horizon-mod-abi = { path = "../horizon-mod-abi" }
 libloading = "0.8.9"
 log = "0.4"
+
+[lints]
+workspace = true
