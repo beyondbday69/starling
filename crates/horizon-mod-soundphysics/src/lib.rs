@@ -28,6 +28,10 @@ static HOST: AtomicPtr<HostVTable> = AtomicPtr::new(std::ptr::null_mut());
 static SHAPED: AtomicUsize = AtomicUsize::new(0);
 /// The last gain applied, in thousandths, so a row can show it without a lock.
 static LAST: AtomicU32 = AtomicU32::new(1000);
+/// Sounds the client no longer had when the gain was set, so a row can show why nothing changed.
+static MISSED: AtomicUsize = AtomicUsize::new(0);
+/// Sounds seen but skipped before any maths (relative, too far, ambient).
+static SKIPPED: AtomicUsize = AtomicUsize::new(0);
 
 /// What the player chose.
 struct Settings {
@@ -46,7 +50,7 @@ impl Default for Settings {
             on: true,
             strength: 100,
             loud_test: false,
-            log_every: 32,
+            log_every: 16,
         }
     }
 }
@@ -206,9 +210,11 @@ fn shape(client: &Client) {
             .sum::<f64>()
             .sqrt();
         if distance > config.max_sound_processing_distance {
+            SKIPPED.fetch_add(1, Ordering::Relaxed);
             continue;
         }
         if limiter.over_limit(&sound.id, &config) {
+            SKIPPED.fetch_add(1, Ordering::Relaxed);
             continue;
         }
         let environment: Environment = evaluate(
@@ -231,20 +237,27 @@ fn shape(client: &Client) {
         let applied = unsafe { (table.set_sound)(sound.instance, gain as f32, 1.0) } == 1;
         let shaped = SHAPED.fetch_add(1, Ordering::Relaxed) + 1;
         LAST.store((gain * 1000.0) as u32, Ordering::Relaxed);
-        if log_every > 0 && shaped % log_every as usize == 0 {
+        if !applied {
+            MISSED.fetch_add(1, Ordering::Relaxed);
+        }
+        let plain = shaped <= 12
+            || (log_every > 0 && shaped % log_every as usize == 0)
+            || (occluded > 0.02 && shaped <= 200);
+        if plain {
             log(
                 client,
-                3,
+                2,
                 &format!(
-                    "{shaped} sounds shaped; {} at {:.2}x (occluded {:.0}%, {} sends)",
+                    "{} at {:.2}x (occluded {:.0}%, {} sends, {}): {}",
                     sound.id,
                     gain,
                     occluded * 100.0,
                     environment.sends.iter().filter(|s| s.gain > 0.0).count(),
+                    if applied { "applied" } else { "missed" },
+                    format_args!("{shaped} shaped"),
                 ),
             );
         }
-        let _ = applied;
     }
 }
 
@@ -267,6 +280,8 @@ unsafe extern "C" fn settings_rows(sink: *const ButtonSink) {
         )
     };
     let shaped = SHAPED.load(Ordering::Relaxed);
+    let missed = MISSED.load(Ordering::Relaxed);
+    let skipped = SKIPPED.load(Ordering::Relaxed);
     let last = f32::from(LAST.load(Ordering::Relaxed) as u16) / 1000.0;
     let rows = [
         format!("Sound Physics: {}", if on { "On" } else { "Off" }),
@@ -274,6 +289,12 @@ unsafe extern "C" fn settings_rows(sink: *const ButtonSink) {
         format!("Test Mode (3x): {}", if loud_test { "On" } else { "Off" }),
         format!("Log every: {log_every} sounds"),
         format!("Sounds processed: {shaped}"),
+        format!(
+            "Applied: {} missed: {}",
+            shaped.saturating_sub(missed),
+            missed
+        ),
+        format!("Skipped (relative/far): {skipped}"),
         format!("Last sound: {last:.2}x"),
     ];
     for row in rows {
@@ -296,9 +317,9 @@ unsafe extern "C" fn settings_click(button: u32) {
         2 => settings.loud_test = !settings.loud_test,
         3 => {
             settings.log_every = match settings.log_every {
-                32 => 8,
-                8 => 0,
-                _ => 32,
+                16 => 1,
+                1 => 0,
+                _ => 16,
             }
         }
         _ => {}
