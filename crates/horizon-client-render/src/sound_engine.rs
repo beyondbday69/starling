@@ -763,6 +763,10 @@ pub trait Backend {
     fn destroy(&mut self, channel: ChannelId);
     fn set_pitch(&mut self, channel: ChannelId, pitch: f32);
     fn set_volume(&mut self, channel: ChannelId, volume: f32);
+    /// The low-pass's high-frequency gain, `0..1`: 1 is open.
+    fn set_lowpass(&mut self, _channel: ChannelId, _cutoff: f32) {}
+    /// How much of the channel feeds the mixer's reverb, `0..1`.
+    fn set_send(&mut self, _channel: ChannelId, _send: f32) {}
     /// `Some(max distance)` for `linearAttenuation`, None for `disableAttenuation`.
     fn set_attenuation(&mut self, channel: ChannelId, linear: Option<f32>);
     fn set_looping(&mut self, channel: ChannelId, looping: bool);
@@ -826,6 +830,8 @@ pub struct SoundEngine {
     pub notifications: Vec<Notification>,
     /// A mod's gain per instance (`set_instance_gain`); absent means 1.
     physics_gain: HashMap<InstanceId, f32>,
+    /// A mod's low-pass and reverb send per instance; absent means open and dry.
+    physics_filter: HashMap<InstanceId, (f32, f32)>,
     /// The instances that started since a listener last asked.
     started: Vec<(InstanceId, String, Option<[f64; 3]>)>,
 }
@@ -856,6 +862,7 @@ impl SoundEngine {
             listening: false,
             listener_reserve: 0,
             physics_gain: HashMap::new(),
+            physics_filter: HashMap::new(),
             started: Vec::new(),
             notifications: Vec::new(),
         }
@@ -875,6 +882,35 @@ impl SoundEngine {
     /// this once a frame and shapes them before the next one.
     pub fn started_since(&mut self) -> Vec<(InstanceId, String, Option<[f64; 3]>)> {
         std::mem::take(&mut self.started)
+    }
+    /// What a playing instance sounds like: `gain` scales its volume, `cutoff` closes a low-pass
+    /// over it (`0..1`, 1 open), `send` feeds the mixer's reverb. False once it has finished.
+    pub fn set_instance_environment(
+        &mut self,
+        id: InstanceId,
+        gain: f32,
+        cutoff: f32,
+        send: f32,
+        backend: &mut impl Backend,
+    ) -> bool {
+        self.physics_filter
+            .insert(id, (cutoff.clamp(0.0, 1.0), send.clamp(0.0, 1.0)));
+        let applied = self.set_instance_gain(id, gain, backend);
+        if let Some(channel) = self.bound_channel(id) {
+            backend.set_lowpass(channel, cutoff.clamp(0.0, 1.0));
+            backend.set_send(channel, send.clamp(0.0, 1.0));
+        }
+        applied
+    }
+    /// The backend channel an instance is playing on, once it was bound to one.
+    fn bound_channel(&self, id: InstanceId) -> Option<ChannelId> {
+        let handle = self
+            .instance_to_channel
+            .iter()
+            .rev()
+            .find(|(i, _)| *i == id)?
+            .1;
+        self.handles.get(&handle).and_then(|h| h.channel)
     }
     /// How loud a playing instance is, scaled by `gain`. False once it has finished.
     pub fn set_instance_gain(
@@ -1229,6 +1265,10 @@ impl SoundEngine {
             (instance.attenuation, instance.relative, instance.tickable());
         backend.set_pitch(channel, pitch);
         backend.set_volume(channel, volume);
+        if let Some((cutoff, send)) = self.physics_filter.get(&id).copied() {
+            backend.set_lowpass(channel, cutoff);
+            backend.set_send(channel, send);
+        }
         backend.set_attenuation(
             channel,
             (attenuation == Attenuation::Linear).then_some(attenuation_distance),

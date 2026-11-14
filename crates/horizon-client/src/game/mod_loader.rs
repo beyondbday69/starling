@@ -127,8 +127,10 @@ impl Host for GameHost<'_, '_> {
             .collect()
     }
 
-    fn set_sound(&mut self, instance: u64, gain: f32, _pitch: f32) -> bool {
-        self.game.audio.set_sound_gain(instance, gain)
+    fn set_sound(&mut self, instance: u64, gain: f32, cutoff: f32, send: f32) -> bool {
+        self.game
+            .audio
+            .set_sound_environment(instance, gain, cutoff, send)
     }
 
     fn raycast(&self, from: [f64; 3], to: [f64; 3]) -> Option<horizon_mod_abi::RayHitOut> {

@@ -234,8 +234,18 @@ fn shape(client: &Client) {
         let scaled = occluded * f64::from(strength) / 100.0 * if loud_test { 3.0 } else { 1.0 };
         // Never quite silence: a sound a player cannot hear at all reads as a bug, not as a wall.
         let gain = (1.0 - scaled).clamp(0.15, 1.0);
+        // A wall takes the high frequencies first; a room answers through the sends.
+        let cutoff = f64::from(environment.direct_cutoff).clamp(0.0, 1.0);
+        let send = environment
+            .sends
+            .iter()
+            .map(|s| f64::from(s.gain))
+            .fold(0.0, f64::max)
+            .clamp(0.0, 1.0);
         // SAFETY: a plain call; the client owns the sound it names.
-        let applied = unsafe { (table.set_sound)(sound.instance, gain as f32, 1.0) } == 1;
+        let applied =
+            unsafe { (table.set_sound)(sound.instance, gain as f32, cutoff as f32, send as f32) }
+                == 1;
         let shaped = SHAPED.fetch_add(1, Ordering::Relaxed) + 1;
         LAST.store((gain * 1000.0) as u32, Ordering::Relaxed);
         if !applied {
@@ -247,11 +257,12 @@ fn shape(client: &Client) {
                 client,
                 2,
                 &format!(
-                    "{} at {:.2}x (occluded {:.0}%, {} sends, {}): {}",
+                    "{} at {:.2}x (occluded {:.0}%, cutoff {:.2}, reverb {:.2}, {}): {}",
                     sound.id,
                     gain,
                     occluded * 100.0,
-                    environment.sends.iter().filter(|s| s.gain > 0.0).count(),
+                    cutoff,
+                    send,
                     if applied { "applied" } else { "missed" },
                     format_args!("{shaped} shaped"),
                 ),

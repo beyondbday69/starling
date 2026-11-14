@@ -56,8 +56,9 @@ pub trait Host {
     fn sounds_started(&mut self) -> Vec<StartedInfo> {
         Vec::new()
     }
-    /// Sets how loud a started sound plays. False when it has already finished.
-    fn set_sound(&mut self, _instance: u64, _gain: f32, _pitch: f32) -> bool {
+    /// How a started sound sounds: `gain` scales it, `cutoff` closes a low-pass over it (1 open),
+    /// `send` feeds the reverb. False when it has already finished.
+    fn set_sound(&mut self, _instance: u64, _gain: f32, _cutoff: f32, _send: f32) -> bool {
         false
     }
 }
@@ -520,11 +521,11 @@ fn write_sounds(out: *mut StartedSound, sounds: &[StartedInfo], ids: &[CString])
     }
 }
 
-unsafe extern "C" fn host_set_sound(instance: u64, gain: f32, pitch: f32) -> u8 {
+unsafe extern "C" fn host_set_sound(instance: u64, gain: f32, cutoff: f32, send: f32) -> u8 {
     let Some(host) = calling() else {
         return 0;
     };
-    host.set_sound(instance, gain, pitch) as u8
+    host.set_sound(instance, gain, cutoff, send) as u8
 }
 
 /// A row a mod asked for, pushed into the sink the client passed.
@@ -716,8 +717,8 @@ mod tests {
             }]
         }
 
-        fn set_sound(&mut self, instance: u64, gain: f32, pitch: f32) -> bool {
-            instance == 7 && gain < 1.0 && pitch < 1.0
+        fn set_sound(&mut self, instance: u64, gain: f32, cutoff: f32, send: f32) -> bool {
+            instance == 7 && gain < 1.0 && cutoff < 1.0 && send < 1.0
         }
 
         fn log(&self, _level: u32, _text: &str) {}
@@ -823,7 +824,7 @@ mod tests {
                     (host_raycast(&[0.0, 1.0, 1.0], &[1.0, 1.0, 1.0], &mut hit) == 1)
                         .then_some(hit),
                     (count, first),
-                    host_set_sound(7, 0.4, 0.9) == 1,
+                    host_set_sound(7, 0.4, 0.7, 0.9) == 1,
                 )
             })
             .unwrap()

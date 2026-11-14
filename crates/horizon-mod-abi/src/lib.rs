@@ -12,7 +12,7 @@ use std::ffi::{CStr, c_char, c_void};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 /// The version of this boundary. A mod is refused when it disagrees.
-pub const ABI: u32 = 2;
+pub const ABI: u32 = 3;
 
 /// The symbol a mod exports.
 pub const ENTRY: &str = "horizon_mod_entry";
@@ -53,9 +53,10 @@ pub struct HostVTable {
     /// The sounds that started since this was last asked, up to `max`, into `out`. The client
     /// clears the list, so one call is one frame's worth.
     pub sounds_started: unsafe extern "C" fn(out: *mut StartedSound, max: usize) -> usize,
-    /// Sets how loud a started sound plays (`gain` scales its volume, `pitch` its speed). False when
-    /// the sound has already finished.
-    pub set_sound: unsafe extern "C" fn(instance: u64, gain: f32, pitch: f32) -> u8,
+    /// How a started sound sounds: `gain` scales its volume, `cutoff` closes a low-pass over it
+    /// (`0..1`, 1 open), `send` feeds the client's reverb (`0..1`). False when the sound has
+    /// already finished.
+    pub set_sound: unsafe extern "C" fn(instance: u64, gain: f32, cutoff: f32, send: f32) -> u8,
 }
 
 /// Where a ray met a block, in the mod's own coordinates.
