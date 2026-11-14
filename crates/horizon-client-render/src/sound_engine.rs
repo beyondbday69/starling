@@ -24,6 +24,8 @@ pub const UI: usize = 10;
 /// The pool sizes `Library.init` derives from OpenAL Soft's default 255 mono
 /// sources: `clamp((int) sqrt(255), 2, 8)` streaming, the rest static.
 pub const STATIC_CHANNELS: usize = 247;
+/// How many starts are kept for a listener to ask about.
+const STARTED_KEEP: usize = 256;
 pub const STREAMING_CHANNELS: usize = 8;
 /// Static channels only sounds played to the listener (no position) may take
 /// while the `uiSoundReserve` extra is on.
@@ -822,6 +824,10 @@ pub struct SoundEngine {
     /// listener: 0 as vanilla, `HEARD_RESERVE` with the `uiSoundReserve` extra.
     pub listener_reserve: usize,
     pub notifications: Vec<Notification>,
+    /// A mod's gain per instance (`set_instance_gain`); absent means 1.
+    physics_gain: HashMap<InstanceId, f32>,
+    /// The instances that started since a listener last asked.
+    started: Vec<(InstanceId, String, Option<[f64; 3]>)>,
 }
 fn handle_channel(h: &Handle) -> Option<ChannelId> {
     h.channel
@@ -849,6 +855,8 @@ impl SoundEngine {
             source_volumes: [1.0; 11],
             listening: false,
             listener_reserve: 0,
+            physics_gain: HashMap::new(),
+            started: Vec::new(),
             notifications: Vec::new(),
         }
     }
@@ -862,6 +870,42 @@ impl SoundEngine {
             self.retained.insert(id, ());
         }
         id
+    }
+    /// The instances that started since this was last asked, with where they play. A mod gets
+    /// this once a frame and shapes them before the next one.
+    pub fn started_since(&mut self) -> Vec<(InstanceId, String, Option<[f64; 3]>)> {
+        std::mem::take(&mut self.started)
+    }
+    /// How loud a playing instance is, scaled by `gain`. False once it has finished.
+    pub fn set_instance_gain(
+        &mut self,
+        id: InstanceId,
+        gain: f32,
+        backend: &mut impl Backend,
+    ) -> bool {
+        if !self.instances.contains_key(&id) {
+            return false;
+        }
+        self.physics_gain.insert(id, gain.max(0.0));
+        let (source, base) = {
+            let instance = self.instances.get_mut(&id).expect("checked");
+            (instance.source, instance.get_volume() * gain.max(0.0))
+        };
+        let volume = self.calculate_volume(base, source);
+        let Some(handle) = self
+            .instance_to_channel
+            .iter()
+            .rev()
+            .find(|(i, _)| *i == id)
+            .map(|(_, h)| *h)
+        else {
+            return false;
+        };
+        let Some(channel) = self.handles.get(&handle).and_then(|h| h.channel) else {
+            return false;
+        };
+        backend.set_volume(channel, volume);
+        true
     }
     /// The owner drops its reference.
     pub fn release(&mut self, id: InstanceId) {
@@ -1123,7 +1167,8 @@ impl SoundEngine {
         }
         let instance = &self.instances[&id];
         let source = instance.source;
-        let volume = self.calculate_volume(instance_volume, source);
+        let gained = self.physics_gain.get(&id).copied().unwrap_or(1.0);
+        let volume = self.calculate_volume(instance_volume * gained, source);
         let mut silently = false;
         if volume == 0.0 {
             if !instance.can_start_silent && source != MUSIC {
@@ -1170,6 +1215,13 @@ impl SoundEngine {
         }
         if !self.instance_by_source.contains(&(source, id)) {
             self.instance_by_source.push((source, id));
+        }
+        {
+            let instance = &self.instances[&id];
+            let at = (!instance.relative).then_some(instance.position);
+            if self.started.len() < STARTED_KEEP {
+                self.started.push((id, instance.identifier.clone(), at));
+            }
         }
         let instance = self.instances.get_mut(&id).expect("present");
         let pitch = Self::calculate_pitch(instance.get_pitch());

@@ -53,11 +53,11 @@ pub trait Host {
         None
     }
     /// The sounds that started since this was last asked.
-    fn sounds_started(&self) -> Vec<StartedInfo> {
+    fn sounds_started(&mut self) -> Vec<StartedInfo> {
         Vec::new()
     }
     /// Sets how loud a started sound plays. False when it has already finished.
-    fn set_sound(&self, _instance: u64, _gain: f32, _pitch: f32) -> bool {
+    fn set_sound(&mut self, _instance: u64, _gain: f32, _pitch: f32) -> bool {
         false
     }
 }
@@ -708,7 +708,7 @@ mod tests {
             })
         }
 
-        fn sounds_started(&self) -> Vec<StartedInfo> {
+        fn sounds_started(&mut self) -> Vec<StartedInfo> {
             vec![StartedInfo {
                 instance: 7,
                 id: "minecraft:block.stone.break".to_owned(),
@@ -716,7 +716,7 @@ mod tests {
             }]
         }
 
-        fn set_sound(&self, instance: u64, gain: f32, pitch: f32) -> bool {
+        fn set_sound(&mut self, instance: u64, gain: f32, pitch: f32) -> bool {
             instance == 7 && gain < 1.0 && pitch < 1.0
         }
 

@@ -1459,6 +1459,17 @@ impl Audio {
     }
     /// `ClientboundStopSoundPacket`: stop the playing sounds of an event
     /// and/or a source.
+    /// The sounds that started since this was last asked, with where they play. A mod shapes
+    /// them before the next frame.
+    pub fn started_since(&mut self) -> Vec<(u64, String, Option<[f64; 3]>)> {
+        self.engine.started_since()
+    }
+    /// How loud a playing sound is, scaled by `gain`. False once it has finished.
+    pub fn set_sound_gain(&mut self, instance: u64, gain: f32) -> bool {
+        let engine = &mut self.engine;
+        let backend = &mut self.backend;
+        engine.set_instance_gain(instance, gain, backend)
+    }
     pub fn stop_sounds(&mut self, event: Option<&str>, source: Option<usize>) {
         let event = event.map(crate::sound_events::normalize);
         let selection = format!(

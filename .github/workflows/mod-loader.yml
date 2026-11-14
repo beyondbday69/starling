@@ -12,6 +12,7 @@ on:
       - 'crates/horizon-mod-abi/**'
       - 'crates/horizon-mod-loader/**'
       - 'crates/horizon-mod-hello/**'
+      - 'crates/horizon-mod-soundphysics/**'
       - 'crates/horizon-client/src/game/mod_loader.rs'
       - '.github/workflows/mod-loader.yml'
 permissions:
@@ -60,19 +61,25 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: mod-loader-android
-      - name: Build libhello.so for arm64
-        run: cargo ndk -t arm64-v8a build -p horizon-mod-hello --release
+      - name: Build the mods for arm64
+        run: |
+          cargo ndk -t arm64-v8a build -p horizon-mod-hello --release
+          cargo ndk -t arm64-v8a build -p horizon-mod-soundphysics --release
       # The loader accepts any lib*.so and takes the id from the mod, so the file keeps the name the
       # crate gives it; a player puts it in horizon-native-mods/<id>/.
       - name: Show what was built
         run: |
-          ls -l target/aarch64-linux-android/release/libhello.so
-          file target/aarch64-linux-android/release/libhello.so
-          sha256sum target/aarch64-linux-android/release/libhello.so
+          ls -l target/aarch64-linux-android/release/lib*.so
+          file target/aarch64-linux-android/release/libhello.so \
+            target/aarch64-linux-android/release/libsoundphysics.so
+          sha256sum target/aarch64-linux-android/release/libhello.so \
+            target/aarch64-linux-android/release/libsoundphysics.so
       - uses: actions/upload-artifact@v4
         with:
-          name: libhello-arm64
-          path: target/aarch64-linux-android/release/libhello.so
+          name: mods-arm64
+          path: |
+            target/aarch64-linux-android/release/libhello.so
+            target/aarch64-linux-android/release/libsoundphysics.so
           if-no-files-found: error
       # A release asset, so a player downloads it without a GitHub login: the phone's browser cannot
       # fetch an artifact.
@@ -85,3 +92,8 @@ jobs:
             gh release create mod-loader-hello --title "Mod loader: hello" \
               --notes "The loader's test mod (docs/mod-loader.md, Phase A). Put libhello.so in horizon-native-mods/hello/ and it is listed in Options > Mods."
           gh release upload mod-loader-hello target/aarch64-linux-android/release/libhello.so --clobber
+          gh release view mod-loader-soundphysics > /dev/null 2>&1 || \
+            gh release create mod-loader-soundphysics --title "Sound Physics (loader build)" \
+              --notes "Sound Physics as a library mod. Put libsoundphysics.so in horizon-native-mods/soundphysics/ and turn it on in Options > Mods. Phase B of docs/mod-loader.md: only occlusion is heard so far."
+          gh release upload mod-loader-soundphysics \
+            target/aarch64-linux-android/release/libsoundphysics.so --clobber

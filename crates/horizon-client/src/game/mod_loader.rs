@@ -118,6 +118,19 @@ impl Host for GameHost<'_, '_> {
         self.game.native_player().is_some() && self.game.native_block(pos) == "minecraft:water"
     }
 
+    fn sounds_started(&mut self) -> Vec<loader::StartedInfo> {
+        self.game
+            .audio
+            .started_since()
+            .into_iter()
+            .map(|(instance, id, at)| loader::StartedInfo { instance, id, at })
+            .collect()
+    }
+
+    fn set_sound(&mut self, instance: u64, gain: f32, _pitch: f32) -> bool {
+        self.game.audio.set_sound_gain(instance, gain)
+    }
+
     fn raycast(&self, from: [f64; 3], to: [f64; 3]) -> Option<horizon_mod_abi::RayHitOut> {
         self.game.native_player()?;
         walk(from, to, |pos| {

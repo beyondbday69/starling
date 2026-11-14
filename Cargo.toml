@@ -10,6 +10,7 @@ members = [
     "crates/horizon-mod-abi",
     "crates/horizon-mod-loader",
     "crates/horizon-mod-hello",
+    "crates/horizon-mod-soundphysics",
     "crates/horizon-world",
     "crates/horizon-client",
     # Starling: the game as a NativeActivity library; empty on other targets.

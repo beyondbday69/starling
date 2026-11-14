@@ -178,10 +178,16 @@ mod tests {
     fn the_table_is_pointer_sized_and_ordered() {
         // The mod and the client must agree on the layout, so it is checked, not assumed.
         let pointer = std::mem::size_of::<*const ()>();
-        // Two `u32`s, then three function pointers.
-        assert_eq!(std::mem::size_of::<HostVTable>(), 8 + 3 * pointer);
+        // Two `u32`s, then ten function pointers. The calls only ever grow at the end, so a mod
+        // built against an older ABI still reads the first ones correctly.
+        assert_eq!(std::mem::size_of::<HostVTable>(), 8 + 10 * pointer);
         assert_eq!(std::mem::size_of::<ButtonSink>(), 2 * pointer);
         assert_eq!(std::mem::offset_of!(HostVTable, abi), 0);
+        assert_eq!(
+            std::mem::offset_of!(HostVTable, set_setting),
+            8 + 2 * pointer
+        );
+        assert_eq!(std::mem::offset_of!(HostVTable, listener), 8 + 3 * pointer);
         assert_eq!(std::mem::offset_of!(ModDesc, abi), 0);
     }
 }
