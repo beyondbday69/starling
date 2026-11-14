@@ -9,6 +9,17 @@ This document is the plan for the alternative: a mod is a shared library the cli
 runtime. Nothing in the client is patched. A mod is written once, compiled once (by its
 author, on any machine or in CI), and downloaded by players as a small `.so`.
 
+## Status: Phase A is written and runs on a computer
+
+`horizon-mod-abi`, `horizon-mod-loader` and `horizon-mod-hello` are in, with 10 tests, and the
+client's four hooks (`native_mods`, `native_frame`, `native_tick`, `native_settings[+_click]`) call
+them. `cargo run -p horizon-mod-loader --example load_hello -- target/debug` builds the hello mod,
+opens it, starts it, runs two frames, reads its three rows and taps one.
+
+The one thing still unchecked is the fact Phase A exists to check: that an Android app may
+`dlopen` a library from its own files folder. `.github/workflows/mod-loader.yml` builds
+`libhello.so` for arm64 and publishes it, so that is one install away from an answer.
+
 ## What exists, and what does not
 
 | Piece | State |

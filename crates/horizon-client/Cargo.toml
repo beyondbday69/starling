@@ -11,6 +11,8 @@ autoexamples = false
 autotests = false
 
 [dependencies]
+horizon-mod-abi = { path = "../horizon-mod-abi" }
+horizon-mod-loader = { path = "../horizon-mod-loader" }
 horizon-cosmetics = { path = "../horizon-cosmetics" }
 horizon-client-lib = { path = "../horizon-client-lib", default-features = false }
 horizon-assets = { path = "../horizon-assets" }

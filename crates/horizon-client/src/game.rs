@@ -215,6 +215,7 @@ mod mod_api_host;
 mod mod_assets;
 #[cfg(target_os = "android")]
 mod mod_catalog;
+mod mod_loader;
 mod mods;
 mod mount_menu;
 mod mounts;
