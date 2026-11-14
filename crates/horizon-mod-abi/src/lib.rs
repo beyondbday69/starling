@@ -12,7 +12,7 @@ use std::ffi::{CStr, c_char, c_void};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 /// The version of this boundary. A mod is refused when it disagrees.
-pub const ABI: u32 = 1;
+pub const ABI: u32 = 2;
 
 /// The symbol a mod exports.
 pub const ENTRY: &str = "horizon_mod_entry";
@@ -37,6 +37,48 @@ pub struct HostVTable {
     pub setting: unsafe extern "C" fn(key: *const c_char, out: *mut c_char, len: usize) -> usize,
     /// Write one of the mod's own settings. An empty `value` clears it.
     pub set_setting: unsafe extern "C" fn(key: *const c_char, value: *const c_char),
+    /// The listener's eye, in world coordinates. False when no world is open.
+    pub listener: unsafe extern "C" fn(out: *mut [f64; 3]) -> u8,
+    /// The block at `(x, y, z)` as its id (`minecraft:stone`), written to `out` with a NUL.
+    /// Returns how many bytes were written, or 0 when no world is open.
+    pub block_name:
+        unsafe extern "C" fn(x: i32, y: i32, z: i32, out: *mut c_char, len: usize) -> usize,
+    /// Whether the block's face on `side` (`0..5` = x-, x+, y-, y+, z-, z+) is sturdy.
+    pub face_is_sturdy: unsafe extern "C" fn(x: i32, y: i32, z: i32, side: u32) -> u8,
+    /// Whether the block at `(x, y, z)` is water.
+    pub is_water: unsafe extern "C" fn(x: i32, y: i32, z: i32) -> u8,
+    /// The first block between `from` and `to`, written to `out`; false when the segment is clear.
+    pub raycast:
+        unsafe extern "C" fn(from: *const [f64; 3], to: *const [f64; 3], out: *mut RayHitOut) -> u8,
+    /// The sounds that started since this was last asked, up to `max`, into `out`. The client
+    /// clears the list, so one call is one frame's worth.
+    pub sounds_started: unsafe extern "C" fn(out: *mut StartedSound, max: usize) -> usize,
+    /// Sets how loud a started sound plays (`gain` scales its volume, `pitch` its speed). False when
+    /// the sound has already finished.
+    pub set_sound: unsafe extern "C" fn(instance: u64, gain: f32, pitch: f32) -> u8,
+}
+
+/// Where a ray met a block, in the mod's own coordinates.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RayHitOut {
+    pub at: [f64; 3],
+    pub block: [i32; 3],
+    /// The face hit, as a unit vector along one axis.
+    pub normal: [f64; 3],
+}
+
+/// A sound that started, as the client saw it.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct StartedSound {
+    /// Its handle, for [`HostVTable::set_sound`].
+    pub instance: u64,
+    /// Its id (`minecraft:block.stone.break`), valid only for the call that filled this in.
+    pub id: *const c_char,
+    /// Whether `at` is where it plays; False for a relative sound.
+    pub has_at: u8,
+    pub at: [f64; 3],
 }
 
 /// A row the client asks a mod for, through [`ButtonSink::push`].

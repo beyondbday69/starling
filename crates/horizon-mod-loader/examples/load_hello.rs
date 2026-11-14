@@ -28,7 +28,7 @@ impl Host for NoGame {
             .cloned()
     }
 
-    fn set_setting(&self, id: &str, key: &str, value: &str) {
+    fn set_setting(&mut self, id: &str, key: &str, value: &str) {
         self.settings
             .borrow_mut()
             .insert((id.to_owned(), key.to_owned()), value.to_owned());
@@ -39,11 +39,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let folder = std::env::args()
         .nth(1)
         .ok_or("usage: load_hello <folder of mod libraries>")?;
-    let host = NoGame {
+    let mut host = NoGame {
         settings: Default::default(),
     };
 
-    scan(&[folder.clone().into()], &host);
+    scan(&[folder.clone().into()], &mut host);
     let found = list();
     if found.is_empty() {
         return Err(format!("no mod library in {folder}").into());
@@ -53,19 +53,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("  {}", info.description);
     }
 
-    start(&host);
-    frame(&host, 0.0);
-    frame(&host, 0.05);
+    start(&mut host);
+    frame(&mut host, 0.0);
+    frame(&mut host, 0.05);
     println!("two frames ran");
 
     for info in &found {
         let mut rows = Vec::new();
-        settings(&host, &info.id, &mut rows);
+        settings(&mut host, &info.id, &mut rows);
         println!("{} rows for {}:", rows.len(), info.id);
         for (n, row) in rows.iter().enumerate() {
             println!("  {n}. {row}");
         }
-        settings_click(&host, &info.id, 1);
+        settings_click(&mut host, &info.id, 1);
         println!("tapped row 1 of {}", info.id);
     }
     Ok(())

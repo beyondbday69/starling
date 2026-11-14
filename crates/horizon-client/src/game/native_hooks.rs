@@ -2035,7 +2035,7 @@ impl Game<'_> {
     pub(super) fn native_frame(&mut self, elapsed: Duration) {
         mod_api::dispatch_frame(self, mod_api::mods(), elapsed);
         let partial = (elapsed.as_secs_f32() * 20.0).clamp(0.0, 1.0);
-        super::mod_loader::frame(&*self, partial);
+        super::mod_loader::frame(self, partial);
     }
     /// The frame rate this window is about to be held to: Max Framerate after the
     /// inactivity throttle and Battery Mode (260 is unlimited). `focused` is whether the
@@ -2088,7 +2088,7 @@ impl Game<'_> {
     /// there: the single player server thread, a dedicated server).
     pub(super) fn native_tick(&mut self) {
         mod_api::dispatch_tick(self, mod_api::mods());
-        super::mod_loader::tick(&*self);
+        super::mod_loader::tick(self);
     }
     /// Before an eligible targeted block's selection outline is built.
     /// Cancel skips only the default block highlight, after normal HUD and game-mode gates.
@@ -2719,19 +2719,19 @@ impl Game<'_> {
         mod_api::dispatch_mods(self, mod_api::mods(), mods);
         // Mods built as shared libraries list themselves the same way, and are only known once
         // their folder has been read.
-        super::mod_loader::list(&*self, mods);
+        super::mod_loader::list(self, mods);
     }
     /// The buttons of mod `mod_id`'s settings page, under its keys: push
     /// their labels when it is yours. Asked again each time the page opens
     /// and after each click.
     pub(super) fn native_settings(&mut self, mod_id: &str, buttons: &mut Vec<String>) {
         mod_api::dispatch_settings(self, mod_api::mods(), mod_id, buttons);
-        super::mod_loader::settings(&*self, mod_id, buttons);
+        super::mod_loader::settings(self, mod_id, buttons);
     }
     /// Button `button` of mod `mod_id`'s settings page was clicked.
     pub(super) fn native_settings_click(&mut self, mod_id: &str, button: usize) {
         mod_api::dispatch_settings_click(self, mod_api::mods(), mod_id, button);
-        super::mod_loader::settings_click(&*self, mod_id, button);
+        super::mod_loader::settings_click(self, mod_id, button);
     }
     /// The player did `event` on mod `mod_id`'s panel (`native_panel_items`):
     /// act on it when it is yours. API 2.

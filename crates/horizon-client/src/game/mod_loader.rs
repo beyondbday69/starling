@@ -21,9 +21,58 @@ fn folders() -> Vec<std::path::PathBuf> {
     ]
 }
 
-/// The game, as a mod may see it: a log line and its own settings, nothing else yet.
+/// How tall a standing player's eyes are, in blocks.
+const EYE_HEIGHT: f64 = 1.62;
+
+/// The game, as a mod may see it: a log line, its own settings, and the world it stands in.
 struct GameHost<'a, 'g> {
-    game: &'a Game<'g>,
+    game: &'a mut Game<'g>,
+}
+
+/// The block a ray meets, walked one block at a time (a mod asks often enough that the walk must
+/// be cheap and predictable).
+fn walk(
+    from: [f64; 3],
+    to: [f64; 3],
+    solid: impl Fn([i32; 3]) -> bool,
+) -> Option<horizon_mod_abi::RayHitOut> {
+    let delta = [to[0] - from[0], to[1] - from[1], to[2] - from[2]];
+    let length = (delta[0] * delta[0] + delta[1] * delta[1] + delta[2] * delta[2]).sqrt();
+    if length < 1e-6 {
+        return None;
+    }
+    let steps = (length * 4.0).ceil() as i32;
+    let mut last = [
+        from[0].floor() as i32,
+        from[1].floor() as i32,
+        from[2].floor() as i32,
+    ];
+    for step in 1..=steps {
+        let f = f64::from(step) / f64::from(steps);
+        let at = [
+            from[0] + delta[0] * f,
+            from[1] + delta[1] * f,
+            from[2] + delta[2] * f,
+        ];
+        let block = [
+            at[0].floor() as i32,
+            at[1].floor() as i32,
+            at[2].floor() as i32,
+        ];
+        if block != last {
+            if solid(block) {
+                let mut normal = [0.0; 3];
+                let axis = (0..3).max_by(|&a, &b| {
+                    let (da, db) = ((delta[a] / length).abs(), (delta[b] / length).abs());
+                    da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+                })?;
+                normal[axis] = -delta[axis].signum();
+                return Some(horizon_mod_abi::RayHitOut { at, block, normal });
+            }
+            last = block;
+        }
+    }
+    None
 }
 
 impl Host for GameHost<'_, '_> {
@@ -40,15 +89,48 @@ impl Host for GameHost<'_, '_> {
         self.game.native_setting(id, key)
     }
 
-    fn set_setting(&self, id: &str, key: &str, value: &str) {
+    fn set_setting(&mut self, id: &str, key: &str, value: &str) {
         self.game.native_set_setting(id, key, value);
+    }
+
+    fn listener(&self) -> Option<[f64; 3]> {
+        let player = self.game.native_player()?;
+        Some([player.x, player.y + EYE_HEIGHT, player.z])
+    }
+
+    fn block_name(&self, pos: [i32; 3]) -> Option<String> {
+        self.game.native_player()?;
+        Some(self.game.native_block(pos))
+    }
+
+    fn face_is_sturdy(&self, pos: [i32; 3], side: usize) -> bool {
+        // The ABI counts sides x-, x+, y-, y+, z-, z+; vanilla's `Direction` counts down, up,
+        // north, south, west, east.
+        const SIDE: [u32; 6] = [4, 5, 0, 1, 2, 3];
+        let Some(&direction) = SIDE.get(side) else {
+            return false;
+        };
+        let state = self.game.world.block(pos[0], pos[1], pos[2]);
+        self.game.res.facts().get(state).sturdy_full & (1 << direction) != 0
+    }
+
+    fn is_water(&self, pos: [i32; 3]) -> bool {
+        self.game.native_player().is_some() && self.game.native_block(pos) == "minecraft:water"
+    }
+
+    fn raycast(&self, from: [f64; 3], to: [f64; 3]) -> Option<horizon_mod_abi::RayHitOut> {
+        self.game.native_player()?;
+        walk(from, to, |pos| {
+            let name = self.game.native_block(pos);
+            name != "minecraft:air" && name != "minecraft:cave_air" && name != "minecraft:void_air"
+        })
     }
 }
 
 /// Reads the folder once and adds what it holds to Options > Mods.
-pub(super) fn list(game: &Game<'_>, mods: &mut Vec<NativeMod>) {
-    let host = GameHost { game };
-    loader::scan(&folders(), &host);
+pub(super) fn list(game: &mut Game<'_>, mods: &mut Vec<NativeMod>) {
+    let mut host = GameHost { game };
+    loader::scan(&folders(), &mut host);
     for ModInfo {
         id,
         title,
@@ -65,26 +147,26 @@ pub(super) fn list(game: &Game<'_>, mods: &mut Vec<NativeMod>) {
 }
 
 /// Once a frame: starts any mod that has not started, then runs them all.
-pub(super) fn frame(game: &Game<'_>, partial: f32) {
-    let host = GameHost { game };
-    loader::start(&host);
-    loader::frame(&host, partial);
+pub(super) fn frame(game: &mut Game<'_>, partial: f32) {
+    let mut host = GameHost { game };
+    loader::start(&mut host);
+    loader::frame(&mut host, partial);
 }
 
 /// Once a tick.
-pub(super) fn tick(game: &Game<'_>) {
-    let host = GameHost { game };
-    loader::tick(&host);
+pub(super) fn tick(game: &mut Game<'_>) {
+    let mut host = GameHost { game };
+    loader::tick(&mut host);
 }
 
 /// The rows of `mod_id`'s page in Options > Mods.
-pub(super) fn settings(game: &Game<'_>, mod_id: &str, buttons: &mut Vec<String>) {
-    let host = GameHost { game };
-    loader::settings(&host, mod_id, buttons);
+pub(super) fn settings(game: &mut Game<'_>, mod_id: &str, buttons: &mut Vec<String>) {
+    let mut host = GameHost { game };
+    loader::settings(&mut host, mod_id, buttons);
 }
 
 /// A tap on row `button` of `mod_id`'s page.
-pub(super) fn settings_click(game: &Game<'_>, mod_id: &str, button: usize) {
-    let host = GameHost { game };
-    loader::settings_click(&host, mod_id, button);
+pub(super) fn settings_click(game: &mut Game<'_>, mod_id: &str, button: usize) {
+    let mut host = GameHost { game };
+    loader::settings_click(&mut host, mod_id, button);
 }

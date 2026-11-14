@@ -12,12 +12,12 @@
 //! process anyway (`RenderHooks` is a `OnceLock`), so unloading could only be safe for mods that
 //! never touch the frame, and those are not worth a different rule.
 
-use horizon_mod_abi::{ABI, ButtonSink, HostVTable, ModDesc, guard};
+use horizon_mod_abi::{ABI, ButtonSink, HostVTable, ModDesc, RayHitOut, StartedSound, guard};
 
 #[cfg(target_os = "android")]
 mod android;
 use std::cell::{Cell, RefCell};
-use std::ffi::{CStr, c_char, c_void};
+use std::ffi::{CStr, CString, c_char, c_void};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
@@ -31,7 +31,46 @@ pub trait Host {
     /// One of `id`'s settings, or None when it is not set.
     fn setting(&self, id: &str, key: &str) -> Option<String>;
     /// Keeps one of `id`'s settings; an empty `value` clears it.
-    fn set_setting(&self, id: &str, key: &str, value: &str);
+    fn set_setting(&mut self, id: &str, key: &str, value: &str);
+    /// The listener's eye. None while no world is open.
+    fn listener(&self) -> Option<[f64; 3]> {
+        None
+    }
+    /// The block at `pos` as its id (`minecraft:stone`). None while no world is open.
+    fn block_name(&self, _pos: [i32; 3]) -> Option<String> {
+        None
+    }
+    /// Whether the block's face on `side` (`0..5` = x-, x+, y-, y+, z-, z+) is sturdy.
+    fn face_is_sturdy(&self, _pos: [i32; 3], _side: usize) -> bool {
+        false
+    }
+    /// Whether the block at `pos` is water.
+    fn is_water(&self, _pos: [i32; 3]) -> bool {
+        false
+    }
+    /// The first block between two points. None when the segment is clear or no world is open.
+    fn raycast(&self, _from: [f64; 3], _to: [f64; 3]) -> Option<horizon_mod_abi::RayHitOut> {
+        None
+    }
+    /// The sounds that started since this was last asked.
+    fn sounds_started(&self) -> Vec<StartedInfo> {
+        Vec::new()
+    }
+    /// Sets how loud a started sound plays. False when it has already finished.
+    fn set_sound(&self, _instance: u64, _gain: f32, _pitch: f32) -> bool {
+        false
+    }
+}
+
+/// A sound that started, for a mod that shapes how loud it plays.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StartedInfo {
+    /// Its handle, for [`Host::set_sound`].
+    pub instance: u64,
+    /// Its id (`minecraft:block.stone.break`).
+    pub id: String,
+    /// Where it plays; None for a relative sound.
+    pub at: Option<[f64; 3]>,
 }
 
 /// What a loaded mod says about itself, for the client's Mods page.
@@ -101,7 +140,7 @@ static SCANNED: OnceLock<()> = OnceLock::new();
 // The client, while one of a mod's callbacks is running. A trait object, so it is two words; this
 // is the one place the client's `&mut` is turned into something a mod's C function can call back.
 thread_local! {
-    static CALLING: RefCell<Option<*const (dyn Host + 'static)>> = const { RefCell::new(None) };
+    static CALLING: RefCell<Option<*mut (dyn Host + 'static)>> = const { RefCell::new(None) };
     static CALLING_ID: RefCell<String> = const { RefCell::new(String::new()) };
 }
 
@@ -174,7 +213,7 @@ impl Loaded {
 
     /// Runs one of the mod's callbacks with `host` reachable from its C functions, logging a panic
     /// rather than letting it reach the frame.
-    fn ran<R>(&self, host: &dyn Host, what: &str, run: impl FnOnce() -> R) -> Option<R> {
+    fn ran<R>(&self, host: &mut dyn Host, what: &str, run: impl FnOnce() -> R) -> Option<R> {
         let answer = with_host(host, &self.id, run);
         match answer {
             Ok(Some(value)) => Some(value),
@@ -187,7 +226,7 @@ impl Loaded {
     }
 
     /// The mod's own setup, once.
-    fn start(&self, host: &dyn Host) -> bool {
+    fn start(&self, host: &mut dyn Host) -> bool {
         let Some(init) = self.desc.init else {
             return true;
         };
@@ -198,7 +237,7 @@ impl Loaded {
         .unwrap_or(false)
     }
 
-    fn tick(&self, host: &dyn Host) {
+    fn tick(&self, host: &mut dyn Host) {
         let Some(tick) = self.desc.tick else {
             return;
         };
@@ -208,7 +247,7 @@ impl Loaded {
         });
     }
 
-    fn frame(&self, host: &dyn Host, partial: f32) {
+    fn frame(&self, host: &mut dyn Host, partial: f32) {
         let Some(frame) = self.desc.frame else {
             return;
         };
@@ -224,7 +263,7 @@ impl Loaded {
         });
     }
 
-    fn settings(&self, host: &dyn Host, rows: &mut Vec<String>) {
+    fn settings(&self, host: &mut dyn Host, rows: &mut Vec<String>) {
         let Some(settings) = self.desc.settings else {
             return;
         };
@@ -238,7 +277,7 @@ impl Loaded {
         });
     }
 
-    fn settings_click(&self, host: &dyn Host, button: u32) {
+    fn settings_click(&self, host: &mut dyn Host, button: u32) {
         let Some(click) = self.desc.settings_click else {
             return;
         };
@@ -252,11 +291,15 @@ impl Loaded {
 /// Runs `run` with `host` and `id` reachable from a mod's C functions.
 ///
 /// The outer `Result` is the mod's panic; the inner one is a callback that produced nothing.
-fn with_host<R>(host: &dyn Host, id: &str, run: impl FnOnce() -> R) -> Result<Option<R>, String> {
+fn with_host<R>(
+    host: &mut dyn Host,
+    id: &str,
+    run: impl FnOnce() -> R,
+) -> Result<Option<R>, String> {
     // SAFETY: the lifetime is erased, not extended: the pointer is stored and cleared between two
     // statements of this function, and no mod callback outlives the call that runs it.
-    let address: *const (dyn Host + 'static) = unsafe {
-        std::mem::transmute::<*const dyn Host, *const (dyn Host + 'static)>(host as *const dyn Host)
+    let address: *mut (dyn Host + 'static) = unsafe {
+        std::mem::transmute::<*mut dyn Host, *mut (dyn Host + 'static)>(host as *mut dyn Host)
     };
     CALLING.with(|c| *c.borrow_mut() = Some(address));
     CALLING_ID.with(|c| *c.borrow_mut() = id.to_owned());
@@ -267,11 +310,11 @@ fn with_host<R>(host: &dyn Host, id: &str, run: impl FnOnce() -> R) -> Result<Op
 }
 
 /// The client, while one of a mod's callbacks runs. None outside one.
-fn calling<'a>() -> Option<&'a (dyn Host + 'static)> {
+fn calling<'a>() -> Option<&'a mut (dyn Host + 'static)> {
     let address = CALLING.with(|c| *c.borrow())?;
-    // SAFETY: the pointer is the `&dyn Host` `with_host` set for the length of one call, on this
-    // thread, and nothing else reaches it while that call runs.
-    Some(unsafe { &*address })
+    // SAFETY: the pointer is the `&mut dyn Host` `with_host` set for the length of one call, on
+    // this thread, and nothing else reaches it while that call runs.
+    Some(unsafe { &mut *address })
 }
 
 fn calling_id() -> String {
@@ -287,6 +330,13 @@ fn table() -> *const HostVTable {
         log: host_log,
         setting: host_setting,
         set_setting: host_set_setting,
+        listener: host_listener,
+        block_name: host_block_name,
+        face_is_sturdy: host_face_is_sturdy,
+        is_water: host_is_water,
+        raycast: host_raycast,
+        sounds_started: host_sounds_started,
+        set_sound: host_set_sound,
     }) as *const HostVTable
 }
 
@@ -354,6 +404,129 @@ unsafe extern "C" fn host_set_setting(key: *const c_char, value: *const c_char) 
     host.set_setting(&id, key, value);
 }
 
+unsafe extern "C" fn host_listener(out: *mut [f64; 3]) -> u8 {
+    let Some(host) = calling() else {
+        return 0;
+    };
+    let Some(at) = host.listener() else {
+        return 0;
+    };
+    if !out.is_null() {
+        // SAFETY: the mod passed a buffer for one `[f64; 3]`.
+        unsafe { *out = at };
+    }
+    1
+}
+
+unsafe extern "C" fn host_block_name(
+    x: i32,
+    y: i32,
+    z: i32,
+    out: *mut c_char,
+    len: usize,
+) -> usize {
+    let Some(host) = calling() else {
+        return 0;
+    };
+    let Some(name) = host.block_name([x, y, z]) else {
+        return 0;
+    };
+    if out.is_null() || len == 0 {
+        return 0;
+    }
+    let bytes = name.as_bytes();
+    let take = bytes.len().min(len - 1);
+    // SAFETY: the mod passed a buffer of `len` bytes for the name.
+    unsafe {
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), out.cast::<u8>(), take);
+        *out.add(take) = 0;
+    }
+    take
+}
+
+unsafe extern "C" fn host_face_is_sturdy(x: i32, y: i32, z: i32, side: u32) -> u8 {
+    let Some(host) = calling() else {
+        return 0;
+    };
+    host.face_is_sturdy([x, y, z], side as usize) as u8
+}
+
+unsafe extern "C" fn host_is_water(x: i32, y: i32, z: i32) -> u8 {
+    let Some(host) = calling() else {
+        return 0;
+    };
+    host.is_water([x, y, z]) as u8
+}
+
+unsafe extern "C" fn host_raycast(
+    from: *const [f64; 3],
+    to: *const [f64; 3],
+    out: *mut RayHitOut,
+) -> u8 {
+    if from.is_null() || to.is_null() {
+        return 0;
+    }
+    let Some(host) = calling() else {
+        return 0;
+    };
+    // SAFETY: both are the mod's own points, valid for the call.
+    let hit = host.raycast(unsafe { *from }, unsafe { *to });
+    let Some(hit) = hit else {
+        return 0;
+    };
+    if !out.is_null() {
+        // SAFETY: the mod passed a buffer for one hit.
+        unsafe { *out = hit };
+    }
+    1
+}
+
+unsafe extern "C" fn host_sounds_started(out: *mut StartedSound, max: usize) -> usize {
+    let Some(host) = calling() else {
+        return 0;
+    };
+    let started = host.sounds_started();
+    if out.is_null() || max == 0 || started.is_empty() {
+        return 0;
+    }
+    let take = started.len().min(max);
+    thread_local! {
+        static IDS: std::cell::RefCell<Vec<CString>> = const { std::cell::RefCell::new(Vec::new()) };
+    }
+    IDS.with(|cell| {
+        let mut ids = cell.borrow_mut();
+        ids.clear();
+        ids.extend(
+            started[..take]
+                .iter()
+                .map(|s| CString::new(s.id.as_str()).unwrap_or_default()),
+        );
+        write_sounds(out, &started[..take], &ids);
+    });
+    take
+}
+
+fn write_sounds(out: *mut StartedSound, sounds: &[StartedInfo], ids: &[CString]) {
+    for (i, sound) in sounds.iter().enumerate() {
+        // SAFETY: the mod passed a buffer for `max` entries.
+        unsafe {
+            *out.add(i) = StartedSound {
+                instance: sound.instance,
+                id: ids[i].as_ptr(),
+                has_at: sound.at.is_some() as u8,
+                at: sound.at.unwrap_or([0.0; 3]),
+            };
+        }
+    }
+}
+
+unsafe extern "C" fn host_set_sound(instance: u64, gain: f32, pitch: f32) -> u8 {
+    let Some(host) = calling() else {
+        return 0;
+    };
+    host.set_sound(instance, gain, pitch) as u8
+}
+
 /// A row a mod asked for, pushed into the sink the client passed.
 unsafe extern "C" fn push_button(ctx: *mut c_void, text: *const c_char) {
     if ctx.is_null() || text.is_null() {
@@ -394,7 +567,7 @@ fn libraries(folder: &Path) -> Vec<PathBuf> {
 /// (`<id>/lib*.so`), which is where a downloaded mod is unpacked.
 ///
 /// A file that is refused is logged and left out: one broken mod must not cost the player the rest.
-pub fn scan(folders: &[std::path::PathBuf], host: &dyn Host) {
+pub fn scan(folders: &[std::path::PathBuf], host: &mut dyn Host) {
     if SCANNED.set(()).is_err() {
         return;
     }
@@ -450,7 +623,7 @@ pub fn list() -> Vec<ModInfo> {
 }
 
 /// Starts every mod that has not started yet: `init`, once each.
-pub fn start(host: &dyn Host) {
+pub fn start(host: &mut dyn Host) {
     let guard_mods = mods().lock().unwrap_or_else(|e| e.into_inner());
     for module in guard_mods.iter() {
         if module.started.get() {
@@ -464,7 +637,7 @@ pub fn start(host: &dyn Host) {
 }
 
 /// Once a tick, in world.
-pub fn tick(host: &dyn Host) {
+pub fn tick(host: &mut dyn Host) {
     let guard_mods = mods().lock().unwrap_or_else(|e| e.into_inner());
     for module in guard_mods.iter() {
         module.tick(host);
@@ -472,7 +645,7 @@ pub fn tick(host: &dyn Host) {
 }
 
 /// Once a frame.
-pub fn frame(host: &dyn Host, partial: f32) {
+pub fn frame(host: &mut dyn Host, partial: f32) {
     let guard_mods = mods().lock().unwrap_or_else(|e| e.into_inner());
     for module in guard_mods.iter() {
         module.frame(host, partial);
@@ -480,7 +653,7 @@ pub fn frame(host: &dyn Host, partial: f32) {
 }
 
 /// The rows of `id`'s page in Options > Mods.
-pub fn settings(host: &dyn Host, id: &str, rows: &mut Vec<String>) {
+pub fn settings(host: &mut dyn Host, id: &str, rows: &mut Vec<String>) {
     let guard_mods = mods().lock().unwrap_or_else(|e| e.into_inner());
     for module in guard_mods.iter().filter(|m| m.id == id) {
         module.settings(host, rows);
@@ -488,7 +661,7 @@ pub fn settings(host: &dyn Host, id: &str, rows: &mut Vec<String>) {
 }
 
 /// A tap on row `button` of `id`'s page.
-pub fn settings_click(host: &dyn Host, id: &str, button: usize) {
+pub fn settings_click(host: &mut dyn Host, id: &str, button: usize) {
     let button = u32::try_from(button).unwrap_or(u32::MAX);
     let guard_mods = mods().lock().unwrap_or_else(|e| e.into_inner());
     for module in guard_mods.iter().filter(|m| m.id == id) {
@@ -507,6 +680,46 @@ mod tests {
     }
 
     impl Host for Recorder {
+        fn listener(&self) -> Option<[f64; 3]> {
+            Some([1.0, 2.0, 3.0])
+        }
+
+        fn block_name(&self, pos: [i32; 3]) -> Option<String> {
+            match pos {
+                [0, 0, 0] => Some("minecraft:stone".to_owned()),
+                [1, 0, 0] => Some("minecraft:air".to_owned()),
+                _ => None,
+            }
+        }
+
+        fn face_is_sturdy(&self, pos: [i32; 3], side: usize) -> bool {
+            pos == [0, 0, 0] && side == 3
+        }
+
+        fn is_water(&self, pos: [i32; 3]) -> bool {
+            pos == [5, 5, 5]
+        }
+
+        fn raycast(&self, from: [f64; 3], to: [f64; 3]) -> Option<horizon_mod_abi::RayHitOut> {
+            (from[0] < 0.5 && to[0] > 0.5).then_some(horizon_mod_abi::RayHitOut {
+                at: [0.5, from[1], from[2]],
+                block: [0, 0, 0],
+                normal: [-1.0, 0.0, 0.0],
+            })
+        }
+
+        fn sounds_started(&self) -> Vec<StartedInfo> {
+            vec![StartedInfo {
+                instance: 7,
+                id: "minecraft:block.stone.break".to_owned(),
+                at: Some([4.0, 5.0, 6.0]),
+            }]
+        }
+
+        fn set_sound(&self, instance: u64, gain: f32, pitch: f32) -> bool {
+            instance == 7 && gain < 1.0 && pitch < 1.0
+        }
+
         fn log(&self, _level: u32, _text: &str) {}
 
         fn setting(&self, id: &str, key: &str) -> Option<String> {
@@ -516,7 +729,7 @@ mod tests {
                 .cloned()
         }
 
-        fn set_setting(&self, id: &str, key: &str, value: &str) {
+        fn set_setting(&mut self, id: &str, key: &str, value: &str) {
             self.settings
                 .borrow_mut()
                 .insert((id.to_owned(), key.to_owned()), value.to_owned());
@@ -571,15 +784,69 @@ mod tests {
     }
 
     #[test]
+    fn the_world_and_the_sounds_cross_the_boundary() {
+        let mut host = Recorder::default();
+        let (listener, name, sturdy, water, hit, started, applied) =
+            with_host(&mut host, "world", || unsafe {
+                let mut eye = [0.0; 3];
+                let has_eye = host_listener(&mut eye) == 1;
+                let mut buffer = [0 as c_char; horizon_mod_abi::TEXT];
+                let len = host_block_name(0, 0, 0, buffer.as_mut_ptr(), buffer.len());
+                let name = if len == 0 {
+                    String::new()
+                } else {
+                    CStr::from_ptr(buffer.as_ptr())
+                        .to_string_lossy()
+                        .into_owned()
+                };
+                let mut hit = RayHitOut::default();
+                let mut sounds = [StartedSound {
+                    instance: 0,
+                    id: std::ptr::null(),
+                    has_at: 0,
+                    at: [0.0; 3],
+                }; 4];
+                let count = host_sounds_started(sounds.as_mut_ptr(), sounds.len());
+                let first = if count == 0 {
+                    (String::new(), None)
+                } else {
+                    (
+                        CStr::from_ptr(sounds[0].id).to_string_lossy().into_owned(),
+                        (sounds[0].has_at == 1).then_some(sounds[0].at),
+                    )
+                };
+                (
+                    (has_eye, eye),
+                    name,
+                    host_face_is_sturdy(0, 0, 0, 3) == 1,
+                    host_is_water(5, 5, 5) == 1,
+                    (host_raycast(&[0.0, 1.0, 1.0], &[1.0, 1.0, 1.0], &mut hit) == 1)
+                        .then_some(hit),
+                    (count, first),
+                    host_set_sound(7, 0.4, 0.9) == 1,
+                )
+            })
+            .unwrap()
+            .unwrap();
+        assert_eq!(listener, (true, [1.0, 2.0, 3.0]));
+        assert_eq!(name, "minecraft:stone");
+        assert!(sturdy && water && applied);
+        assert_eq!(hit.unwrap().normal, [-1.0, 0.0, 0.0]);
+        assert_eq!(started.0, 1);
+        assert_eq!(started.1.0, "minecraft:block.stone.break");
+        assert_eq!(started.1.1, Some([4.0, 5.0, 6.0]));
+    }
+
+    #[test]
     fn with_host_sets_and_clears_what_a_mod_sees() {
-        let host = Recorder {
+        let mut host = Recorder {
             settings: std::cell::RefCell::new(
                 [(("hello".to_owned(), "frames".to_owned()), "42".to_owned())]
                     .into_iter()
                     .collect(),
             ),
         };
-        let seen = with_host(&host, "hello", || (calling_id(), calling().is_some())).unwrap();
+        let seen = with_host(&mut host, "hello", || (calling_id(), calling().is_some())).unwrap();
         assert_eq!(seen, Some(("hello".to_owned(), true)));
         // After the call, a mod's stray callback finds nothing rather than a dangling host.
         assert!(calling().is_none());
