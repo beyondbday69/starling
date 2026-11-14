@@ -43,7 +43,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         settings: Default::default(),
     };
 
-    scan(folder.as_ref(), &host);
+    scan(&[folder.clone().into()], &host);
     let found = list();
     if found.is_empty() {
         return Err(format!("no mod library in {folder}").into());

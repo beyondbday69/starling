@@ -16,9 +16,9 @@ client's four hooks (`native_mods`, `native_frame`, `native_tick`, `native_setti
 them. `cargo run -p horizon-mod-loader --example load_hello -- target/debug` builds the hello mod,
 opens it, starts it, runs two frames, reads its three rows and taps one.
 
-The one thing still unchecked is the fact Phase A exists to check: that an Android app may
-`dlopen` a library from its own files folder. `.github/workflows/mod-loader.yml` builds
-`libhello.so` for arm64 and publishes it, so that is one install away from an answer.
+Phase A's open question has been answered on a phone, and the answer was no: Android refuses
+`dlopen` by path twice over. See [What Android refused](#what-android-refused-and-the-way-through).
+The loader maps the library from memory instead, which is what a mod now does on Android.
 
 ## What exists, and what does not
 
@@ -34,6 +34,34 @@ The one thing still unchecked is the fact Phase A exists to check: that an Andro
 | JNI `#[unsafe(no_mangle)]` surface | exists (`crates/horizon-client/src/android_lib.rs`) |
 
 So the missing half is small and the half it plugs into is already 500 hooks wide.
+
+## What Android refused, and the way through
+
+The first phone run said this, on an APK that carried the loader and a `libhello.so` in
+`/sdcard/StarlingPreview/horizon-native-mods/hello/`:
+
+```
+is not loaded: it could not be opened: dlopen failed: library
+"/storage/emulated/0/StarlingPreview/horizon-native-mods/hello/libhello.so"
+... needed or dlopened by ".../lib/arm64/libhorizon_android.so" is not accessible
+for the namespace "clns-10"
+```
+
+Two separate rules, either of which is enough to refuse a mod's file:
+
+1. **The linker's namespace** for an app reaches only the APK's own `lib/` folder. Shared storage
+   and the app's data folder are both outside it.
+2. **SELinux**: since Android 10, an app's data folder has no execute permission at all for an app
+   targeting API 29+. So copying the file into `files/` would not have helped either.
+
+What is allowed is loading from memory, which is a documented NDK API. A `memfd` is an anonymous
+file with no path and no label to refuse, and `android_dlopen_ext` with
+`ANDROID_DLEXT_USE_LIBRARY_FD` maps it. AOSP's linker maintainer, on android/ndk#168: *"it's
+expected that you can load anything you want from RAM — there's a public API for that"*.
+
+So `horizon-mod-loader/src/android.rs` reads the mod's file, writes it to a `memfd`, and maps that.
+The file on disk is only ever read, which is all a player's folder ever needed to allow — and it
+means a mod dropped in `/sdcard` cannot be swapped under the client between one read and the next.
 
 ## The shape
 

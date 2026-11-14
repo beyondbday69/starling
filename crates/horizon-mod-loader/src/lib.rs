@@ -13,6 +13,9 @@
 //! never touch the frame, and those are not worth a different rule.
 
 use horizon_mod_abi::{ABI, ButtonSink, HostVTable, ModDesc, guard};
+
+#[cfg(target_os = "android")]
+mod android;
 use std::cell::{Cell, RefCell};
 use std::ffi::{CStr, c_char, c_void};
 use std::path::{Path, PathBuf};
@@ -113,8 +116,14 @@ impl Loaded {
     /// `host` must stay valid for the life of the process, which this crate guarantees by keeping
     /// it in a `OnceLock` of its own.
     unsafe fn open(path: &Path, host: *const HostVTable) -> Result<Self, Refused> {
+        // On Android a path cannot be opened at all: the linker's namespace reaches only the APK,
+        // and the app's data folder has no execute permission. There the library is mapped from
+        // memory instead, which is the one route Android allows; on a computer it is opened.
+        #[cfg(target_os = "android")]
+        let lib = android::open(path).map_err(Refused::Dlopen)?;
         // SAFETY: opening a library is unsafe because its initialisers may do anything; that risk
         // is the whole point of installing a mod, and it is a decision the player made.
+        #[cfg(not(target_os = "android"))]
         let lib = unsafe { libloading::Library::new(path) }
             .map_err(|e| Refused::Dlopen(e.to_string()))?;
         let entry: libloading::Symbol<unsafe extern "C" fn(*const HostVTable) -> *const ModDesc> =
@@ -317,7 +326,7 @@ unsafe extern "C" fn host_setting(key: *const c_char, out: *mut c_char, len: usi
     let take = bytes.len().min(len - 1);
     // SAFETY: `take` is at most `len - 1`, so the NUL fits in the mod's buffer.
     unsafe {
-        std::ptr::copy_nonoverlapping(bytes.as_ptr(), out as *mut u8, take);
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), out.cast::<u8>(), take);
         *out.add(take) = 0;
     }
     take
@@ -381,21 +390,26 @@ fn libraries(folder: &Path) -> Vec<PathBuf> {
     found
 }
 
-/// Reads `folder` once: every mod library in it, and in each of its subfolders (`<id>/lib*.so`),
-/// which is where a downloaded mod is unpacked.
+/// Reads `folders` once: every mod library in them, and in each of their subfolders
+/// (`<id>/lib*.so`), which is where a downloaded mod is unpacked.
 ///
 /// A file that is refused is logged and left out: one broken mod must not cost the player the rest.
-pub fn scan(folder: &Path, host: &dyn Host) {
+pub fn scan(folders: &[std::path::PathBuf], host: &dyn Host) {
     if SCANNED.set(()).is_err() {
         return;
     }
-    let mut paths = libraries(folder);
-    for entry in std::fs::read_dir(folder).into_iter().flatten().flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            paths.extend(libraries(&path));
+    let mut paths = Vec::new();
+    for folder in folders {
+        paths.extend(libraries(folder));
+        for entry in std::fs::read_dir(folder).into_iter().flatten().flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                paths.extend(libraries(&path));
+            }
         }
     }
+    paths.sort();
+    paths.dedup();
     let mut loaded: Vec<Loaded> = Vec::new();
     for path in paths {
         // SAFETY: the table is a `OnceLock`, so it outlives every mod.

@@ -1652,6 +1652,7 @@ name = "horizon-mod-loader"
 version = "0.1.0"
 dependencies = [
  "horizon-mod-abi",
+ "libc",
  "libloading",
  "log",
 ]

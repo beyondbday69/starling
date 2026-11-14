@@ -11,9 +11,14 @@ use super::Game;
 use horizon_client::mod_api::NativeMod;
 use horizon_mod_loader::{self as loader, Host, ModInfo};
 
-/// The folder a player drops a mod's library in: the same one a `.hnmod` goes in.
-fn folder() -> std::path::PathBuf {
-    Game::game_dir().join(horizon_client::mod_list::NATIVE_DIR)
+/// The folders a player drops a mod's library in: the one a `.hnmod` goes in, and the content
+/// mods' folder beside it, because a player who unzips a mod there should still see it listed.
+fn folders() -> Vec<std::path::PathBuf> {
+    let game = Game::game_dir();
+    vec![
+        game.join(horizon_client::mod_list::NATIVE_DIR),
+        game.join(horizon_client::mod_list::DIR),
+    ]
 }
 
 /// The game, as a mod may see it: a log line and its own settings, nothing else yet.
@@ -43,7 +48,7 @@ impl Host for GameHost<'_, '_> {
 /// Reads the folder once and adds what it holds to Options > Mods.
 pub(super) fn list(game: &Game<'_>, mods: &mut Vec<NativeMod>) {
     let host = GameHost { game };
-    loader::scan(&folder(), &host);
+    loader::scan(&folders(), &host);
     for ModInfo {
         id,
         title,
