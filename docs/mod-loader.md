@@ -59,6 +59,19 @@ file with no path and no label to refuse, and `android_dlopen_ext` with
 `ANDROID_DLEXT_USE_LIBRARY_FD` maps it. AOSP's linker maintainer, on android/ndk#168: *"it's
 expected that you can load anything you want from RAM — there's a public API for that"*.
 
+That works. Confirmed on a phone (Adreno 710, Starling Preview), with `libhello.so` in
+`/sdcard/StarlingPreview/horizon-mods/hello/`:
+
+```
+mod: loaded hello (Hello 0.1) from /storage/emulated/0/StarlingPreview/horizon-mods/hello/libhello.so
+mod: hello: started, abi agrees
+mod: hello: 100 frames
+mod: hello: the row was tapped
+```
+
+**Phase A passes.** A mod is a library, the client lists it, starts it, calls it every frame, and
+gives it rows of its own — with no build of the client.
+
 So `horizon-mod-loader/src/android.rs` reads the mod's file, writes it to a `memfd`, and maps that.
 The file on disk is only ever read, which is all a player's folder ever needed to allow — and it
 means a mod dropped in `/sdcard` cannot be swapped under the client between one read and the next.
