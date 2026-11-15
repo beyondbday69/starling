@@ -619,6 +619,7 @@ impl Game<'_> {
                 s.horizon.taa,
                 s.horizon.upscaling.ratio(),
             );
+            r.set_shader_upscaling(s.horizon.shader_upscaling, s.horizon.fsr_sharpness);
             r.set_frame_generation(
                 s.horizon.frame_generation != horizon_client::graphics::FrameGeneration::Off,
             );

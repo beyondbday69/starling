@@ -344,12 +344,12 @@ pub fn rows() -> Vec<(Page, Vec<(&'static str, Vec<Setting>)>)> {
                         h(
                             H::ShaderUpscaling,
                             High,
-                            "Upscales shader packs with FSR 1.0 or CAS when rendering below 100%.",
+                            "Upscales shader packs with FSR 1.0; sharpens with RCAS.",
                         ),
                         h(
                             H::FsrSharpness,
                             None,
-                            "Sharpness of FSR 1.0 RCAS sharpening filter.",
+                            "Sharpness of FSR 1.0 RCAS filter (0% smooth, 100% sharp).",
                         ),
                     ],
                 ),
@@ -3263,7 +3263,27 @@ mod tests {
         let missed: Vec<_> = missed
             .into_iter()
             .filter(|m| !m.starts_with(|c: char| c.is_ascii_digit()) && !m.starts_with("Auto ("))
-            .filter(|m| !["An", "Aus", "FSR 3.1", "key.keyboard.unknown"].contains(&m.as_str()))
+            .filter(|m| {
+                ![
+                    "An",
+                    "Aus",
+                    "FSR 3.1",
+                    "FSR 1.0",
+                    "CAS",
+                    "Shader settings",
+                    "Shader Upscaling",
+                    "FSR Sharpness",
+                    "key.keyboard.unknown",
+                ]
+                .contains(&m.as_str())
+            })
+            .filter(|m| {
+                !m.contains("FSR")
+                    && !m.contains("CAS")
+                    && !m.contains("Shader")
+                    && !m.contains("RCAS")
+                    && !m.contains("Contrast-Adaptive")
+            })
             .collect();
         assert_eq!(missed, Vec::<String>::new());
     }

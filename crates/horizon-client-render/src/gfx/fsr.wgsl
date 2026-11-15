@@ -315,15 +315,16 @@ fn fs_rcas(in: VertexOutput) -> @location(0) vec4<f32> {
 
     // Contrast limiter calculation (AMD FSR 1.0 RCAS)
     let peakC = vec2<f32>(1.0, -4.0);
-    let hitMin = mn4 / (4.0 * mx4 + vec3<f32>(1e-5, 1e-5, 1e-5));
-    let hitMax = (vec3<f32>(peakC.x, peakC.x, peakC.x) - mx4) / (4.0 * mn4 + vec3<f32>(peakC.y, peakC.y, peakC.y) + vec3<f32>(1e-5, 1e-5, 1e-5));
+    let hitMin = mn4 / max(4.0 * mx4, vec3<f32>(1e-5, 1e-5, 1e-5));
+    let denom = 4.0 * mn4 + vec3<f32>(peakC.y, peakC.y, peakC.y);
+    let hitMax = (vec3<f32>(peakC.x, peakC.x, peakC.x) - mx4) / min(denom, vec3<f32>(-1e-5, -1e-5, -1e-5));
     let lobeRGB = max(-hitMin, hitMax);
 
     let max_lobe = max(lobeRGB.r, max(lobeRGB.g, lobeRGB.b));
     let rcas_limit = 0.1875; // 0.25 - 1.0/16.0
 
-    // Sharpness control: con = exp2(-sharpness)
-    let con = exp2(-clamp(constants.sharpness, 0.0, 16.0));
+    // Sharpness control: 0.0 = no sharpening, 1.0 = maximum sharpening
+    let con = clamp(constants.sharpness, 0.0, 1.0);
     let lobe = max(-rcas_limit, min(max_lobe, 0.0)) * con;
 
     // Apply sharpening filter with adaptive negative lobe

@@ -5818,7 +5818,9 @@ impl Renderer {
         let (dimension, receive) = self.pack_loading.as_ref()?;
         let dimension = *dimension;
         let result = match receive.try_recv() {
-            Ok(post) => {
+            Ok(mut post) => {
+                let (mode, sharpness) = pack_post::global_shader_upscaling();
+                post.set_upscaling(mode, sharpness);
                 let report = post.report();
                 self.pack_post = Some((dimension, Some(post)));
                 self.native = None;

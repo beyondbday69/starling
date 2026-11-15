@@ -292,6 +292,7 @@ impl Game<'_> {
             if let Some(renderer) = &mut self.renderer {
                 renderer.drop_shader_packs();
                 renderer.set_world_post(scale, antialias, taa, upscale);
+                renderer.set_shader_upscaling(horizon.shader_upscaling, horizon.fsr_sharpness);
             }
         }
         let Some((name, profile)) = self.shader_choice.clone() else {
