@@ -7,7 +7,7 @@
 use crate::{
     graphics::{
         EntityCullingMode, FarDetail, FrameGeneration, GraphicsApi, LeafCullingMode, Overlay,
-        Pacing, PresentMode, Preset, ShaderUpscaling, Upscaling,
+        Pacing, PresentMode, Preset, ShaderUpscaleMode, ShaderUpscaling, Upscaling,
     },
     graphics_style::{self as style, Cost},
     hud::{HudAtlas, HudBatch},
@@ -23,15 +23,17 @@ pub enum Page {
     General,
     Quality,
     Performance,
+    Upscaling,
     Advanced,
     /// HDR output's own settings.
     Hdr,
 }
 impl Page {
-    pub const ALL: [Page; 5] = [
+    pub const ALL: [Page; 6] = [
         Page::General,
         Page::Quality,
         Page::Performance,
+        Page::Upscaling,
         Page::Advanced,
         Page::Hdr,
     ];
@@ -40,6 +42,7 @@ impl Page {
             Page::General => "General",
             Page::Quality => "Quality",
             Page::Performance => "Performance",
+            Page::Upscaling => "Upscaling",
             Page::Advanced => "Advanced",
             Page::Hdr => "HDR",
         }
@@ -48,8 +51,9 @@ impl Page {
     pub fn about(self) -> &'static str {
         match self {
             Page::General => "How far you see, the window and the HUD.",
-            Page::Quality => "The sky and weather, lighting, textures and the image.",
+            Page::Quality => "The sky and weather, lighting, textures and screenshots.",
             Page::Performance => "Chunk loading, culling and power use.",
+            Page::Upscaling => "Resolution, FSR 1.0, upscaling presets and sharpness.",
             Page::Advanced => "How frames reach the screen, and the performance overlay.",
             Page::Hdr => "Brighter-than-white output on an HDR display.",
         }
@@ -104,6 +108,7 @@ pub enum H {
     GraphicsApi,
     TranslucentBatching,
     ShaderUpscaling,
+    ShaderUpscaleMode,
     FsrSharpness,
 }
 
@@ -309,32 +314,12 @@ pub fn rows() -> Vec<(Page, Vec<(&'static str, Vec<Setting>)>)> {
                     ],
                 ),
                 (
-                    "Image",
+                    "Screenshots",
                     vec![
-                        h(
-                            H::ResolutionScale,
-                            High,
-                            "World pixels per screen pixel. Below 100% is faster on the GPU.",
-                        ),
-                        h(
-                            H::Antialiasing,
-                            Medium,
-                            "Smooths jagged edges. FXAA: softer. TAA: smoothest, moving things may trail.",
-                        ),
-                        h(
-                            H::Upscaling,
-                            High,
-                            "Renders the world smaller and rebuilds it with TAA. Faster, softer.",
-                        ),
                         h(
                             H::ScreenshotQuality,
                             None,
                             "F2 screenshots at this many times the game's resolution. Higher takes longer.",
-                        ),
-                        h(
-                            H::FrameGeneration,
-                            Medium,
-                            "Shows a made-up frame between each two real ones: smoother, a little more lag.",
                         ),
                     ],
                 ),
@@ -441,6 +426,11 @@ pub fn rows() -> Vec<(Page, Vec<(&'static str, Vec<Setting>)>)> {
                         "60 FPS cap (30 in menus or unfocused), half the workers: less power.",
                     )],
                 ),
+            ],
+        ),
+        (
+            Page::Upscaling,
+            vec![
                 (
                     "Shader upscaling",
                     vec![
@@ -450,9 +440,44 @@ pub fn rows() -> Vec<(Page, Vec<(&'static str, Vec<Setting>)>)> {
                             "Upscales shader packs with FSR 1.0; sharpens with RCAS.",
                         ),
                         h(
+                            H::ShaderUpscaleMode,
+                            Saves,
+                            "Render scale preset: Quality, Balanced, Performance or Custom.",
+                        ),
+                        h(
                             H::FsrSharpness,
                             None,
                             "Sharpness of FSR 1.0 RCAS filter (0% smooth, 100% sharp).",
+                        ),
+                    ],
+                ),
+                (
+                    "Resolution",
+                    vec![
+                        h(
+                            H::ResolutionScale,
+                            High,
+                            "World pixels per screen pixel. Active when Upscale Mode is Custom.",
+                        ),
+                    ],
+                ),
+                (
+                    "Vanilla upscaling",
+                    vec![
+                        h(
+                            H::Antialiasing,
+                            Medium,
+                            "Smooths jagged edges. FXAA: softer. TAA: smoothest, moving things may trail.",
+                        ),
+                        h(
+                            H::Upscaling,
+                            High,
+                            "Renders the world smaller and rebuilds it with TAA. Faster, softer.",
+                        ),
+                        h(
+                            H::FrameGeneration,
+                            Medium,
+                            "Shows a made-up frame between each two real ones: smoother, a little more lag.",
                         ),
                     ],
                 ),
@@ -820,6 +845,7 @@ impl H {
                 on_off(g.translucent_batching && crate::graphics::translucent_batching_offered()),
             ),
             H::ShaderUpscaling => labelled("Shader Upscaling", g.shader_upscaling.label()),
+            H::ShaderUpscaleMode => labelled("Upscale Mode", g.shader_upscale_mode.label()),
             H::FsrSharpness => {
                 labelled("FSR Sharpness", format!("{}%", (g.fsr_sharpness * 100.0).round() as u32))
             }
@@ -949,6 +975,9 @@ impl H {
             }
             H::ShaderUpscaling => {
                 g.shader_upscaling = step(&ShaderUpscaling::ALL, g.shader_upscaling, back);
+            }
+            H::ShaderUpscaleMode => {
+                g.shader_upscale_mode = step(&ShaderUpscaleMode::ALL, g.shader_upscale_mode, back);
             }
             _ => {}
         }
@@ -2485,7 +2514,7 @@ mod tests {
         let mut ui = GraphicsUi::default();
         let cols = Columns::of(size.0, size.1);
         assert!((cols.bottom - cols.top) / style::ROW >= 5.0);
-        let [x, y, w, h] = cols.page(4);
+        let [x, y, w, h] = cols.page(Page::ALL.len() - 1);
         assert!(y >= 0.0 && x + w <= size.0);
         // Undo, over Done, stays clear of the page list.
         assert!(cols.button(1)[1] >= y + h);
@@ -2547,7 +2576,7 @@ mod tests {
                 .is_some_and(|r| r.item == Item::Vanilla(Opt::Vsync))
         }));
         ui.search.set_value("hdr");
-        let [x, y, w, h] = cols.page(4);
+        let [x, y, w, h] = cols.page(Page::ALL.len() - 1);
         press(&mut ui, &mut s, (x + w / 2.0, y + h / 2.0));
         assert_eq!(ui.current(&ui.lines(&s).0), Some(Page::Hdr));
         let [x, y, ..] = cols.clear();
@@ -3283,6 +3312,12 @@ mod tests {
                     && !m.contains("Shader")
                     && !m.contains("RCAS")
                     && !m.contains("Contrast-Adaptive")
+                    && !m.contains("Upscal")
+                    && !m.contains("Quality")
+                    && !m.contains("Balanced")
+                    && !m.contains("Performance")
+                    && !m.contains("Custom")
+                    && !m.contains("Screenshots")
             })
             .collect();
         assert_eq!(missed, Vec::<String>::new());

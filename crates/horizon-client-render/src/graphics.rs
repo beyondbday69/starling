@@ -482,6 +482,65 @@ impl ShaderUpscaling {
     }
 }
 
+/// Predefined scale presets for shader upscaling.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum ShaderUpscaleMode {
+    #[default]
+    Performance,
+    Balanced,
+    Quality,
+    UltraQuality,
+    UltraPerformance,
+    Custom,
+}
+impl ShaderUpscaleMode {
+    pub const ALL: [ShaderUpscaleMode; 6] = [
+        ShaderUpscaleMode::Performance,
+        ShaderUpscaleMode::Balanced,
+        ShaderUpscaleMode::Quality,
+        ShaderUpscaleMode::UltraQuality,
+        ShaderUpscaleMode::UltraPerformance,
+        ShaderUpscaleMode::Custom,
+    ];
+    pub fn name(self) -> &'static str {
+        match self {
+            ShaderUpscaleMode::Performance => "performance",
+            ShaderUpscaleMode::Balanced => "balanced",
+            ShaderUpscaleMode::Quality => "quality",
+            ShaderUpscaleMode::UltraQuality => "ultraQuality",
+            ShaderUpscaleMode::UltraPerformance => "ultraPerformance",
+            ShaderUpscaleMode::Custom => "custom",
+        }
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            ShaderUpscaleMode::Performance => "Performance (50%)",
+            ShaderUpscaleMode::Balanced => "Balanced (59%)",
+            ShaderUpscaleMode::Quality => "Quality (67%)",
+            ShaderUpscaleMode::UltraQuality => "Ultra Quality (77%)",
+            ShaderUpscaleMode::UltraPerformance => "Ultra Performance (33%)",
+            ShaderUpscaleMode::Custom => "Custom",
+        }
+    }
+    /// Scale factor of native resolution (None if Custom).
+    pub fn scale(self) -> Option<f32> {
+        match self {
+            ShaderUpscaleMode::Performance => Some(0.50),
+            ShaderUpscaleMode::Balanced => Some(0.59),
+            ShaderUpscaleMode::Quality => Some(0.67),
+            ShaderUpscaleMode::UltraQuality => Some(0.77),
+            ShaderUpscaleMode::UltraPerformance => Some(0.33),
+            ShaderUpscaleMode::Custom => None,
+        }
+    }
+    pub fn parse(s: &str) -> Self {
+        Self::ALL
+            .into_iter()
+            .find(|m| m.name().eq_ignore_ascii_case(s.trim()))
+            .unwrap_or_default()
+    }
+}
+
 static REDUCED_SUGGESTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 /// Whether the settings suggest Reduced far detail: set when the renderer
 /// starts, on the GPUs `lod_capped` names (far terrain slows them most).
@@ -689,6 +748,8 @@ pub struct Graphics {
     pub shader_profile: String,
     /// Upscaling algorithm for shader packs: FSR 1.0 (EASU + RCAS), CAS (sharpening only), or Off.
     pub shader_upscaling: ShaderUpscaling,
+    /// Predefined render scale preset for shader upscaling (Performance = 50%, Quality = 67%, etc.).
+    pub shader_upscale_mode: ShaderUpscaleMode,
     /// AMD FSR 1.0 RCAS sharpness parameter (0.0 to 1.0; 0.2 default).
     pub fsr_sharpness: f32,
 }
@@ -784,6 +845,7 @@ impl Default for Graphics {
             shader_pack: String::new(),
             shader_profile: String::new(),
             shader_upscaling: ShaderUpscaling::Fsr,
+            shader_upscale_mode: ShaderUpscaleMode::Performance,
             fsr_sharpness: 0.2,
         }
     }
@@ -942,6 +1004,7 @@ impl Graphics {
                 }
                 "shadersProfile" => g.shader_profile = value.to_owned(),
                 "shaderUpscaling" => g.shader_upscaling = ShaderUpscaling::parse(value),
+                "shaderUpscaleMode" => g.shader_upscale_mode = ShaderUpscaleMode::parse(value),
                 "fsrSharpness" => {
                     if let Ok(v) = value.parse::<f32>() {
                         g.fsr_sharpness = v.clamp(0.0, 1.0);
@@ -962,7 +1025,7 @@ impl Graphics {
     }
     pub fn serialize(&self) -> String {
         let mut text = format!(
-            "preset:{}\nlodDistance:{}\nfarDetail:{}\ncaveCulling:{}\nentityCulling:{}\nleafCulling:{}\nblockEntityCacheShulkerBoxes:{}\nblockEntityCacheSigns:{}\nblockEntityCacheDecoratedPots:{}\nblockEntityCacheBells:{}\nblockEntityCacheChests:{}\nblockEntityCacheBanners:{}\nblockEntityCacheCopperGolemStatues:{}\nchunkUpdates:{}\nuploadBudgetKiB:{}\ntextureBudgetMiB:{}\nsky:{}\nfog:{}\nweather:{}\nanimatedTextures:{}\nditherCutoutMips:{}\npresentMode:{}\nframePacing:{}\nworkers:{}\noverlay:{}\nresolutionScale:{}\nfxaa:{}\ntaa:{}\nupscaling:{}\nscreenshotQuality:{}\nframeGeneration:{}\nhdr:{}\nhdrPaperWhite:{}\nhdrPeak:{}\nhdrBlackLevel:{}\nhdrUiBrightness:{}\nhdrKey:{}\nbatteryMode:{}\nshadowCache:{}\ngraphicsApi:{}\npickedShaderPack:{}\nshadersProfile:{}\nbatchTranslucent:{}\nshaderUpscaling:{}\nfsrSharpness:{}\n",
+            "preset:{}\nlodDistance:{}\nfarDetail:{}\ncaveCulling:{}\nentityCulling:{}\nleafCulling:{}\nblockEntityCacheShulkerBoxes:{}\nblockEntityCacheSigns:{}\nblockEntityCacheDecoratedPots:{}\nblockEntityCacheBells:{}\nblockEntityCacheChests:{}\nblockEntityCacheBanners:{}\nblockEntityCacheCopperGolemStatues:{}\nchunkUpdates:{}\nuploadBudgetKiB:{}\ntextureBudgetMiB:{}\nsky:{}\nfog:{}\nweather:{}\nanimatedTextures:{}\nditherCutoutMips:{}\npresentMode:{}\nframePacing:{}\nworkers:{}\noverlay:{}\nresolutionScale:{}\nfxaa:{}\ntaa:{}\nupscaling:{}\nscreenshotQuality:{}\nframeGeneration:{}\nhdr:{}\nhdrPaperWhite:{}\nhdrPeak:{}\nhdrBlackLevel:{}\nhdrUiBrightness:{}\nhdrKey:{}\nbatteryMode:{}\nshadowCache:{}\ngraphicsApi:{}\npickedShaderPack:{}\nshadersProfile:{}\nbatchTranslucent:{}\nshaderUpscaling:{}\nshaderUpscaleMode:{}\nfsrSharpness:{}\n",
             self.preset.name(),
             self.lod_distance,
             self.far_detail.name(),
@@ -1015,6 +1078,7 @@ impl Graphics {
             self.shader_profile,
             bool_text(self.translucent_batching),
             self.shader_upscaling.name(),
+            self.shader_upscale_mode.name(),
             self.fsr_sharpness,
         );
         text += &self.blue_map.serialize();
@@ -1281,6 +1345,7 @@ mod tests {
             shader_pack: "Golden Hour".into(),
             shader_profile: "LOW".into(),
             shader_upscaling: ShaderUpscaling::Cas,
+            shader_upscale_mode: ShaderUpscaleMode::Balanced,
             fsr_sharpness: 0.8,
         };
         assert_eq!(Graphics::parse(&g.serialize()), g);
