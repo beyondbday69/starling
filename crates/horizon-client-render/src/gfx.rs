@@ -197,6 +197,7 @@ pub mod entity_skin;
 mod entity_source;
 mod flat;
 mod frame_gen;
+pub mod fsr;
 mod hdr;
 mod hdr_icc;
 mod hdr_stats;
@@ -5924,6 +5925,17 @@ impl Renderer {
     pub fn set_pack_prepass(&self, on: bool) {
         pack_post::set_prepass(on);
     }
+    /// Sets shader pack upscaling mode and sharpness for packs loaded from now on.
+    pub fn set_shader_upscaling(
+        &mut self,
+        mode: crate::graphics::ShaderUpscaling,
+        sharpness: f32,
+    ) {
+        pack_post::set_shader_upscaling(mode, sharpness);
+        if let Some((_, Some(post))) = &mut self.pack_post {
+            post.set_upscaling(mode, sharpness);
+        }
+    }
     /// What a shader pack's gbuffers programs read from Horizon's geometry: the sky's, and
     /// terrain's in the pack's block atlas (made here when missing; none when it does not fit).
     pub fn pack_inputs(&mut self) -> horizon_shaders::GameInputs {
@@ -9233,30 +9245,21 @@ impl Renderer {
             }));
             // Below the screen's size `final` works at the world's size too (a program reading
             // the buffers by pixel lines up), and the picture goes up sharper than a stretch.
-            let upscale = self.world_post.upscales_pack();
             post.run(
                 &self.device,
                 &self.queue,
                 &mut encoder,
                 color,
                 depth,
-                if upscale { color } else { &view_target },
+                &view_target,
                 frame,
                 &frame.pack,
                 size,
-                if upscale {
-                    size
-                } else {
-                    [self.config.width, self.config.height]
-                },
+                [self.config.width, self.config.height],
                 &pages,
                 &mut terrain,
             );
             self.pack_post = Some((dimension, Some(post)));
-            if upscale {
-                self.world_post
-                    .finish_pack(&mut encoder, &view_target, self.own_timing.as_mut());
-            }
         } else if let Some((color, depth)) = &scaled
             && native_post
             && let Some(native) = &mut self.native

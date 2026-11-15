@@ -7,7 +7,7 @@
 use crate::{
     graphics::{
         EntityCullingMode, FarDetail, FrameGeneration, GraphicsApi, LeafCullingMode, Overlay,
-        Pacing, PresentMode, Preset, Upscaling,
+        Pacing, PresentMode, Preset, ShaderUpscaling, Upscaling,
     },
     graphics_style::{self as style, Cost},
     hud::{HudAtlas, HudBatch},
@@ -103,6 +103,8 @@ pub enum H {
     ShadowCache,
     GraphicsApi,
     TranslucentBatching,
+    ShaderUpscaling,
+    FsrSharpness,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -333,6 +335,21 @@ pub fn rows() -> Vec<(Page, Vec<(&'static str, Vec<Setting>)>)> {
                             H::FrameGeneration,
                             Medium,
                             "Shows a made-up frame between each two real ones: smoother, a little more lag.",
+                        ),
+                    ],
+                ),
+                (
+                    "Shader settings",
+                    vec![
+                        h(
+                            H::ShaderUpscaling,
+                            High,
+                            "Upscales shader packs with FSR 1.0 or CAS when rendering below 100%.",
+                        ),
+                        h(
+                            H::FsrSharpness,
+                            None,
+                            "Sharpness of FSR 1.0 RCAS sharpening filter.",
                         ),
                     ],
                 ),
@@ -628,6 +645,11 @@ fn description(item: Item, s: &Settings, text: &'static str) -> &'static str {
             }
             LeafCullingMode::Hollow => "Drops faces between leaves: faster, but gaps look through.",
         },
+        (Item::Horizon(H::ShaderUpscaling), _) => match s.horizon.shader_upscaling {
+            ShaderUpscaling::Off => "Shader packs upscale with simple bilinear filtering.",
+            ShaderUpscaling::Fsr => "Upscales shader packs with AMD FSR 1.0 EASU and RCAS.",
+            ShaderUpscaling::Cas => "Contrast-Adaptive Sharpening without spatial upsampling.",
+        },
         _ => text,
     }
 }
@@ -671,6 +693,7 @@ impl H {
             }),
             H::HdrBlackLevel => Some(g.hdr_black_level as f32 / 100.0),
             H::HdrUiBrightness => Some((g.hdr_ui_brightness as f32 - 25.0) / 75.0),
+            H::FsrSharpness => Some(g.fsr_sharpness.clamp(0.0, 1.0)),
             _ => None,
         }
     }
@@ -684,6 +707,7 @@ impl H {
             H::HdrPeak => Some(37),
             H::HdrBlackLevel => Some(100),
             H::HdrUiBrightness => Some(15),
+            H::FsrSharpness => Some(20),
             _ => None,
         }
     }
@@ -795,6 +819,10 @@ impl H {
                 "Translucent Batching",
                 on_off(g.translucent_batching && crate::graphics::translucent_batching_offered()),
             ),
+            H::ShaderUpscaling => labelled("Shader Upscaling", g.shader_upscaling.label()),
+            H::FsrSharpness => {
+                labelled("FSR Sharpness", format!("{}%", (g.fsr_sharpness * 100.0).round() as u32))
+            }
             H::Overlay => labelled(
                 "Performance Overlay",
                 match g.overlay {
@@ -828,6 +856,7 @@ impl H {
             }
             H::HdrBlackLevel => g.hdr_black_level = (v * 100.0).round() as u32,
             H::HdrUiBrightness => g.hdr_ui_brightness = (25.0 + (v * 15.0).round() * 5.0) as u32,
+            H::FsrSharpness => g.fsr_sharpness = ((v * 20.0).round() / 20.0).clamp(0.0, 1.0),
             _ => {}
         }
     }
@@ -917,6 +946,9 @@ impl H {
                     g.overlay,
                     back,
                 )
+            }
+            H::ShaderUpscaling => {
+                g.shader_upscaling = step(&ShaderUpscaling::ALL, g.shader_upscaling, back);
             }
             _ => {}
         }
@@ -1061,6 +1093,8 @@ impl Item {
                     | H::ShadowCache
                     | H::GraphicsApi
                     | H::TranslucentBatching
+                    | H::ShaderUpscaling
+                    | H::FsrSharpness
             ) | Item::Vanilla(
                 Opt::GuiScale
                     | Opt::Fullscreen
@@ -3285,5 +3319,32 @@ mod tests {
                 "{code}"
             );
         }
+    }
+
+    #[test]
+    fn shader_upscaling_and_fsr_sharpness_ui() {
+        let mut s = Settings::default();
+        let upscaling = Item::Horizon(H::ShaderUpscaling);
+        assert_eq!(upscaling.label(&s).plain(), "Shader Upscaling: FSR 1.0");
+
+        upscaling.cycle(&mut s, false, [854, 480]);
+        assert_eq!(s.horizon.shader_upscaling, ShaderUpscaling::Cas);
+        assert_eq!(upscaling.label(&s).plain(), "Shader Upscaling: CAS");
+
+        upscaling.cycle(&mut s, false, [854, 480]);
+        assert_eq!(s.horizon.shader_upscaling, ShaderUpscaling::Off);
+        assert_eq!(upscaling.label(&s).plain(), "Shader Upscaling: Off");
+
+        upscaling.cycle(&mut s, false, [854, 480]);
+        assert_eq!(s.horizon.shader_upscaling, ShaderUpscaling::Fsr);
+
+        let sharpness = Item::Horizon(H::FsrSharpness);
+        assert_eq!(sharpness.label(&s).plain(), "FSR Sharpness: 20%");
+        assert_eq!(sharpness.slider(&s), Some(0.2));
+
+        sharpness.set_slider(&mut s, 0.8);
+        assert_eq!(s.horizon.fsr_sharpness, 0.8);
+        assert_eq!(sharpness.label(&s).plain(), "FSR Sharpness: 80%");
+        assert_eq!(sharpness.slider(&s), Some(0.8));
     }
 }

@@ -422,6 +422,8 @@ struct Targets {
     sizes: [[u32; 2]; BUFFERS],
     /// The attachment of passes that write only images.
     sink: wgpu::TextureView,
+    /// Intermediate target for final pass at `size` when upscaling to `window`.
+    final_out: (wgpu::Texture, wgpu::TextureView),
 }
 
 /// What a pack's gbuffers programs read and draw from the game's world.
@@ -604,6 +606,10 @@ pub struct PackPost {
     /// Shows colortex0 when the pack has no `final` (OQ-5).
     copy: (wgpu::RenderPipeline, wgpu::BindGroupLayout),
     uniforms: FrameUniforms,
+    screen: wgpu::TextureFormat,
+    fsr: super::fsr::FsrPipeline,
+    shader_upscaling: Option<crate::graphics::ShaderUpscaling>,
+    fsr_sharpness: Option<f32>,
 }
 
 /// The wgpu format of a pack format (6.7), the nearest one wgpu can render to.
@@ -1025,6 +1031,30 @@ fn shadow_every() -> u32 {
 
 /// Whether the next pack draws terrain's depth first (`set_prepass`).
 static PREPASS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Upscaling mode and sharpness for shader packs.
+static SHADER_UPSCALING: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(1); // 1 = Fsr, 0 = Off, 2 = Cas
+static FSR_SHARPNESS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0x3e4ccccd); // 0.2f32.to_bits()
+
+pub(super) fn set_shader_upscaling(upscaling: crate::graphics::ShaderUpscaling, sharpness: f32) {
+    let mode = match upscaling {
+        crate::graphics::ShaderUpscaling::Off => 0,
+        crate::graphics::ShaderUpscaling::Fsr => 1,
+        crate::graphics::ShaderUpscaling::Cas => 2,
+    };
+    SHADER_UPSCALING.store(mode, std::sync::atomic::Ordering::Relaxed);
+    FSR_SHARPNESS.store(sharpness.clamp(0.0, 1.0).to_bits(), std::sync::atomic::Ordering::Relaxed);
+}
+
+pub(super) fn global_shader_upscaling() -> (crate::graphics::ShaderUpscaling, f32) {
+    let mode = match SHADER_UPSCALING.load(std::sync::atomic::Ordering::Relaxed) {
+        0 => crate::graphics::ShaderUpscaling::Off,
+        2 => crate::graphics::ShaderUpscaling::Cas,
+        _ => crate::graphics::ShaderUpscaling::Fsr,
+    };
+    let sharpness = f32::from_bits(FSR_SHARPNESS.load(std::sync::atomic::Ordering::Relaxed));
+    (mode, sharpness)
+}
 
 /// The game's choice for the packs it loads from now on (`prepass_wanted`).
 pub(super) fn set_prepass(on: bool) {
@@ -2645,7 +2675,26 @@ impl PackPost {
                 u
             },
             shadow_cache: Default::default(),
+            screen,
+            fsr: super::fsr::FsrPipeline::new(device, screen),
+            shader_upscaling: None,
+            fsr_sharpness: None,
         }
+    }
+
+    /// Sets player's shader upscaling preferences for this pack.
+    pub fn set_upscaling(&mut self, mode: crate::graphics::ShaderUpscaling, sharpness: f32) {
+        self.shader_upscaling = Some(mode);
+        self.fsr_sharpness = Some(sharpness);
+    }
+
+    /// Returns the effective shader upscaling mode and sharpness for this pack.
+    pub fn upscaling(&self) -> (crate::graphics::ShaderUpscaling, f32) {
+        let (global_mode, global_sharpness) = global_shader_upscaling();
+        (
+            self.shader_upscaling.unwrap_or(global_mode),
+            self.fsr_sharpness.unwrap_or(global_sharpness),
+        )
     }
 
     /// Writes `pass`'s uniforms for a target of `out` pixels; its bind group for the buffers'
@@ -3738,6 +3787,13 @@ impl PackPost {
             wgpu::TextureUsages::RENDER_ATTACHMENT,
         )
         .create_view(&Default::default());
+        let final_texture = texture(
+            "final_out",
+            self.screen,
+            wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        );
+        let final_view = final_texture.create_view(&Default::default());
+        let final_out = (final_texture, final_view);
         self.targets = Some(Targets {
             size,
             sink,
@@ -3749,6 +3805,7 @@ impl PackPost {
             depth1,
             depth2,
             mips,
+            final_out,
         });
         self.forget_groups();
     }
@@ -4219,9 +4276,11 @@ impl PackPost {
             }
             self.mips_valid |= stale;
             let final_pass = pass.group == Group::Final;
+            let needs_upscale = final_pass && size != window;
             // A pass writing buffers of a size of their own draws at that size (they share it).
             let out = match pass.writes.first() {
-                _ if final_pass => window,
+                _ if final_pass && !needs_upscale => window,
+                _ if final_pass => size,
                 Some(&(_, b)) => self.targets.as_ref().map_or(size, |t| t.sizes[b]),
                 None => size,
             };
@@ -4243,7 +4302,11 @@ impl PackPost {
                 overwrite
             };
             if final_pass {
-                attachments.push(attach(screen, overwrite));
+                if needs_upscale {
+                    attachments.push(attach(&targets.final_out.1, overwrite));
+                } else {
+                    attachments.push(attach(screen, overwrite));
+                }
                 shown = true;
             } else if pass.sink {
                 attachments.push(attach(&targets.sink, ops));
@@ -4276,6 +4339,44 @@ impl PackPost {
                 }
                 rp.draw(0..6, 0..1);
             }
+            if needs_upscale {
+                let (upscaling, sharpness) = self.upscaling();
+                if upscaling != crate::graphics::ShaderUpscaling::Off {
+                    self.fsr.run(
+                        device,
+                        queue,
+                        encoder,
+                        &targets.final_out.1,
+                        screen,
+                        size,
+                        window,
+                        sharpness,
+                    );
+                } else {
+                    let copy_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                        label: Some("Shader pack final copy"),
+                        layout: &self.copy.1,
+                        entries: &[
+                            wgpu::BindGroupEntry {
+                                binding: 0,
+                                resource: wgpu::BindingResource::TextureView(&targets.final_out.1),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 2,
+                                resource: wgpu::BindingResource::Sampler(&self.linear),
+                            },
+                        ],
+                    });
+                    let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("Shader pack final copy"),
+                        color_attachments: &[attach(screen, overwrite)],
+                        ..Default::default()
+                    });
+                    rp.set_pipeline(&self.copy.0);
+                    rp.set_bind_group(0, &copy_group, &[]);
+                    rp.draw(0..3, 0..1);
+                }
+            }
             self.main ^= pass.flip;
             self.mips_valid &= !pass.written;
         }
@@ -4301,30 +4402,43 @@ impl PackPost {
                 .map(|t| &t[main(m, i) ^ usize::from(alt)])
         };
         if !shown {
-            let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("Shader pack colortex0"),
-                layout: &self.copy.1,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(
-                            view(self.main, 0, false).expect("colortex0"),
-                        ),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: wgpu::BindingResource::Sampler(&self.linear),
-                    },
-                ],
-            });
-            let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Shader pack colortex0"),
-                color_attachments: &[attach(screen, overwrite)],
-                ..Default::default()
-            });
-            rp.set_pipeline(&self.copy.0);
-            rp.set_bind_group(0, &group, &[]);
-            rp.draw(0..3, 0..1);
+            let colortex0 = view(self.main, 0, false).expect("colortex0");
+            let (upscaling, sharpness) = self.upscaling();
+            if size != window && upscaling != crate::graphics::ShaderUpscaling::Off {
+                self.fsr.run(
+                    device,
+                    queue,
+                    encoder,
+                    colortex0,
+                    screen,
+                    size,
+                    window,
+                    sharpness,
+                );
+            } else {
+                let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("Shader pack colortex0"),
+                    layout: &self.copy.1,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::TextureView(colortex0),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: wgpu::BindingResource::Sampler(&self.linear),
+                        },
+                    ],
+                });
+                let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Shader pack colortex0"),
+                    color_attachments: &[attach(screen, overwrite)],
+                    ..Default::default()
+                });
+                rp.set_pipeline(&self.copy.0);
+                rp.set_bind_group(0, &group, &[]);
+                rp.draw(0..3, 0..1);
+            }
         }
     }
 }

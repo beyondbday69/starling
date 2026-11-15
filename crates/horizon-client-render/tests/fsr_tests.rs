@@ -65,3 +65,26 @@ fn fsr_constants_layout_matches_spec() {
     }
     assert!(found_constants, "FsrConstants struct not found in module");
 }
+
+#[test]
+fn fsr_constants_rust_struct_layout() {
+    use horizon_client_render::gfx::fsr::FsrConstants;
+    use std::mem::{align_of, size_of};
+
+    assert_eq!(size_of::<FsrConstants>(), 24);
+    assert_eq!(align_of::<FsrConstants>(), 4);
+
+    let constants = FsrConstants {
+        src_size: [1280.0, 720.0],
+        dst_size: [1920.0, 1080.0],
+        sharpness: 0.2,
+        _pad: 0.0,
+    };
+
+    let bytes = bytemuck::bytes_of(&constants);
+    assert_eq!(bytes.len(), 24);
+
+    let decoded: FsrConstants = *bytemuck::from_bytes(bytes);
+    assert_eq!(decoded, constants);
+}
+

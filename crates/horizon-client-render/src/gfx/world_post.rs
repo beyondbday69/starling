@@ -546,11 +546,13 @@ impl Post {
     }
 
     /// A shader pack's `final` goes into the world's target, to go up with [`Self::finish_pack`].
+    #[allow(dead_code)]
     pub fn upscales_pack(&self) -> bool {
         self.sharp.is_some() && self.scale < 1.0
     }
 
     /// Draw a shader pack's `final`, made in the world's target, onto `screen`.
+    #[allow(dead_code)]
     pub fn finish_pack(
         &self,
         encoder: &mut wgpu::CommandEncoder,

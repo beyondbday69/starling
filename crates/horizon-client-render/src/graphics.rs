@@ -444,6 +444,44 @@ impl Upscaling {
     }
 }
 
+/// Upscaling algorithm for shader packs when rendering below window resolution.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum ShaderUpscaling {
+    Off,
+    #[default]
+    Fsr,
+    Cas,
+}
+impl ShaderUpscaling {
+    pub const ALL: [ShaderUpscaling; 3] = [
+        ShaderUpscaling::Off,
+        ShaderUpscaling::Fsr,
+        ShaderUpscaling::Cas,
+    ];
+    pub fn name(self) -> &'static str {
+        match self {
+            ShaderUpscaling::Off => "off",
+            ShaderUpscaling::Fsr => "fsr",
+            ShaderUpscaling::Cas => "cas",
+        }
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            ShaderUpscaling::Off => "Off",
+            ShaderUpscaling::Fsr => "FSR 1.0",
+            ShaderUpscaling::Cas => "CAS",
+        }
+    }
+    pub fn parse(s: &str) -> Self {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "off" => ShaderUpscaling::Off,
+            "fsr" | "fsr1" | "fsr1.0" => ShaderUpscaling::Fsr,
+            "cas" => ShaderUpscaling::Cas,
+            _ => ShaderUpscaling::default(),
+        }
+    }
+}
+
 static REDUCED_SUGGESTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 /// Whether the settings suggest Reduced far detail: set when the renderer
 /// starts, on the GPUs `lod_capped` names (far terrain slows them most).
@@ -649,6 +687,10 @@ pub struct Graphics {
     /// The picked `shaders/` pack's profile (`profile.<name>`): empty for
     /// `HORIZON_SHADER_PROFILE`'s, `default` for the pack's own defaults.
     pub shader_profile: String,
+    /// Upscaling algorithm for shader packs: FSR 1.0 (EASU + RCAS), CAS (sharpening only), or Off.
+    pub shader_upscaling: ShaderUpscaling,
+    /// AMD FSR 1.0 RCAS sharpness parameter (0.0 to 1.0; 0.2 default).
+    pub fsr_sharpness: f32,
 }
 /// The profile that fits the pack to the device (`game/shader_packs.rs`): a phone's until the
 /// player picks another.
@@ -741,6 +783,8 @@ impl Default for Graphics {
             translucent_batching: true,
             shader_pack: String::new(),
             shader_profile: String::new(),
+            shader_upscaling: ShaderUpscaling::Fsr,
+            fsr_sharpness: 0.2,
         }
     }
 }
@@ -897,6 +941,12 @@ impl Graphics {
                     g.shader_pack = value.to_owned()
                 }
                 "shadersProfile" => g.shader_profile = value.to_owned(),
+                "shaderUpscaling" => g.shader_upscaling = ShaderUpscaling::parse(value),
+                "fsrSharpness" => {
+                    if let Ok(v) = value.parse::<f32>() {
+                        g.fsr_sharpness = v.clamp(0.0, 1.0);
+                    }
+                }
                 "overlay" => {
                     g.overlay = match value {
                         "fps" => Overlay::Fps,
@@ -912,7 +962,7 @@ impl Graphics {
     }
     pub fn serialize(&self) -> String {
         let mut text = format!(
-            "preset:{}\nlodDistance:{}\nfarDetail:{}\ncaveCulling:{}\nentityCulling:{}\nleafCulling:{}\nblockEntityCacheShulkerBoxes:{}\nblockEntityCacheSigns:{}\nblockEntityCacheDecoratedPots:{}\nblockEntityCacheBells:{}\nblockEntityCacheChests:{}\nblockEntityCacheBanners:{}\nblockEntityCacheCopperGolemStatues:{}\nchunkUpdates:{}\nuploadBudgetKiB:{}\ntextureBudgetMiB:{}\nsky:{}\nfog:{}\nweather:{}\nanimatedTextures:{}\nditherCutoutMips:{}\npresentMode:{}\nframePacing:{}\nworkers:{}\noverlay:{}\nresolutionScale:{}\nfxaa:{}\ntaa:{}\nupscaling:{}\nscreenshotQuality:{}\nframeGeneration:{}\nhdr:{}\nhdrPaperWhite:{}\nhdrPeak:{}\nhdrBlackLevel:{}\nhdrUiBrightness:{}\nhdrKey:{}\nbatteryMode:{}\nshadowCache:{}\ngraphicsApi:{}\npickedShaderPack:{}\nshadersProfile:{}\nbatchTranslucent:{}\n",
+            "preset:{}\nlodDistance:{}\nfarDetail:{}\ncaveCulling:{}\nentityCulling:{}\nleafCulling:{}\nblockEntityCacheShulkerBoxes:{}\nblockEntityCacheSigns:{}\nblockEntityCacheDecoratedPots:{}\nblockEntityCacheBells:{}\nblockEntityCacheChests:{}\nblockEntityCacheBanners:{}\nblockEntityCacheCopperGolemStatues:{}\nchunkUpdates:{}\nuploadBudgetKiB:{}\ntextureBudgetMiB:{}\nsky:{}\nfog:{}\nweather:{}\nanimatedTextures:{}\nditherCutoutMips:{}\npresentMode:{}\nframePacing:{}\nworkers:{}\noverlay:{}\nresolutionScale:{}\nfxaa:{}\ntaa:{}\nupscaling:{}\nscreenshotQuality:{}\nframeGeneration:{}\nhdr:{}\nhdrPaperWhite:{}\nhdrPeak:{}\nhdrBlackLevel:{}\nhdrUiBrightness:{}\nhdrKey:{}\nbatteryMode:{}\nshadowCache:{}\ngraphicsApi:{}\npickedShaderPack:{}\nshadersProfile:{}\nbatchTranslucent:{}\nshaderUpscaling:{}\nfsrSharpness:{}\n",
             self.preset.name(),
             self.lod_distance,
             self.far_detail.name(),
@@ -964,9 +1014,14 @@ impl Graphics {
             self.shader_pack,
             self.shader_profile,
             bool_text(self.translucent_batching),
+            self.shader_upscaling.name(),
+            self.fsr_sharpness,
         );
         text += &self.blue_map.serialize();
         text
+    }
+    pub fn to_string(&self) -> String {
+        self.serialize()
     }
     /// Binds Horizon's graphics key `name` (`HDR_KEY`); false for another name.
     pub fn set_key(&mut self, name: &str, value: String) -> bool {
@@ -1033,6 +1088,12 @@ impl Graphics {
         } else {
             limit.min(30)
         }
+    }
+}
+
+impl std::fmt::Display for Graphics {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.serialize())
     }
 }
 
@@ -1219,8 +1280,11 @@ mod tests {
             translucent_batching: false,
             shader_pack: "Golden Hour".into(),
             shader_profile: "LOW".into(),
+            shader_upscaling: ShaderUpscaling::Cas,
+            fsr_sharpness: 0.8,
         };
         assert_eq!(Graphics::parse(&g.serialize()), g);
+        assert_eq!(Graphics::parse(&g.to_string()), g);
         for mode in EntityCullingMode::ALL {
             let graphics = Graphics {
                 entity_culling: mode,
@@ -1478,5 +1542,38 @@ mod tests {
         assert_eq!(g.battery_limit(260, false, true), 30);
         assert_eq!(g.battery_limit(260, true, false), 30);
         assert_eq!(g.battery_limit(10, true, false), 10);
+    }
+
+    #[test]
+    fn shader_upscaling_and_sharpness_round_trip() {
+        assert_eq!(Graphics::default().shader_upscaling, ShaderUpscaling::Fsr);
+        assert_eq!(Graphics::default().fsr_sharpness, 0.2);
+
+        for mode in ShaderUpscaling::ALL {
+            let g = Graphics {
+                shader_upscaling: mode,
+                fsr_sharpness: 0.5,
+                ..Graphics::default()
+            };
+            assert_eq!(Graphics::parse(&g.serialize()), g);
+            assert_eq!(Graphics::parse(&g.to_string()), g);
+        }
+
+        assert_eq!(
+            Graphics::parse("shaderUpscaling:off\n").shader_upscaling,
+            ShaderUpscaling::Off
+        );
+        assert_eq!(
+            Graphics::parse("shaderUpscaling:cas\n").shader_upscaling,
+            ShaderUpscaling::Cas
+        );
+        assert_eq!(
+            Graphics::parse("shaderUpscaling:fsr\n").shader_upscaling,
+            ShaderUpscaling::Fsr
+        );
+
+        assert_eq!(Graphics::parse("fsrSharpness:0.75\n").fsr_sharpness, 0.75);
+        assert_eq!(Graphics::parse("fsrSharpness:1.5\n").fsr_sharpness, 1.0);
+        assert_eq!(Graphics::parse("fsrSharpness:-0.5\n").fsr_sharpness, 0.0);
     }
 }
