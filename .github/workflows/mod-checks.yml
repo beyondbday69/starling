@@ -1,0 +1,51 @@
+name: mod-checks
+# ci.yml's `checks` cannot be dispatched on this fork (GitHub answers 422: Actions has been
+# disabled for this repository, for that workflow alone), and it only runs on android, starling
+# and integration. This is the same checks over the code the mod loader and the mixer touched:
+# formatting, clippy with warnings denied, and the tests of the crates that carry them.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'crates/horizon-mod-abi/**'
+      - 'crates/horizon-mod-loader/**'
+      - 'crates/horizon-mod-hello/**'
+      - 'crates/horizon-mod-soundphysics/**'
+      - 'crates/horizon-client-render/src/audio.rs'
+      - 'crates/horizon-client-render/src/sound_engine.rs'
+      - 'crates/horizon-client/src/game/mod_loader.rs'
+      - '.github/workflows/mod-checks.yml'
+permissions:
+  contents: read
+concurrency:
+  group: mod-checks-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal
+      # The client links ALSA and udev, as ci.yml installs for it.
+      - name: Install the ALSA and udev headers the client links against
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libudev-dev
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: mod-checks
+      - name: Formatting
+        run: cargo +stable fmt --all -- --check
+      - name: Clippy, warnings denied
+        run: |
+          cargo +stable clippy -p horizon-mod-abi -p horizon-mod-loader -p horizon-mod-hello \
+            -p horizon-mod-soundphysics --all-targets -- -D warnings
+          cargo +stable clippy -p horizon-client-render -p horizon-client --all-targets -- -D warnings
+      - name: The boundary, the loader and the mod
+        run: cargo +stable test -p horizon-mod-abi -p horizon-mod-loader -p horizon-mod-soundphysics
+      - name: The mixer
+        run: cargo +stable test -p horizon-client-render --lib audio
