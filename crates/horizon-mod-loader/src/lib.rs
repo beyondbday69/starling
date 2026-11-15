@@ -12,7 +12,10 @@
 //! process anyway (`RenderHooks` is a `OnceLock`), so unloading could only be safe for mods that
 //! never touch the frame, and those are not worth a different rule.
 
-use horizon_mod_abi::{ABI, ButtonSink, HostVTable, ModDesc, RayHitOut, StartedSound, guard};
+use horizon_mod_abi::{
+    ABI, ButtonSink, HostVTable, ItemInfo, ModDesc, PlayerInfo, RayHitOut, StartedSound,
+    WorldClock, guard,
+};
 
 #[cfg(target_os = "android")]
 mod android;
@@ -61,6 +64,54 @@ pub trait Host {
     fn set_sound(&mut self, _instance: u64, _gain: f32, _cutoff: f32, _send: f32) -> bool {
         false
     }
+    /// The player, in a world.
+    fn player(&self) -> Option<PlayerInfo> {
+        None
+    }
+    /// A slot of the player's: `(item id, its numbers)`; slot 0 is the held one.
+    fn item(&self, _slot: u32) -> Option<(String, ItemInfo)> {
+        None
+    }
+    /// The world's clock.
+    fn clock(&self) -> Option<WorldClock> {
+        None
+    }
+    /// A key by name: whether the game knows it, and whether it is held down.
+    fn key(&self, _name: &str) -> (bool, bool) {
+        (false, false)
+    }
+    /// Where mod `id` keeps files. Empty when the client offers nowhere.
+    fn data_dir(&self, _id: &str) -> String {
+        String::new()
+    }
+    /// One of mod `id`'s own files, read whole.
+    fn asset(&self, _id: &str, _name: &str) -> Option<Vec<u8>> {
+        None
+    }
+}
+
+/// Writes `text` into a mod's buffer with a NUL, and answers with the bytes written.
+unsafe fn write_text(text: &str, out: *mut c_char, len: usize) -> usize {
+    if out.is_null() || len == 0 {
+        return 0;
+    }
+    let bytes = text.as_bytes();
+    let take = bytes.len().min(len - 1);
+    // SAFETY: the mod passed a buffer of `len` bytes.
+    unsafe {
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), out.cast::<u8>(), take);
+        *out.add(take) = 0;
+    }
+    take
+}
+
+/// A mod's string argument, or "" when it passed nothing usable.
+unsafe fn text_argument(p: *const c_char) -> String {
+    if p.is_null() {
+        return String::new();
+    }
+    // SAFETY: the mod passed a NUL-terminated string for this call.
+    unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned()
 }
 
 /// A sound that started, for a mod that shapes how loud it plays.
@@ -338,6 +389,12 @@ fn table() -> *const HostVTable {
         raycast: host_raycast,
         sounds_started: host_sounds_started,
         set_sound: host_set_sound,
+        player: host_player,
+        item: host_item,
+        clock: host_clock,
+        key: host_key,
+        data_dir: host_data_dir,
+        asset: host_asset,
     }) as *const HostVTable
 }
 
@@ -526,6 +583,84 @@ unsafe extern "C" fn host_set_sound(instance: u64, gain: f32, cutoff: f32, send:
         return 0;
     };
     host.set_sound(instance, gain, cutoff, send) as u8
+}
+
+unsafe extern "C" fn host_player(out: *mut PlayerInfo) -> u8 {
+    let Some(host) = calling() else {
+        return 0;
+    };
+    let Some(player) = host.player() else {
+        return 0;
+    };
+    if !out.is_null() {
+        // SAFETY: the mod passed a buffer for one player.
+        unsafe { *out = player };
+    }
+    1
+}
+
+unsafe extern "C" fn host_item(slot: u32, out: *mut c_char, len: usize, info: *mut ItemInfo) -> u8 {
+    let Some(host) = calling() else {
+        return 0;
+    };
+    let Some((id, numbers)) = host.item(slot) else {
+        return 0;
+    };
+    // SAFETY: both are the mod's own buffers, sized for what it asked for.
+    unsafe {
+        write_text(&id, out, len);
+        if !info.is_null() {
+            *info = numbers;
+        }
+    }
+    1
+}
+
+unsafe extern "C" fn host_clock(out: *mut WorldClock) -> u8 {
+    let Some(host) = calling() else {
+        return 0;
+    };
+    let Some(clock) = host.clock() else {
+        return 0;
+    };
+    if !out.is_null() {
+        // SAFETY: the mod passed a buffer for one clock.
+        unsafe { *out = clock };
+    }
+    1
+}
+
+unsafe extern "C" fn host_key(name: *const c_char) -> u32 {
+    let Some(host) = calling() else {
+        return 0;
+    };
+    let (known, down) = host.key(&unsafe { text_argument(name) });
+    u32::from(known) | (u32::from(down) << 1)
+}
+
+unsafe extern "C" fn host_data_dir(out: *mut c_char, len: usize) -> usize {
+    let Some(host) = calling() else {
+        return 0;
+    };
+    // SAFETY: the mod passed a buffer of `len` bytes.
+    unsafe { write_text(&host.data_dir(&calling_id()), out, len) }
+}
+
+unsafe extern "C" fn host_asset(name: *const c_char, out: *mut c_char, len: usize) -> isize {
+    let Some(host) = calling() else {
+        return 0;
+    };
+    let Some(bytes) = host.asset(&calling_id(), &unsafe { text_argument(name) }) else {
+        return -1;
+    };
+    if bytes.len() > len {
+        return -1;
+    }
+    if !out.is_null() && !bytes.is_empty() {
+        // SAFETY: the mod passed a buffer it said is `len` bytes long, and this fits.
+        unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), out.cast::<u8>(), bytes.len()) };
+    }
+    bytes.len() as isize
 }
 
 /// A row a mod asked for, pushed into the sink the client passed.
@@ -721,6 +856,55 @@ mod tests {
             instance == 7 && gain < 1.0 && cutoff < 1.0 && send < 1.0
         }
 
+        fn player(&self) -> Option<PlayerInfo> {
+            Some(PlayerInfo {
+                x: 1.5,
+                y: 64.0,
+                z: -2.5,
+                vx: 0.1,
+                vy: 0.0,
+                vz: -0.1,
+                yaw: 90.0,
+                pitch: 10.0,
+                health: 17.0,
+                mode: 1,
+                flags: 0b1010,
+            })
+        }
+
+        fn item(&self, slot: u32) -> Option<(String, ItemInfo)> {
+            (slot == 0).then(|| {
+                (
+                    "minecraft:diamond_sword".to_owned(),
+                    ItemInfo {
+                        count: 1,
+                        damage: 12,
+                        max_damage: 1561,
+                        flags: 2,
+                    },
+                )
+            })
+        }
+
+        fn clock(&self) -> Option<WorldClock> {
+            Some(WorldClock {
+                game_time: 400,
+                day_time: 6000,
+            })
+        }
+
+        fn key(&self, name: &str) -> (bool, bool) {
+            (name == "key.attack", name == "key.attack")
+        }
+
+        fn data_dir(&self, id: &str) -> String {
+            format!("/mods/{id}")
+        }
+
+        fn asset(&self, _id: &str, name: &str) -> Option<Vec<u8>> {
+            (name == "hello.txt").then(|| b"hi".to_vec())
+        }
+
         fn log(&self, _level: u32, _text: &str) {}
 
         fn setting(&self, id: &str, key: &str) -> Option<String> {
@@ -836,6 +1020,57 @@ mod tests {
         assert_eq!(started.0, 1);
         assert_eq!(started.1.0, "minecraft:block.stone.break");
         assert_eq!(started.1.1, Some([4.0, 5.0, 6.0]));
+    }
+
+    #[test]
+    fn the_player_and_their_body_cross_the_boundary() {
+        let mut host = Recorder::default();
+        let (player, item, clock, key, dir, asset) = with_host(&mut host, "world", || unsafe {
+            let mut player = PlayerInfo::default();
+            let has_player = host_player(&mut player) == 1;
+            let mut name = [0 as c_char; horizon_mod_abi::TEXT];
+            let mut info = ItemInfo::default();
+            let has_item = host_item(0, name.as_mut_ptr(), name.len(), &mut info) == 1;
+            let held = CStr::from_ptr(name.as_ptr()).to_string_lossy().into_owned();
+            let mut clock = WorldClock::default();
+            let has_clock = host_clock(&mut clock) == 1;
+            let mut dir = [0 as c_char; horizon_mod_abi::TEXT];
+            let dir_len = host_data_dir(dir.as_mut_ptr(), dir.len());
+            let mut file = [0 as c_char; 8];
+            let read = host_asset(c"hello.txt".as_ptr(), file.as_mut_ptr(), file.len());
+            let missing = host_asset(c"nope.txt".as_ptr(), file.as_mut_ptr(), file.len());
+            (
+                (has_player, player),
+                (has_item, held, info),
+                (has_clock, clock),
+                host_key(c"key.attack".as_ptr()),
+                CStr::from_ptr(dir.as_ptr()).to_string_lossy().into_owned(),
+                (
+                    read,
+                    if read >= 0 {
+                        String::from_utf8_lossy(&file.map(|c| c as u8)[..read as usize])
+                            .into_owned()
+                    } else {
+                        String::new()
+                    },
+                    missing,
+                    std::ptr::addr_of!(dir_len).read(),
+                ),
+            )
+        })
+        .unwrap()
+        .unwrap();
+        assert!(player.0);
+        assert_eq!(player.1.y, 64.0);
+        assert!(player.1.on_ground() && player.1.sneaking() && !player.1.in_water());
+        assert!(item.0);
+        assert_eq!(item.1, "minecraft:diamond_sword");
+        assert_eq!(item.2.max_damage, 1561);
+        assert_eq!(clock.1.day_time, 6000);
+        assert_eq!(key, 3);
+        assert_eq!(dir, "/mods/world");
+        assert_eq!(asset.1, "hi");
+        assert_eq!(asset.2, -1);
     }
 
     #[test]

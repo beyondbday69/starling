@@ -9,6 +9,7 @@
 
 use super::Game;
 use horizon_client::mod_api::NativeMod;
+use horizon_mod_abi::{ItemInfo, PlayerInfo, WorldClock};
 use horizon_mod_loader::{self as loader, Host, ModInfo};
 
 /// The folders a player drops a mod's library in: the one a `.hnmod` goes in, and the content
@@ -19,6 +20,16 @@ fn folders() -> Vec<std::path::PathBuf> {
         game.join(horizon_client::mod_list::NATIVE_DIR),
         game.join(horizon_client::mod_list::DIR),
     ]
+}
+
+/// `GameMode` as the boundary's own number.
+fn mode_number(mode: &horizon_client::command::args::GameMode) -> u32 {
+    match mode {
+        horizon_client::command::args::GameMode::Survival => 0,
+        horizon_client::command::args::GameMode::Creative => 1,
+        horizon_client::command::args::GameMode::Adventure => 2,
+        horizon_client::command::args::GameMode::Spectator => 3,
+    }
 }
 
 /// How tall a standing player's eyes are, in blocks.
@@ -116,6 +127,91 @@ impl Host for GameHost<'_, '_> {
 
     fn is_water(&self, pos: [i32; 3]) -> bool {
         self.game.native_player().is_some() && self.game.native_block(pos) == "minecraft:water"
+    }
+
+    fn player(&self) -> Option<PlayerInfo> {
+        let player = self.game.native_player()?;
+        let entity = self.game.player.as_ref()?;
+        let feet = [
+            player.x.floor() as i32,
+            player.y.floor() as i32,
+            player.z.floor() as i32,
+        ];
+        let water = self.game.native_block(feet) == "minecraft:water";
+        let held = |name: &str| {
+            self.game.keys.contains(
+                &crate::keybinds::key_code(name).unwrap_or(winit::keyboard::KeyCode::KeyW),
+            )
+        };
+        Some(PlayerInfo {
+            x: player.x,
+            y: player.y,
+            z: player.z,
+            vx: entity.velocity.x,
+            vy: entity.velocity.y,
+            vz: entity.velocity.z,
+            yaw: player.yaw,
+            pitch: player.pitch,
+            health: entity.health.health(),
+            mode: mode_number(&self.game.mode),
+            flags: u32::from(water)
+                | (u32::from(held("key.sprint")) << 2)
+                | (u32::from(held("key.sneak")) << 3),
+        })
+    }
+
+    fn item(&self, slot: u32) -> Option<(String, ItemInfo)> {
+        let stack = match slot {
+            0 => self
+                .game
+                .inventory
+                .get(self.game.selected)
+                .and_then(|s| s.as_ref()),
+            1 => self.game.offhand.as_ref(),
+            // The armor slots the client keeps, then the rest of the inventory.
+            n => self.game.inventory.get(n as usize).and_then(|s| s.as_ref()),
+        }?;
+        Some((
+            stack.item.to_string(),
+            ItemInfo {
+                count: stack.count,
+                damage: stack.damage,
+                max_damage: 0,
+                flags: u32::from(stack.damage > 0),
+            },
+        ))
+    }
+
+    fn clock(&self) -> Option<WorldClock> {
+        let clock = self.game.native_clock()?;
+        Some(WorldClock {
+            game_time: clock.game_time,
+            day_time: clock.day_time,
+        })
+    }
+
+    fn key(&self, name: &str) -> (bool, bool) {
+        let name = if name.starts_with("key.") {
+            name.to_owned()
+        } else {
+            format!("key.{name}")
+        };
+        let Some(code) = crate::keybinds::key_code(&name) else {
+            return (false, false);
+        };
+        (true, self.game.keys.contains(&code))
+    }
+
+    fn data_dir(&self, id: &str) -> String {
+        self.game.native_data_dir(id).display().to_string()
+    }
+
+    fn asset(&self, id: &str, name: &str) -> Option<Vec<u8>> {
+        // A mod's files sit beside its settings, and a name never leaves the folder.
+        if name.is_empty() || name.contains("..") || name.starts_with('/') {
+            return None;
+        }
+        std::fs::read(self.game.native_data_dir(id).join("assets").join(name)).ok()
     }
 
     fn sounds_started(&mut self) -> Vec<loader::StartedInfo> {

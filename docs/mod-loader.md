@@ -191,3 +191,26 @@ same behaviour as their injected builds, on the same commit.
 It does not compile Rust on the phone. `rustc` has no Android host target; the client will
 never build a mod. What it removes is the need to: a mod is compiled once by whoever wrote
 it, and every player after that only downloads a file.
+
+## The boundary, as it stands (ABI 4)
+
+A mod asks the client for, in this order:
+
+| Call | What it answers |
+|---|---|
+| `log`, `setting`, `set_setting` | its log line, its own settings |
+| `listener` | the eye the world is heard from |
+| `block_name`, `face_is_sturdy`, `is_water`, `raycast` | the world itself |
+| `sounds_started`, `set_sound(gain, cutoff, send)` | the sounds that just began, and how they sound |
+| `player` | position, velocity, rotation, health, mode, water/ground/sprint/sneak |
+| `item` | a slot: held, off hand, armour, inventory |
+| `clock` | game time and time of day |
+| `key` | whether a named key is known and held down |
+| `data_dir`, `asset` | where the mod keeps files, and reading one back |
+
+Calls are only ever added at the end of the table, and `ABI` is bumped whenever one is, so a mod
+built against an older table is refused by name ("built for abi 3 and this client speaks abi 4")
+rather than called through the wrong slot.
+
+**Frozen from here.** Anything a mod needs that is not on this list (HUD text and images, drawing)
+waits for a render boundary of its own, because a bad renderer can take the frame loop with it.

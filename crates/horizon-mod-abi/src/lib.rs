@@ -12,7 +12,7 @@ use std::ffi::{CStr, c_char, c_void};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 /// The version of this boundary. A mod is refused when it disagrees.
-pub const ABI: u32 = 3;
+pub const ABI: u32 = 4;
 
 /// The symbol a mod exports.
 pub const ENTRY: &str = "horizon_mod_entry";
@@ -57,6 +57,82 @@ pub struct HostVTable {
     /// (`0..1`, 1 open), `send` feeds the client's reverb (`0..1`). False when the sound has
     /// already finished.
     pub set_sound: unsafe extern "C" fn(instance: u64, gain: f32, cutoff: f32, send: f32) -> u8,
+    /// The player, in a world. False on the title screen.
+    pub player: unsafe extern "C" fn(out: *mut PlayerInfo) -> u8,
+    /// A slot of the player's: `0` the held one, `1` the off hand, `2..=5` armor feet to head,
+    /// `6..=41` the rest of the inventory. Writes the item's id into `out` (with a NUL) and its
+    /// numbers into `info`. False when the slot is empty.
+    pub item:
+        unsafe extern "C" fn(slot: u32, out: *mut c_char, len: usize, info: *mut ItemInfo) -> u8,
+    /// The world's clock. False on the title screen.
+    pub clock: unsafe extern "C" fn(out: *mut WorldClock) -> u8,
+    /// A key by name (`attack`, `use`, `forward`, `jump`, `sneak`, `sprint`, `inventory`, ...):
+    /// bit 0 says the game knows it, bit 1 that it is held down right now.
+    pub key: unsafe extern "C" fn(name: *const c_char) -> u32,
+    /// Where this mod may keep files: written into `out` (with a NUL), never longer than `len`.
+    /// Returns the bytes written, as every text call here does.
+    pub data_dir: unsafe extern "C" fn(out: *mut c_char, len: usize) -> usize,
+    /// One of this mod's own files, beside its settings (`assets/<name>`): read into `out`.
+    /// Returns the bytes written, or -1 when there is no such file or it does not fit.
+    pub asset: unsafe extern "C" fn(name: *const c_char, out: *mut c_char, len: usize) -> isize,
+}
+
+/// The player, as a mod sees them.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PlayerInfo {
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
+    /// Blocks a tick, as the client last sent it.
+    pub vx: f64,
+    pub vy: f64,
+    pub vz: f64,
+    pub yaw: f32,
+    pub pitch: f32,
+    pub health: f32,
+    /// `0` survival, `1` creative, `2` adventure, `3` spectator.
+    pub mode: u32,
+    /// Bit 0 in water, 1 on ground, 2 sprinting, 3 sneaking.
+    pub flags: u32,
+}
+
+impl PlayerInfo {
+    pub fn in_water(&self) -> bool {
+        self.flags & 1 != 0
+    }
+    pub fn on_ground(&self) -> bool {
+        self.flags & 2 != 0
+    }
+    pub fn sprinting(&self) -> bool {
+        self.flags & 4 != 0
+    }
+    pub fn sneaking(&self) -> bool {
+        self.flags & 8 != 0
+    }
+}
+
+/// One item, without its id (that arrives in the buffer beside it).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ItemInfo {
+    pub count: u32,
+    /// Damage taken, in the item's own units.
+    pub damage: u32,
+    /// How much it takes before it breaks; 0 when the item does not wear out.
+    pub max_damage: u32,
+    /// Bit 0 enchanted, 1 damaged at all.
+    pub flags: u32,
+}
+
+/// The world's time, as a client reads it.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct WorldClock {
+    /// Ticks since the world was made.
+    pub game_time: i64,
+    /// 0 at sunrise, 24000 to a day; it keeps counting past 24000.
+    pub day_time: i64,
 }
 
 /// Where a ray met a block, in the mod's own coordinates.
@@ -181,7 +257,7 @@ mod tests {
         let pointer = std::mem::size_of::<*const ()>();
         // Two `u32`s, then ten function pointers. The calls only ever grow at the end, so a mod
         // built against an older ABI still reads the first ones correctly.
-        assert_eq!(std::mem::size_of::<HostVTable>(), 8 + 10 * pointer);
+        assert_eq!(std::mem::size_of::<HostVTable>(), 8 + 16 * pointer);
         assert_eq!(std::mem::size_of::<ButtonSink>(), 2 * pointer);
         assert_eq!(std::mem::offset_of!(HostVTable, abi), 0);
         assert_eq!(
@@ -189,6 +265,7 @@ mod tests {
             8 + 2 * pointer
         );
         assert_eq!(std::mem::offset_of!(HostVTable, listener), 8 + 3 * pointer);
+        assert_eq!(std::mem::offset_of!(HostVTable, player), 8 + 10 * pointer);
         assert_eq!(std::mem::offset_of!(ModDesc, abi), 0);
     }
 }
