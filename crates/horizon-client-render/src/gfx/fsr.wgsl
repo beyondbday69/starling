@@ -40,16 +40,14 @@ fn fsr_luma(color: vec3<f32>) -> f32 {
 fn fetch_src(coord: vec2<i32>) -> vec4<f32> {
     let max_coord = vec2<i32>(constants.src_size) - vec2<i32>(1, 1);
     let clamped = clamp(coord, vec2<i32>(0, 0), max(max_coord, vec2<i32>(0, 0)));
-    let uv = (vec2<f32>(clamped) + vec2<f32>(0.5, 0.5)) / constants.src_size;
-    return textureSampleLevel(input_texture, input_sampler, uv, 0.0);
+    return textureLoad(input_texture, clamped, 0);
 }
 
 /// Fetches an intermediate texel at integer coordinates for RCAS, clamping within [0, dst_size - 1].
 fn fetch_rcas(coord: vec2<i32>) -> vec4<f32> {
     let max_coord = vec2<i32>(constants.dst_size) - vec2<i32>(1, 1);
     let clamped = clamp(coord, vec2<i32>(0, 0), max(max_coord, vec2<i32>(0, 0)));
-    let uv = (vec2<f32>(clamped) + vec2<f32>(0.5, 0.5)) / constants.dst_size;
-    return textureSampleLevel(input_texture, input_sampler, uv, 0.0);
+    return textureLoad(input_texture, clamped, 0);
 }
 
 /// Evaluates a 2-lobed Lanczos-like reconstruction filter weight for a given tap offset.
