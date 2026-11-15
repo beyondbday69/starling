@@ -89,7 +89,6 @@ struct Reverb {
     rate: u32,
     combs: [Vec<f32>; 4],
     comb_at: [usize; 4],
-    comb_out: [f32; 4],
     /// Each comb's damping memory: the low-pass inside the feedback loop.
     damp: [f32; 4],
     allpass: [Vec<f32>; 2],
@@ -113,7 +112,6 @@ impl Reverb {
             rate,
             combs: COMB_DELAY.map(|d| vec![0.0; scale(d)]),
             comb_at: [0; 4],
-            comb_out: [0.0; 4],
             damp: [0.0; 4],
             allpass: ALLPASS_DELAY.map(|d| vec![0.0; scale(d)]),
             allpass_at: [0; 2],
