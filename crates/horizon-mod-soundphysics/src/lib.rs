@@ -393,3 +393,5 @@ pub unsafe extern "C" fn horizon_mod_entry(host: *const HostVTable) -> *const Mo
     HOST.store(host.cast_mut(), Ordering::Relaxed);
     &DESC
 }
+
+// The mixer answers through the client: this file only decides what to ask for.
