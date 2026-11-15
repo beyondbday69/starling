@@ -4278,7 +4278,7 @@ impl PackPost {
             let final_pass = pass.group == Group::Final;
             let (upscaling, sharpness) = self.upscaling();
             let upscaling_on = upscaling != crate::graphics::ShaderUpscaling::Off;
-            let needs_upscale = final_pass && (size != window || (upscaling_on && sharpness > 0.0));
+            let needs_upscale = final_pass && upscaling_on && (size != window || sharpness > 0.0);
             // A pass writing buffers of a size of their own draws at that size (they share it).
             let out = match pass.writes.first() {
                 _ if final_pass && !needs_upscale => window,
@@ -4343,42 +4343,17 @@ impl PackPost {
             }
             if needs_upscale {
                 if size != window {
-                    if upscaling_on {
-                        self.fsr.run(
-                            device,
-                            queue,
-                            encoder,
-                            &targets.final_out.1,
-                            screen,
-                            size,
-                            window,
-                            sharpness,
-                        );
-                    } else {
-                        let copy_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                            label: Some("Shader pack final copy"),
-                            layout: &self.copy.1,
-                            entries: &[
-                                wgpu::BindGroupEntry {
-                                    binding: 0,
-                                    resource: wgpu::BindingResource::TextureView(&targets.final_out.1),
-                                },
-                                wgpu::BindGroupEntry {
-                                    binding: 2,
-                                    resource: wgpu::BindingResource::Sampler(&self.linear),
-                                },
-                            ],
-                        });
-                        let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                            label: Some("Shader pack final copy"),
-                            color_attachments: &[attach(screen, overwrite)],
-                            ..Default::default()
-                        });
-                        rp.set_pipeline(&self.copy.0);
-                        rp.set_bind_group(0, &copy_group, &[]);
-                        rp.draw(0..3, 0..1);
-                    }
-                } else if upscaling_on && sharpness > 0.0 {
+                    self.fsr.run(
+                        device,
+                        queue,
+                        encoder,
+                        &targets.final_out.1,
+                        screen,
+                        size,
+                        window,
+                        sharpness,
+                    );
+                } else if sharpness > 0.0 {
                     self.fsr.run_rcas(
                         device,
                         queue,
@@ -4418,42 +4393,17 @@ impl PackPost {
             let colortex0 = view(self.main, 0, false).expect("colortex0");
             let (upscaling, sharpness) = self.upscaling();
             let upscaling_on = upscaling != crate::graphics::ShaderUpscaling::Off;
-            if size != window {
-                if upscaling_on {
-                    self.fsr.run(
-                        device,
-                        queue,
-                        encoder,
-                        colortex0,
-                        screen,
-                        size,
-                        window,
-                        sharpness,
-                    );
-                } else {
-                    let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                        label: Some("Shader pack colortex0"),
-                        layout: &self.copy.1,
-                        entries: &[
-                            wgpu::BindGroupEntry {
-                                binding: 0,
-                                resource: wgpu::BindingResource::TextureView(colortex0),
-                            },
-                            wgpu::BindGroupEntry {
-                                binding: 2,
-                                resource: wgpu::BindingResource::Sampler(&self.linear),
-                            },
-                        ],
-                    });
-                    let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                        label: Some("Shader pack colortex0"),
-                        color_attachments: &[attach(screen, overwrite)],
-                        ..Default::default()
-                    });
-                    rp.set_pipeline(&self.copy.0);
-                    rp.set_bind_group(0, &group, &[]);
-                    rp.draw(0..3, 0..1);
-                }
+            if upscaling_on && size != window {
+                self.fsr.run(
+                    device,
+                    queue,
+                    encoder,
+                    colortex0,
+                    screen,
+                    size,
+                    window,
+                    sharpness,
+                );
             } else if upscaling_on && sharpness > 0.0 {
                 self.fsr.run_rcas(
                     device,

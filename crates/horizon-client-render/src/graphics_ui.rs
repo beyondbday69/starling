@@ -338,21 +338,6 @@ pub fn rows() -> Vec<(Page, Vec<(&'static str, Vec<Setting>)>)> {
                         ),
                     ],
                 ),
-                (
-                    "Shader settings",
-                    vec![
-                        h(
-                            H::ShaderUpscaling,
-                            High,
-                            "Upscales shader packs with FSR 1.0; sharpens with RCAS.",
-                        ),
-                        h(
-                            H::FsrSharpness,
-                            None,
-                            "Sharpness of FSR 1.0 RCAS filter (0% smooth, 100% sharp).",
-                        ),
-                    ],
-                ),
             ],
         ),
         (
@@ -455,6 +440,21 @@ pub fn rows() -> Vec<(Page, Vec<(&'static str, Vec<Setting>)>)> {
                         None,
                         "60 FPS cap (30 in menus or unfocused), half the workers: less power.",
                     )],
+                ),
+                (
+                    "Shader upscaling",
+                    vec![
+                        h(
+                            H::ShaderUpscaling,
+                            Saves,
+                            "Upscales shader packs with FSR 1.0; sharpens with RCAS.",
+                        ),
+                        h(
+                            H::FsrSharpness,
+                            None,
+                            "Sharpness of FSR 1.0 RCAS filter (0% smooth, 100% sharp).",
+                        ),
+                    ],
                 ),
             ],
         ),
