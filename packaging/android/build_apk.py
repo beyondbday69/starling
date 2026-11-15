@@ -280,8 +280,8 @@ def sign(build_tools, aligned, apk, out):
         keystore = HERE / "starling-release.keystore"
         if not alias or alias == "horizon-debug":
             alias = "starling"
-        env["HORIZON_ANDROID_STORE_PASSWORD"] = env.get("HORIZON_ANDROID_STORE_PASSWORD", "android")
-        env["HORIZON_ANDROID_KEY_PASSWORD"] = env.get("HORIZON_ANDROID_KEY_PASSWORD", "android")
+        env["HORIZON_ANDROID_STORE_PASSWORD"] = env.get("HORIZON_ANDROID_STORE_PASSWORD") or "android"
+        env["HORIZON_ANDROID_KEY_PASSWORD"] = env.get("HORIZON_ANDROID_KEY_PASSWORD") or "android"
         if not keystore.exists():
             run(
                 "keytool", "-genkeypair", "-keystore", keystore, "-storepass", "android",
@@ -290,6 +290,8 @@ def sign(build_tools, aligned, apk, out):
             )
     else:
         alias = alias or "starling"
+        env["HORIZON_ANDROID_STORE_PASSWORD"] = env.get("HORIZON_ANDROID_STORE_PASSWORD") or "android"
+        env["HORIZON_ANDROID_KEY_PASSWORD"] = env.get("HORIZON_ANDROID_KEY_PASSWORD") or "android"
     apksigner = tool(build_tools, "apksigner")
     run(
         apksigner, "sign", "--ks", keystore, "--ks-key-alias", alias,
