@@ -43,6 +43,12 @@ struct Full {
 }
 
 @vertex
+fn vs_direct(@builtin(vertex_index) i: u32) -> Full {
+    let uv = vec2<f32>(f32((i << 1u) & 2u), f32(i & 2u));
+    return Full(vec4<f32>(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, 0.0, 1.0), uv);
+}
+
+@vertex
 fn vs_uv(@builtin(vertex_index) i: u32) -> Full {
     let uv = vec2<f32>(f32((i << 1u) & 2u), f32(i & 2u));
     // Screen top (uv.y = 0 in wgpu) shows the buffer's top row, GL's last.

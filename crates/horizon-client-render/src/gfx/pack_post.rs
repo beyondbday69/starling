@@ -605,6 +605,8 @@ pub struct PackPost {
     blit_group: Option<([u32; 2], wgpu::BindGroup)>,
     /// Shows colortex0 when the pack has no `final` (OQ-5).
     copy: (wgpu::RenderPipeline, wgpu::BindGroupLayout),
+    /// Un-flipped copy for final_out to screen.
+    copy_direct: (wgpu::RenderPipeline, wgpu::BindGroupLayout),
     uniforms: FrameUniforms,
     screen: wgpu::TextureFormat,
     fsr: super::fsr::FsrPipeline,
@@ -2483,6 +2485,20 @@ impl PackPost {
             &[target(screen)],
             None,
         );
+        let copy_direct = helper(
+            device,
+            "vs_direct",
+            "fs_copy",
+            &[
+                texture_entry(0, float),
+                entry(
+                    2,
+                    wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                ),
+            ],
+            &[target(screen)],
+            None,
+        );
         let filterable = |b: usize| {
             formats[b].sample_type(None, Some(device.features()))
                 == Some(wgpu::TextureSampleType::Float { filterable: true })
@@ -2668,6 +2684,7 @@ impl PackPost {
             nearest_repeat: sampler(device, wgpu::FilterMode::Nearest, wgpu::AddressMode::Repeat),
             blit,
             copy,
+            copy_direct,
             shadow_every: shadow_every(),
             shadow_wait: 0,
             uniforms: {
@@ -4348,7 +4365,7 @@ impl PackPost {
                 if upscaling == crate::graphics::ShaderUpscaling::Integer {
                     let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
                         label: Some("Shader pack final_out integer"),
-                        layout: &self.copy.1,
+                        layout: &self.copy_direct.1,
                         entries: &[
                             wgpu::BindGroupEntry {
                                 binding: 0,
@@ -4389,7 +4406,7 @@ impl PackPost {
                         0.0,
                         1.0,
                     );
-                    rp.set_pipeline(&self.copy.0);
+                    rp.set_pipeline(&self.copy_direct.0);
                     rp.set_bind_group(0, &group, &[]);
                     rp.draw(0..3, 0..1);
                 } else if size != window {
