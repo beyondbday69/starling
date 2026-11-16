@@ -4360,11 +4360,35 @@ impl PackPost {
                             },
                         ],
                     });
+                    let scale_x = window[0] / size[0];
+                    let scale_y = window[1] / size[1];
+                    let factor = (scale_x.min(scale_y)).max(1);
+                    let target_w = size[0] * factor;
+                    let target_h = size[1] * factor;
+                    let offset_x = (window[0].saturating_sub(target_w)) / 2;
+                    let offset_y = (window[1].saturating_sub(target_h)) / 2;
+
                     let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                         label: Some("Shader pack final_out integer"),
-                        color_attachments: &[attach(screen, overwrite)],
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view: screen,
+                            resolve_target: None,
+                            depth_slice: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                                store: wgpu::StoreOp::Store,
+                            },
+                        })],
                         ..Default::default()
                     });
+                    rp.set_viewport(
+                        offset_x as f32,
+                        offset_y as f32,
+                        target_w as f32,
+                        target_h as f32,
+                        0.0,
+                        1.0,
+                    );
                     rp.set_pipeline(&self.copy.0);
                     rp.set_bind_group(0, &group, &[]);
                     rp.draw(0..3, 0..1);
@@ -4433,11 +4457,35 @@ impl PackPost {
                         },
                     ],
                 });
+                let scale_x = window[0] / size[0];
+                let scale_y = window[1] / size[1];
+                let factor = (scale_x.min(scale_y)).max(1);
+                let target_w = size[0] * factor;
+                let target_h = size[1] * factor;
+                let offset_x = (window[0].saturating_sub(target_w)) / 2;
+                let offset_y = (window[1].saturating_sub(target_h)) / 2;
+
                 let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("Shader pack colortex0 integer"),
-                    color_attachments: &[attach(screen, overwrite)],
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: screen,
+                        resolve_target: None,
+                        depth_slice: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
                     ..Default::default()
                 });
+                rp.set_viewport(
+                    offset_x as f32,
+                    offset_y as f32,
+                    target_w as f32,
+                    target_h as f32,
+                    0.0,
+                    1.0,
+                );
                 rp.set_pipeline(&self.copy.0);
                 rp.set_bind_group(0, &group, &[]);
                 rp.draw(0..3, 0..1);
