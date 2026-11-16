@@ -1760,6 +1760,7 @@ pub enum Page {
     Graphics,
     GraphicsAdvanced,
     GraphicsHdr,
+    GraphicsShaders,
     /// HDR calibration, full screen (`calibration`).
     HdrCalibration,
     /// Horizon's controller settings and button binds.
@@ -2427,6 +2428,7 @@ fn horizon_page_tooltip(page: Page) -> Option<&'static str> {
         Page::Horizon => "horizon.pages.settings.tooltip",
         Page::Graphics => "horizon.pages.graphics.tooltip",
         Page::GraphicsAdvanced => "horizon.pages.graphics_advanced.tooltip",
+        Page::GraphicsShaders => "horizon.pages.shader_packs.tooltip",
         Page::Controller => "horizon.pages.controller.tooltip",
         Page::Extras => "horizon.pages.extras.tooltip",
         Page::Agent => "horizon.pages.agent.tooltip",
@@ -3053,7 +3055,10 @@ impl OptionsUi {
                     .pack_screen
                     .as_ref()
                     .is_some_and(|p| p.search_focused()),
-                Page::Graphics | Page::GraphicsAdvanced | Page::GraphicsHdr => {
+                Page::Graphics
+                | Page::GraphicsAdvanced
+                | Page::GraphicsHdr
+                | Page::GraphicsShaders => {
                     self.graphics.typing()
                 }
                 _ => self.settings_search_active(),
@@ -3185,12 +3190,26 @@ impl OptionsUi {
         for action in actions {
             match action {
                 Action::ButtonClick => events.push(Event::ButtonClick),
-                Action::Changed => events.push(Event::Changed),
+                Action::Changed => {
+                    self.refresh_shader_profiles(s);
+                    events.push(Event::ShaderPack);
+                    events.push(Event::Changed);
+                }
                 Action::SliderDrag => events.push(Event::SliderDrag),
                 Action::BindKey(name) => self.selected_key = Some(name),
                 Action::Calibrate => {
                     self.calibration = Some(crate::hdr_calibration::Calibration::new(s));
                     self.push(Page::HdrCalibration);
+                }
+                Action::ShaderOptions => {
+                    s.shader_options = None;
+                    self.push(Page::ShaderOptions);
+                    events.push(Event::OpenShaderOptions);
+                }
+                Action::ShaderPacks => {
+                    events.push(Event::ListShaderPacks);
+                    self.refresh_shader_profiles(s);
+                    self.push(Page::ShaderPacks);
                 }
                 Action::Done => events.extend(self.back(s)),
             }
@@ -3203,6 +3222,7 @@ impl OptionsUi {
             Page::Graphics => Some(crate::graphics_ui::Page::General),
             Page::GraphicsAdvanced => Some(crate::graphics_ui::Page::Advanced),
             Page::GraphicsHdr => Some(crate::graphics_ui::Page::Hdr),
+            Page::GraphicsShaders => Some(crate::graphics_ui::Page::Shaders),
             _ => None,
         }
     }
@@ -3239,7 +3259,11 @@ impl OptionsUi {
             | Page::CustomButton(_)
             | Page::CustomPick(..)
             | Page::CustomDraw(_) => "Custom Buttons",
-            Page::Graphics | Page::GraphicsAdvanced | Page::GraphicsHdr | Page::HdrCalibration => {
+            Page::Graphics
+            | Page::GraphicsAdvanced
+            | Page::GraphicsHdr
+            | Page::GraphicsShaders
+            | Page::HdrCalibration => {
                 "options.videoTitle"
             }
             Page::Controller => "horizon.pages.controller",
@@ -3667,7 +3691,7 @@ impl OptionsUi {
                         0.0,
                         310.0,
                         Text::literal("Shader Packs..."),
-                        Act::Push(Page::ShaderPacks),
+                        Act::Push(Page::GraphicsShaders),
                     ),
                     None,
                 ));

@@ -24,16 +24,18 @@ pub enum Page {
     Quality,
     Performance,
     Upscaling,
+    Shaders,
     Advanced,
     /// HDR output's own settings.
     Hdr,
 }
 impl Page {
-    pub const ALL: [Page; 6] = [
+    pub const ALL: [Page; 7] = [
         Page::General,
         Page::Quality,
         Page::Performance,
         Page::Upscaling,
+        Page::Shaders,
         Page::Advanced,
         Page::Hdr,
     ];
@@ -43,6 +45,7 @@ impl Page {
             Page::Quality => "Quality",
             Page::Performance => "Performance",
             Page::Upscaling => "Upscaling",
+            Page::Shaders => "Shaders",
             Page::Advanced => "Advanced",
             Page::Hdr => "HDR",
         }
@@ -53,7 +56,8 @@ impl Page {
             Page::General => "How far you see, the window and the HUD.",
             Page::Quality => "The sky and weather, lighting, textures and screenshots.",
             Page::Performance => "Chunk loading, culling and power use.",
-            Page::Upscaling => "Resolution, FSR 1.0, upscaling presets and sharpness.",
+            Page::Upscaling => "Resolution, anti-aliasing and vanilla TAA upscaling.",
+            Page::Shaders => "Shader packs, profiles, pack options and FSR upscaling.",
             Page::Advanced => "How frames reach the screen, and the performance overlay.",
             Page::Hdr => "Brighter-than-white output on an HDR display.",
         }
@@ -110,6 +114,10 @@ pub enum H {
     ShaderUpscaling,
     ShaderUpscaleMode,
     FsrSharpness,
+    ShaderPack,
+    ShaderProfile,
+    ShaderOptions,
+    ShaderPacks,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -432,26 +440,6 @@ pub fn rows() -> Vec<(Page, Vec<(&'static str, Vec<Setting>)>)> {
             Page::Upscaling,
             vec![
                 (
-                    "Shader upscaling",
-                    vec![
-                        h(
-                            H::ShaderUpscaling,
-                            Saves,
-                            "Upscales shader packs with FSR 1.0; sharpens with RCAS.",
-                        ),
-                        h(
-                            H::ShaderUpscaleMode,
-                            Saves,
-                            "Render scale preset: Quality, Balanced, Performance or Custom.",
-                        ),
-                        h(
-                            H::FsrSharpness,
-                            None,
-                            "Sharpness of FSR 1.0 RCAS filter (0% smooth, 100% sharp).",
-                        ),
-                    ],
-                ),
-                (
                     "Resolution",
                     vec![
                         h(
@@ -478,6 +466,56 @@ pub fn rows() -> Vec<(Page, Vec<(&'static str, Vec<Setting>)>)> {
                             H::FrameGeneration,
                             Medium,
                             "Shows a made-up frame between each two real ones: smoother, a little more lag.",
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        (
+            Page::Shaders,
+            vec![
+                (
+                    "Packs",
+                    vec![
+                        h(
+                            H::ShaderPack,
+                            High,
+                            "Active shader pack: loads custom lighting, water and effects.",
+                        ),
+                        h(
+                            H::ShaderProfile,
+                            High,
+                            "Performance profile of the active shader pack.",
+                        ),
+                        h(
+                            H::ShaderOptions,
+                            None,
+                            "Configure visual effects, shadows and lighting for active pack.",
+                        ),
+                        h(
+                            H::ShaderPacks,
+                            None,
+                            "Manage shader pack files, imports and folder.",
+                        ),
+                    ],
+                ),
+                (
+                    "Shader upscaling",
+                    vec![
+                        h(
+                            H::ShaderUpscaling,
+                            Saves,
+                            "Upscales shader packs with FSR 1.0; sharpens with RCAS.",
+                        ),
+                        h(
+                            H::ShaderUpscaleMode,
+                            Saves,
+                            "Render scale preset: Quality, Balanced, Performance or Custom.",
+                        ),
+                        h(
+                            H::FsrSharpness,
+                            None,
+                            "Sharpness of FSR 1.0 RCAS filter (0% smooth, 100% sharp).",
                         ),
                     ],
                 ),
@@ -849,6 +887,39 @@ impl H {
             H::FsrSharpness => {
                 labelled("FSR Sharpness", format!("{}%", (g.fsr_sharpness * 100.0).round() as u32))
             }
+            H::ShaderPack => {
+                let title = if s.horizon.shader_pack.is_empty() {
+                    "Off".to_string()
+                } else {
+                    s.shader_packs
+                        .iter()
+                        .find(|p| p.file == s.horizon.shader_pack)
+                        .map(|p| p.title.clone())
+                        .unwrap_or_else(|| s.horizon.shader_pack.clone())
+                };
+                labelled("Shader Pack", title)
+            }
+            H::ShaderProfile => {
+                if s.horizon.shader_pack.is_empty() {
+                    labelled("Profile", "Off")
+                } else {
+                    let shown = match s.horizon.shader_profile.as_str() {
+                        "" => {
+                            if cfg!(target_os = "android") {
+                                "Auto"
+                            } else {
+                                "Pack Default"
+                            }
+                        }
+                        crate::graphics::AUTO_PROFILE => "Auto",
+                        "default" => "Pack Default",
+                        profile => profile,
+                    };
+                    labelled("Profile", shown)
+                }
+            }
+            H::ShaderOptions => Text::literal("Shader Options..."),
+            H::ShaderPacks => Text::literal("Shader Packs..."),
             H::Overlay => labelled(
                 "Performance Overlay",
                 match g.overlay {
@@ -979,6 +1050,31 @@ impl H {
             H::ShaderUpscaleMode => {
                 g.shader_upscale_mode = step(&ShaderUpscaleMode::ALL, g.shader_upscale_mode, back);
             }
+            H::ShaderPack => {
+                let mut packs = vec![String::new()];
+                packs.extend(s.shader_packs.iter().map(|p| p.file.clone()));
+                let current = &s.horizon.shader_pack;
+                let pos = packs.iter().position(|p| p == current).unwrap_or(0);
+                let n = packs.len();
+                let next = if back { (pos + n - 1) % n } else { (pos + 1) % n };
+                s.horizon.shader_pack = packs[next].clone();
+                s.horizon.shader_profile.clear();
+            }
+            H::ShaderProfile => {
+                let choices: &[&str] = if cfg!(target_os = "android") {
+                    &[crate::graphics::AUTO_PROFILE, "default", "lite", "low", "medium", "high", "ultra"]
+                } else {
+                    &["default", "lite", "low", "medium", "high", "ultra", crate::graphics::AUTO_PROFILE]
+                };
+                let current = s.horizon.shader_profile.as_str();
+                let pos = choices
+                    .iter()
+                    .position(|&p| p == current || (p == "default" && current.is_empty()))
+                    .unwrap_or(0);
+                let n = choices.len();
+                let next = if back { (pos + n - 1) % n } else { (pos + 1) % n };
+                s.horizon.shader_profile = choices[next].to_string();
+            }
             _ => {}
         }
     }
@@ -1025,6 +1121,11 @@ impl Item {
             {
                 Some("Your GPU or graphics API doesn't support it.")
             }
+            Item::Horizon(H::ShaderProfile | H::ShaderOptions)
+                if s.horizon.shader_pack.is_empty() =>
+            {
+                Some("Turn on a shader pack to use this.")
+            }
             _ => None,
         }
     }
@@ -1032,7 +1133,10 @@ impl Item {
     fn steps(self, s: &Settings) -> bool {
         self.switch(s).is_none()
             && self.slider(s).is_none()
-            && !matches!(self, Item::Horizon(H::HdrKey | H::HdrCalibrate))
+            && !matches!(
+                self,
+                Item::Horizon(H::HdrKey | H::HdrCalibrate | H::ShaderOptions | H::ShaderPacks)
+            )
     }
     /// On/off settings and their value.
     pub fn switch(self, s: &Settings) -> Option<bool> {
@@ -1123,7 +1227,12 @@ impl Item {
                     | H::GraphicsApi
                     | H::TranslucentBatching
                     | H::ShaderUpscaling
+                    | H::ShaderUpscaleMode
                     | H::FsrSharpness
+                    | H::ShaderPack
+                    | H::ShaderProfile
+                    | H::ShaderOptions
+                    | H::ShaderPacks
             ) | Item::Vanilla(
                 Opt::GuiScale
                     | Opt::Fullscreen
@@ -1188,6 +1297,10 @@ pub enum Action {
     BindKey(&'static str),
     /// Start HDR calibration.
     Calibrate,
+    /// Open the Shader Options page for the active shader pack.
+    ShaderOptions,
+    /// Open the Shader Packs page (folder / pack list).
+    ShaderPacks,
     Done,
 }
 
@@ -1285,7 +1398,7 @@ impl Columns {
     fn page(&self, i: usize) -> [f32; 4] {
         [
             self.side_x,
-            self.side_y + 56.0 + i as f32 * 18.0,
+            self.side_y + 48.0 + i as f32 * 18.0,
             style::CONTROL_W,
             16.0,
         ]
@@ -2054,6 +2167,8 @@ impl GraphicsUi {
                     Action::BindKey(crate::graphics::HDR_KEY),
                 ]
             }
+            Item::Horizon(H::ShaderOptions) => vec![Action::ButtonClick, Action::ShaderOptions],
+            Item::Horizon(H::ShaderPacks) => vec![Action::ButtonClick, Action::ShaderPacks],
             _ if item.slider(s).is_some() => {
                 self.can_change_value = true;
                 // A press on the track sets the value there; on the name, only focuses.
@@ -3318,6 +3433,8 @@ mod tests {
                     && !m.contains("Performance")
                     && !m.contains("Custom")
                     && !m.contains("Screenshots")
+                    && !m.contains("Pack")
+                    && !m.contains("Profile")
             })
             .collect();
         assert_eq!(missed, Vec::<String>::new());
