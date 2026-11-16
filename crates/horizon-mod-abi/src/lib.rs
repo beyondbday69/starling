@@ -164,7 +164,9 @@ pub struct StartedSound {
 pub struct CameraOffset {
     /// 1 if this camera offset is active, 0 otherwise.
     pub active: u8,
-    pub _pad: [u8; 3],
+    /// 1 to show the crosshair ('+') in third person for aiming, 0 to keep vanilla behavior.
+    pub crosshair: u8,
+    pub _pad: [u8; 2],
     /// Local right offset (positive = right shoulder, negative = left shoulder).
     pub right: f32,
     /// Local up offset (positive = higher).
@@ -290,5 +292,7 @@ mod tests {
             std::mem::offset_of!(ModDesc, camera_offset),
             8 + 8 * pointer
         );
+        assert_eq!(std::mem::size_of::<CameraOffset>(), 20);
+        assert_eq!(std::mem::offset_of!(CameraOffset, crosshair), 1);
     }
 }

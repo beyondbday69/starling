@@ -606,7 +606,9 @@ impl Game<'_> {
     /// The world's resolution, of the screen's: the player's, and no more than Auto's while it
     /// runs a pack that isn't a light one.
     pub(super) fn world_scale(&self) -> f32 {
-        let chosen = if self.settings.horizon.shader_upscaling != horizon_client::graphics::ShaderUpscaling::Off {
+        let chosen = if self.settings.horizon.shader_upscaling
+            != horizon_client::graphics::ShaderUpscaling::Off
+        {
             self.settings
                 .horizon
                 .shader_upscale_mode

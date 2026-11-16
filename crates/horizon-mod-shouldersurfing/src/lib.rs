@@ -62,6 +62,7 @@ pub struct Settings {
     pub distance: f32,
     pub smooth: bool,
     pub dynamic_raycast: bool,
+    pub crosshair: bool,
 }
 
 impl Default for Settings {
@@ -73,6 +74,7 @@ impl Default for Settings {
             distance: 4.0,
             smooth: true,
             dynamic_raycast: true,
+            crosshair: true,
         }
     }
 }
@@ -174,6 +176,9 @@ fn load_settings_from_host() {
     if let Some(val) = read_setting("dynamic_raycast") {
         cfg.dynamic_raycast = val != "false" && val != "0";
     }
+    if let Some(val) = read_setting("crosshair") {
+        cfg.crosshair = val != "false" && val != "0";
+    }
 }
 
 fn save_settings_to_host() {
@@ -187,6 +192,7 @@ fn save_settings_to_host() {
         "dynamic_raycast",
         if cfg.dynamic_raycast { "true" } else { "false" },
     );
+    write_setting("crosshair", if cfg.crosshair { "true" } else { "false" });
 }
 
 unsafe fn push_row(sink: *const ButtonSink, text: &str) {
@@ -303,7 +309,8 @@ unsafe extern "C" fn camera_offset(_partial: f32, out: *mut CameraOffset) {
         unsafe {
             *out = CameraOffset {
                 active: 1,
-                _pad: [0; 3],
+                crosshair: if cfg.crosshair { 1 } else { 0 },
+                _pad: [0; 2],
                 right,
                 up,
                 forward: 0.0,
@@ -332,6 +339,10 @@ unsafe extern "C" fn settings_rows(sink: *const ButtonSink) {
             ),
             format!("Camera Distance: {:.1} blocks", cfg.distance),
             format!("Camera Height: {:+.1} blocks", cfg.height),
+            format!(
+                "Aiming Crosshair (+): {}",
+                if cfg.crosshair { "Enabled" } else { "Off" }
+            ),
             format!(
                 "Smooth Interpolation: {}",
                 if cfg.smooth { "Enabled" } else { "Off" }
@@ -385,8 +396,9 @@ unsafe extern "C" fn settings_click(button: u32) {
                         0.6
                     };
                 }
-                4 => cfg.smooth = !cfg.smooth,
-                5 => cfg.dynamic_raycast = !cfg.dynamic_raycast,
+                4 => cfg.crosshair = !cfg.crosshair,
+                5 => cfg.smooth = !cfg.smooth,
+                6 => cfg.dynamic_raycast = !cfg.dynamic_raycast,
                 _ => {}
             }
         }
