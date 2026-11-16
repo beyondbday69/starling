@@ -257,6 +257,11 @@ impl Game<'_> {
                 (entity, self.player.as_ref()?.shift_key_down)
             }
         };
+        let mod_offset = if self.camera_type == CameraType::ThirdPersonBack {
+            super::mod_loader::camera_offset(self, partial)
+        } else {
+            None
+        };
         let mut view = self.view;
         let kind = match self.camera_type {
             CameraType::FirstPerson => horizon_client::camera::CameraType::FirstPerson,
@@ -280,11 +285,6 @@ impl Game<'_> {
             },
             facts: self.res.facts(),
             context,
-        };
-        let mod_offset = if self.camera_type == CameraType::ThirdPersonBack {
-            super::mod_loader::camera_offset(self, partial)
-        } else {
-            None
         };
         view.align_with_entity_distance(
             &entity,

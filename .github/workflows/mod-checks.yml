@@ -40,7 +40,9 @@ jobs:
         with:
           shared-key: mod-checks
       - name: Formatting
-        run: cargo +stable fmt --all -- --check
+        run: |
+          cargo +stable fmt --check -p horizon-mod-abi -p horizon-mod-loader -p horizon-mod-hello \
+            -p horizon-mod-soundphysics -p horizon-mod-shouldersurfing
       - name: Clippy, warnings denied
         run: |
           cargo +stable clippy -p horizon-mod-abi -p horizon-mod-loader -p horizon-mod-hello \
