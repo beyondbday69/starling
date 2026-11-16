@@ -605,8 +605,6 @@ pub struct PackPost {
     blit_group: Option<([u32; 2], wgpu::BindGroup)>,
     /// Shows colortex0 when the pack has no `final` (OQ-5).
     copy: (wgpu::RenderPipeline, wgpu::BindGroupLayout),
-    /// Un-flipped copy for final_out to screen.
-    copy_direct: (wgpu::RenderPipeline, wgpu::BindGroupLayout),
     uniforms: FrameUniforms,
     screen: wgpu::TextureFormat,
     fsr: super::fsr::FsrPipeline,
@@ -2485,20 +2483,6 @@ impl PackPost {
             &[target(screen)],
             None,
         );
-        let copy_direct = helper(
-            device,
-            "vs_direct",
-            "fs_copy",
-            &[
-                texture_entry(0, float),
-                entry(
-                    2,
-                    wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                ),
-            ],
-            &[target(screen)],
-            None,
-        );
         let filterable = |b: usize| {
             formats[b].sample_type(None, Some(device.features()))
                 == Some(wgpu::TextureSampleType::Float { filterable: true })
@@ -2684,7 +2668,6 @@ impl PackPost {
             nearest_repeat: sampler(device, wgpu::FilterMode::Nearest, wgpu::AddressMode::Repeat),
             blit,
             copy,
-            copy_direct,
             shadow_every: shadow_every(),
             shadow_wait: 0,
             uniforms: {
@@ -4363,52 +4346,15 @@ impl PackPost {
             if needs_upscale {
                 let (upscaling, sharpness) = self.upscaling();
                 if upscaling == crate::graphics::ShaderUpscaling::Integer {
-                    let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                        label: Some("Shader pack final_out integer"),
-                        layout: &self.copy_direct.1,
-                        entries: &[
-                            wgpu::BindGroupEntry {
-                                binding: 0,
-                                resource: wgpu::BindingResource::TextureView(&targets.final_out.1),
-                            },
-                            wgpu::BindGroupEntry {
-                                binding: 2,
-                                resource: wgpu::BindingResource::Sampler(&self.nearest),
-                            },
-                        ],
-                    });
-                    let scale_x = window[0] / size[0];
-                    let scale_y = window[1] / size[1];
-                    let factor = (scale_x.min(scale_y)).max(1);
-                    let target_w = size[0] * factor;
-                    let target_h = size[1] * factor;
-                    let offset_x = (window[0].saturating_sub(target_w)) / 2;
-                    let offset_y = (window[1].saturating_sub(target_h)) / 2;
-
-                    let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                        label: Some("Shader pack final_out integer"),
-                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                            view: screen,
-                            resolve_target: None,
-                            depth_slice: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                                store: wgpu::StoreOp::Store,
-                            },
-                        })],
-                        ..Default::default()
-                    });
-                    rp.set_viewport(
-                        offset_x as f32,
-                        offset_y as f32,
-                        target_w as f32,
-                        target_h as f32,
-                        0.0,
-                        1.0,
+                    self.fsr.run_integer(
+                        device,
+                        queue,
+                        encoder,
+                        &targets.final_out.1,
+                        screen,
+                        size,
+                        window,
                     );
-                    rp.set_pipeline(&self.copy_direct.0);
-                    rp.set_bind_group(0, &group, &[]);
-                    rp.draw(0..3, 0..1);
                 } else if size != window {
                     self.fsr.run(
                         device,
@@ -4460,52 +4406,15 @@ impl PackPost {
             let colortex0 = view(self.main, 0, false).expect("colortex0");
             let (upscaling, sharpness) = self.upscaling();
             if upscaling == crate::graphics::ShaderUpscaling::Integer {
-                let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some("Shader pack colortex0 integer"),
-                    layout: &self.copy.1,
-                    entries: &[
-                        wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: wgpu::BindingResource::TextureView(colortex0),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 2,
-                            resource: wgpu::BindingResource::Sampler(&self.nearest),
-                        },
-                    ],
-                });
-                let scale_x = window[0] / size[0];
-                let scale_y = window[1] / size[1];
-                let factor = (scale_x.min(scale_y)).max(1);
-                let target_w = size[0] * factor;
-                let target_h = size[1] * factor;
-                let offset_x = (window[0].saturating_sub(target_w)) / 2;
-                let offset_y = (window[1].saturating_sub(target_h)) / 2;
-
-                let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("Shader pack colortex0 integer"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: screen,
-                        resolve_target: None,
-                        depth_slice: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    ..Default::default()
-                });
-                rp.set_viewport(
-                    offset_x as f32,
-                    offset_y as f32,
-                    target_w as f32,
-                    target_h as f32,
-                    0.0,
-                    1.0,
+                self.fsr.run_integer(
+                    device,
+                    queue,
+                    encoder,
+                    colortex0,
+                    screen,
+                    size,
+                    window,
                 );
-                rp.set_pipeline(&self.copy.0);
-                rp.set_bind_group(0, &group, &[]);
-                rp.draw(0..3, 0..1);
             } else if upscaling != crate::graphics::ShaderUpscaling::Off && size != window {
                 self.fsr.run(
                     device,

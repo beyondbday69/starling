@@ -335,3 +335,26 @@ fn fs_rcas(in: VertexOutput) -> @location(0) vec4<f32> {
 
     return vec4<f32>(final_rgb, clamp(e.a, 0.0, 1.0));
 }
+
+/// Integer scaling fragment shader:
+/// Computes integer scale factor = floor(min(dst_w / src_w, dst_h / src_h)).
+/// Centers the scaled image with clean letterbox/pillarbox borders.
+/// Nearest-neighbor loads source texels using the exact same coordinate space as FSR.
+@fragment
+fn fs_integer(in: VertexOutput) -> @location(0) vec4<f32> {
+    let dst_pixel = in.position.xy;
+    let scale = floor(min(constants.dst_size.x / constants.src_size.x, constants.dst_size.y / constants.src_size.y));
+    let factor = max(scale, 1.0);
+    let target_size = constants.src_size * factor;
+    let offset = floor((constants.dst_size - target_size) * 0.5);
+
+    if (dst_pixel.x < offset.x || dst_pixel.x >= offset.x + target_size.x ||
+        dst_pixel.y < offset.y || dst_pixel.y >= offset.y + target_size.y) {
+        return vec4<f32>(0.0, 0.0, 0.0, 1.0);
+    }
+
+    let src_pos = vec2<i32>(floor((dst_pixel - offset) / factor));
+    let max_coord = vec2<i32>(constants.src_size) - vec2<i32>(1, 1);
+    let clamped = clamp(src_pos, vec2<i32>(0, 0), max(max_coord, vec2<i32>(0, 0)));
+    return textureLoad(input_texture, clamped, 0);
+}
