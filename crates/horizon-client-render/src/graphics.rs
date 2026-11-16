@@ -451,18 +451,21 @@ pub enum ShaderUpscaling {
     #[default]
     Fsr,
     Cas,
+    Integer,
 }
 impl ShaderUpscaling {
-    pub const ALL: [ShaderUpscaling; 3] = [
+    pub const ALL: [ShaderUpscaling; 4] = [
         ShaderUpscaling::Off,
         ShaderUpscaling::Fsr,
         ShaderUpscaling::Cas,
+        ShaderUpscaling::Integer,
     ];
     pub fn name(self) -> &'static str {
         match self {
             ShaderUpscaling::Off => "off",
             ShaderUpscaling::Fsr => "fsr",
             ShaderUpscaling::Cas => "cas",
+            ShaderUpscaling::Integer => "integer",
         }
     }
     pub fn label(self) -> &'static str {
@@ -470,6 +473,7 @@ impl ShaderUpscaling {
             ShaderUpscaling::Off => "Off",
             ShaderUpscaling::Fsr => "FSR 1.0",
             ShaderUpscaling::Cas => "CAS",
+            ShaderUpscaling::Integer => "Integer (Nearest)",
         }
     }
     pub fn parse(s: &str) -> Self {
@@ -477,6 +481,7 @@ impl ShaderUpscaling {
             "off" => ShaderUpscaling::Off,
             "fsr" | "fsr1" | "fsr1.0" => ShaderUpscaling::Fsr,
             "cas" => ShaderUpscaling::Cas,
+            "integer" | "nearest" => ShaderUpscaling::Integer,
             _ => ShaderUpscaling::default(),
         }
     }
@@ -1635,6 +1640,14 @@ mod tests {
         assert_eq!(
             Graphics::parse("shaderUpscaling:fsr\n").shader_upscaling,
             ShaderUpscaling::Fsr
+        );
+        assert_eq!(
+            Graphics::parse("shaderUpscaling:integer\n").shader_upscaling,
+            ShaderUpscaling::Integer
+        );
+        assert_eq!(
+            Graphics::parse("shaderUpscaling:nearest\n").shader_upscaling,
+            ShaderUpscaling::Integer
         );
 
         assert_eq!(Graphics::parse("fsrSharpness:0.75\n").fsr_sharpness, 0.75);

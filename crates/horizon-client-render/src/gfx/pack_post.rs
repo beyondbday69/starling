@@ -1033,7 +1033,7 @@ fn shadow_every() -> u32 {
 static PREPASS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Upscaling mode and sharpness for shader packs.
-static SHADER_UPSCALING: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(1); // 1 = Fsr, 0 = Off, 2 = Cas
+static SHADER_UPSCALING: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(1); // 1 = Fsr, 0 = Off, 2 = Cas, 3 = Integer
 static FSR_SHARPNESS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0x3e4ccccd); // 0.2f32.to_bits()
 
 pub(super) fn set_shader_upscaling(upscaling: crate::graphics::ShaderUpscaling, sharpness: f32) {
@@ -1041,6 +1041,7 @@ pub(super) fn set_shader_upscaling(upscaling: crate::graphics::ShaderUpscaling, 
         crate::graphics::ShaderUpscaling::Off => 0,
         crate::graphics::ShaderUpscaling::Fsr => 1,
         crate::graphics::ShaderUpscaling::Cas => 2,
+        crate::graphics::ShaderUpscaling::Integer => 3,
     };
     SHADER_UPSCALING.store(mode, std::sync::atomic::Ordering::Relaxed);
     FSR_SHARPNESS.store(sharpness.clamp(0.0, 1.0).to_bits(), std::sync::atomic::Ordering::Relaxed);
@@ -1050,6 +1051,7 @@ pub(super) fn global_shader_upscaling() -> (crate::graphics::ShaderUpscaling, f3
     let mode = match SHADER_UPSCALING.load(std::sync::atomic::Ordering::Relaxed) {
         0 => crate::graphics::ShaderUpscaling::Off,
         2 => crate::graphics::ShaderUpscaling::Cas,
+        3 => crate::graphics::ShaderUpscaling::Integer,
         _ => crate::graphics::ShaderUpscaling::Fsr,
     };
     let sharpness = f32::from_bits(FSR_SHARPNESS.load(std::sync::atomic::Ordering::Relaxed));
@@ -4342,7 +4344,31 @@ impl PackPost {
                 rp.draw(0..6, 0..1);
             }
             if needs_upscale {
-                if size != window {
+                let (upscaling, sharpness) = self.upscaling();
+                if upscaling == crate::graphics::ShaderUpscaling::Integer {
+                    let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                        label: Some("Shader pack final_out integer"),
+                        layout: &self.copy.1,
+                        entries: &[
+                            wgpu::BindGroupEntry {
+                                binding: 0,
+                                resource: wgpu::BindingResource::TextureView(&targets.final_out.1),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 2,
+                                resource: wgpu::BindingResource::Sampler(&self.nearest),
+                            },
+                        ],
+                    });
+                    let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: Some("Shader pack final_out integer"),
+                        color_attachments: &[attach(screen, overwrite)],
+                        ..Default::default()
+                    });
+                    rp.set_pipeline(&self.copy.0);
+                    rp.set_bind_group(0, &group, &[]);
+                    rp.draw(0..3, 0..1);
+                } else if size != window {
                     self.fsr.run(
                         device,
                         queue,
@@ -4392,8 +4418,30 @@ impl PackPost {
         if !shown {
             let colortex0 = view(self.main, 0, false).expect("colortex0");
             let (upscaling, sharpness) = self.upscaling();
-            let upscaling_on = upscaling != crate::graphics::ShaderUpscaling::Off;
-            if upscaling_on && size != window {
+            if upscaling == crate::graphics::ShaderUpscaling::Integer {
+                let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("Shader pack colortex0 integer"),
+                    layout: &self.copy.1,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::TextureView(colortex0),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: wgpu::BindingResource::Sampler(&self.nearest),
+                        },
+                    ],
+                });
+                let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Shader pack colortex0 integer"),
+                    color_attachments: &[attach(screen, overwrite)],
+                    ..Default::default()
+                });
+                rp.set_pipeline(&self.copy.0);
+                rp.set_bind_group(0, &group, &[]);
+                rp.draw(0..3, 0..1);
+            } else if upscaling != crate::graphics::ShaderUpscaling::Off && size != window {
                 self.fsr.run(
                     device,
                     queue,
@@ -4404,7 +4452,7 @@ impl PackPost {
                     window,
                     sharpness,
                 );
-            } else if upscaling_on && sharpness > 0.0 {
+            } else if upscaling != crate::graphics::ShaderUpscaling::Off && sharpness > 0.0 {
                 self.fsr.run_rcas(
                     device,
                     queue,

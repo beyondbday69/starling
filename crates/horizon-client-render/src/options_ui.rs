@@ -5362,11 +5362,19 @@ impl OptionsUi {
         let (widgets, top, bottom, content) = self.layout(s, w, h);
         self.size = (w, h);
         let in_world = self.in_world;
-        ui::menu_background(batch, atlas, 0.0, 0.0, w, h, in_world);
-        let list = bottom > top;
-        if list {
-            ui::list_background(batch, atlas, top, bottom, in_world);
+        let is_shader_page = matches!(
+            page,
+            Page::ShaderOptions | Page::ShaderPacks | Page::NativePackOptions(..)
+        );
+        if is_shader_page {
+            crate::graphics_style::fill(batch, atlas, [0.0, 0.0, w, h], crate::graphics_style::VEIL);
+        } else {
+            ui::menu_background(batch, atlas, 0.0, 0.0, w, h, in_world);
+            if bottom > top {
+                ui::list_background(batch, atlas, top, bottom, in_world);
+            }
         }
+        let list = bottom > top;
         let visible = |wd: &Widget| !wd.list || (wd.y < bottom && wd.y + wd.h > top);
         // The list's narration: the language list is an ObjectSelectionList,
         // the others ContainerObjectSelectionLists whose rows' widgets are
@@ -5465,7 +5473,17 @@ impl OptionsUi {
                         }
                         None => {
                             let label = fitted.as_ref().map_or(label, |f| &f.0);
-                            ui::button(batch, atlas, wd.x, wd.y, wd.w, wd.h, label, *active, hover);
+                            if is_shader_page {
+                                crate::graphics_style::button(
+                                    batch,
+                                    atlas,
+                                    [wd.x, wd.y, wd.w, wd.h],
+                                    label,
+                                    (hover, *active, false),
+                                );
+                            } else {
+                                ui::button(batch, atlas, wd.x, wd.y, wd.w, wd.h, label, *active, hover);
+                            }
                         }
                     }
                     crate::widgets::last_narratable(|n| {
@@ -5475,20 +5493,31 @@ impl OptionsUi {
                 WKind::Slider { label, value, opt } => {
                     let dragging = self.dragging == Some(*opt);
                     let shown = self.slider_shown(*opt, *value);
-                    ui::slider_ext(
-                        batch,
-                        atlas,
-                        wd.x,
-                        wd.y,
-                        wd.w,
-                        label,
-                        shown,
-                        hover || dragging,
-                        is_focused,
-                        self.can_change_value && is_focused,
-                        true,
-                        dragging,
-                    );
+                    if is_shader_page {
+                        crate::graphics_style::slider(
+                            batch,
+                            atlas,
+                            [wd.x, wd.y, wd.w, wd.h],
+                            label,
+                            shown,
+                            (hover || dragging, true),
+                        );
+                    } else {
+                        ui::slider_ext(
+                            batch,
+                            atlas,
+                            wd.x,
+                            wd.y,
+                            wd.w,
+                            label,
+                            shown,
+                            hover || dragging,
+                            is_focused,
+                            self.can_change_value && is_focused,
+                            true,
+                            dragging,
+                        );
+                    }
                     crate::widgets::last_narratable(|n| {
                         narrate_widget(n, s, wd, hover, list_key, framebuffer);
                     });
@@ -5497,17 +5526,14 @@ impl OptionsUi {
                     let label = fitted.as_ref().map_or(label, |f| &f.0);
                     let held = self.shader_dragging.as_ref().filter(|(n, _)| n == name);
                     let dragging = held.is_some();
-                    ui::slider(
+                    let pos = held.map_or(*value, |h| h.1);
+                    crate::graphics_style::slider(
                         batch,
                         atlas,
-                        wd.x,
-                        wd.y,
-                        wd.w,
+                        [wd.x, wd.y, wd.w, wd.h],
                         label,
-                        held.map_or(*value, |h| h.1),
-                        hover || dragging,
-                        true,
-                        dragging,
+                        pos,
+                        (hover || dragging, true),
                     );
                 }
                 WKind::Text {
@@ -5583,9 +5609,20 @@ impl OptionsUi {
             }
         }
         if list {
-            ui::separators(batch, atlas, top, bottom, in_world);
-            let sx = self.scrollbar_x(w);
-            ui::scrollbar(batch, atlas, sx, top, bottom, content, self.scroll);
+            if is_shader_page {
+                let sx = self.scrollbar_x(w);
+                let track = [sx, top, 6.0, bottom - top];
+                let ratio = ((bottom - top) / content).clamp(0.05, 1.0);
+                let thumb_h = ((bottom - top) * ratio).max(12.0);
+                let scroll_ratio =
+                    (self.scroll / (content - (bottom - top)).max(1.0)).clamp(0.0, 1.0);
+                let thumb_y = top + scroll_ratio * (bottom - top - thumb_h);
+                crate::graphics_style::scroller(batch, atlas, track, [sx, thumb_y, 6.0, thumb_h]);
+            } else {
+                ui::separators(batch, atlas, top, bottom, in_world);
+                let sx = self.scrollbar_x(w);
+                ui::scrollbar(batch, atlas, sx, top, bottom, content, self.scroll);
+            }
         }
         if self.page() == Page::Language {
             let mut search = self.language_search.clone();
@@ -5977,7 +6014,10 @@ impl OptionsUi {
                     events.push(Event::ButtonClick);
                     match act {
                         Act::Push(p) => {
-                            if p == Page::ShaderPacks {
+                            if p == Page::ShaderPacks
+                                || p == Page::Graphics
+                                || p == Page::GraphicsShaders
+                            {
                                 events.push(Event::ListShaderPacks);
                                 self.refresh_shader_profiles(s);
                             }
@@ -7216,7 +7256,10 @@ impl OptionsUi {
                             self.focus = None;
                             self.focus_from_keyboard = false;
                             self.can_change_value = false;
-                            if p == Page::ShaderPacks {
+                            if p == Page::ShaderPacks
+                                || p == Page::Graphics
+                                || p == Page::GraphicsShaders
+                            {
                                 events.push(Event::ListShaderPacks);
                             }
                             if p == Page::Mods {

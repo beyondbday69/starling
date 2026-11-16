@@ -712,6 +712,7 @@ fn description(item: Item, s: &Settings, text: &'static str) -> &'static str {
             ShaderUpscaling::Off => "Shader packs upscale with simple bilinear filtering.",
             ShaderUpscaling::Fsr => "Upscales shader packs with AMD FSR 1.0 EASU and RCAS.",
             ShaderUpscaling::Cas => "Contrast-Adaptive Sharpening without spatial upsampling.",
+            ShaderUpscaling::Integer => "Integer scaling with nearest-neighbor pixels: zero blur.",
         },
         _ => text,
     }
@@ -3502,6 +3503,10 @@ mod tests {
         upscaling.cycle(&mut s, false, [854, 480]);
         assert_eq!(s.horizon.shader_upscaling, ShaderUpscaling::Cas);
         assert_eq!(upscaling.label(&s).plain(), "Shader Upscaling: CAS");
+
+        upscaling.cycle(&mut s, false, [854, 480]);
+        assert_eq!(s.horizon.shader_upscaling, ShaderUpscaling::Integer);
+        assert_eq!(upscaling.label(&s).plain(), "Shader Upscaling: Integer (Nearest)");
 
         upscaling.cycle(&mut s, false, [854, 480]);
         assert_eq!(s.horizon.shader_upscaling, ShaderUpscaling::Off);
