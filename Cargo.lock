@@ -1386,6 +1386,8 @@ dependencies = [
  "horizon-friends",
  "horizon-hdr",
  "horizon-items",
+ "horizon-mod-abi",
+ "horizon-mod-loader",
  "horizon-mods",
  "horizon-narrator",
  "horizon-optifine",
@@ -1632,6 +1634,27 @@ name = "horizon-mcp"
 version = "0.1.0"
 dependencies = [
  "serde_json",
+]
+
+[[package]]
+name = "horizon-mod-abi"
+version = "0.1.0"
+
+[[package]]
+name = "horizon-mod-hello"
+version = "0.1.0"
+dependencies = [
+ "horizon-mod-abi",
+]
+
+[[package]]
+name = "horizon-mod-loader"
+version = "0.1.0"
+dependencies = [
+ "horizon-mod-abi",
+ "libc",
+ "libloading",
+ "log",
 ]
 
 [[package]]

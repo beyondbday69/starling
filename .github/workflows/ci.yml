@@ -6,7 +6,8 @@ name: checks
 on:
   push:
     # starling and integration in starling-client/starling (android: Horizon Android's, and JuanLuci/starling's).
-    branches: [android, starling, integration]
+    # mod-loader: the mod loader's own branch, whose ABI and mixer work is checked here too.
+    branches: [android, starling, integration, mod-loader]
   pull_request:
     types: [opened, synchronize, reopened]
   workflow_dispatch:

@@ -1,0 +1,17 @@
+[package]
+name = "horizon-mod-soundphysics"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license = "GPL-3.0-or-later"
+description = "Sound Physics as a library mod: blocks swallow sound, rooms answer it"
+
+[lib]
+name = "soundphysics"
+crate-type = ["cdylib"]
+
+[dependencies]
+horizon-mod-abi = { path = "../horizon-mod-abi" }
+
+[lints]
+workspace = true

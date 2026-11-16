@@ -1,0 +1,99 @@
+name: mod-loader
+# Phase A of docs/mod-loader.md: the boundary, the loader and the hello mod, proved before the
+# client is asked to carry 1,000 more lines of it.
+#
+# Two things are checked here that no unit test can: that the hello mod is really a library this
+# loader can open on a computer (`phases`), and that it is really an arm64 library the phone can
+# open (`android`, which publishes libhello.so where a player can download it).
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'crates/horizon-mod-abi/**'
+      - 'crates/horizon-mod-loader/**'
+      - 'crates/horizon-mod-hello/**'
+      - 'crates/horizon-mod-soundphysics/**'
+      - 'crates/horizon-client/src/game/mod_loader.rs'
+      - '.github/workflows/mod-loader.yml'
+permissions:
+  contents: write
+concurrency:
+  group: mod-loader-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  NDK: 28.2.13676358
+jobs:
+  phases:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: mod-loader
+      - name: The boundary and the loader, tested
+        run: cargo +stable test -p horizon-mod-abi -p horizon-mod-loader
+      # The whole chain, without a phone: build the mod as a real .so, open it, start it, run two
+      # frames, ask for its rows and tap one. If this prints "two frames ran", dlopen works.
+      - name: Build the hello mod and load it
+        run: |
+          cargo +stable build -p horizon-mod-hello
+          cargo +stable run -p horizon-mod-loader --example load_hello -- target/debug
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install the NDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK" > /dev/null
+      - name: Install Rust for Android and cargo-ndk
+        run: |
+          rustup toolchain install stable --profile minimal --target aarch64-linux-android
+          rustup default stable
+          cargo install cargo-ndk --version 3.5.4 --locked
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: mod-loader-android
+      - name: Build the mods for arm64
+        run: |
+          cargo ndk -t arm64-v8a build -p horizon-mod-hello --release
+          cargo ndk -t arm64-v8a build -p horizon-mod-soundphysics --release
+      # The loader accepts any lib*.so and takes the id from the mod, so the file keeps the name the
+      # crate gives it; a player puts it in horizon-native-mods/<id>/.
+      - name: Show what was built
+        run: |
+          ls -l target/aarch64-linux-android/release/lib*.so
+          file target/aarch64-linux-android/release/libhello.so \
+            target/aarch64-linux-android/release/libsoundphysics.so
+          sha256sum target/aarch64-linux-android/release/libhello.so \
+            target/aarch64-linux-android/release/libsoundphysics.so
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mods-arm64
+          path: |
+            target/aarch64-linux-android/release/libhello.so
+            target/aarch64-linux-android/release/libsoundphysics.so
+          if-no-files-found: error
+      # A release asset, so a player downloads it without a GitHub login: the phone's browser cannot
+      # fetch an artifact.
+      - name: Publish the library
+        if: github.ref == 'refs/heads/mod-loader'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view mod-loader-hello > /dev/null 2>&1 || \
+            gh release create mod-loader-hello --title "Mod loader: hello" \
+              --notes "The loader's test mod (docs/mod-loader.md, Phase A). Put libhello.so in horizon-native-mods/hello/ and it is listed in Options > Mods."
+          gh release upload mod-loader-hello target/aarch64-linux-android/release/libhello.so --clobber
+          gh release view mod-loader-soundphysics > /dev/null 2>&1 || \
+            gh release create mod-loader-soundphysics --title "Sound Physics (loader build)" \
+              --notes "Sound Physics as a library mod. Put libsoundphysics.so in horizon-native-mods/soundphysics/ and turn it on in Options > Mods. Phase B of docs/mod-loader.md: only occlusion is heard so far."
+          gh release upload mod-loader-soundphysics \
+            target/aarch64-linux-android/release/libsoundphysics.so --clobber
