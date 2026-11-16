@@ -1654,7 +1654,20 @@ dependencies = [
  "horizon-mod-abi",
  "libc",
  "libloading",
- "log",
+]
+
+[[package]]
+name = "horizon-mod-shouldersurfing"
+version = "0.1.0"
+dependencies = [
+ "horizon-mod-abi",
+]
+
+[[package]]
+name = "horizon-mod-soundphysics"
+version = "0.1.0"
+dependencies = [
+ "horizon-mod-abi",
 ]
 
 [[package]]

@@ -12,7 +12,7 @@ use std::ffi::{CStr, c_char, c_void};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 /// The version of this boundary. A mod is refused when it disagrees.
-pub const ABI: u32 = 4;
+pub const ABI: u32 = 5;
 
 /// The symbol a mod exports.
 pub const ENTRY: &str = "horizon_mod_entry";
@@ -158,6 +158,23 @@ pub struct StartedSound {
     pub at: [f64; 3],
 }
 
+/// What a camera mod asks of the perspective calculation.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct CameraOffset {
+    /// 1 if this camera offset is active, 0 otherwise.
+    pub active: u8,
+    pub _pad: [u8; 3],
+    /// Local right offset (positive = right shoulder, negative = left shoulder).
+    pub right: f32,
+    /// Local up offset (positive = higher).
+    pub up: f32,
+    /// Local forward offset.
+    pub forward: f32,
+    /// Third person camera distance. If <= 0, vanilla distance applies.
+    pub distance: f32,
+}
+
 /// A row the client asks a mod for, through [`ButtonSink::push`].
 #[repr(C)]
 pub struct ButtonSink {
@@ -193,6 +210,8 @@ pub struct ModDesc {
     pub settings: Option<unsafe extern "C" fn(*const ButtonSink)>,
     /// A tap on row `button` of the mod's own page.
     pub settings_click: Option<unsafe extern "C" fn(u32)>,
+    /// A camera offset for third person perspective.
+    pub camera_offset: Option<unsafe extern "C" fn(f32, *mut CameraOffset)>,
 }
 
 // A mod's description is read on one thread and its callbacks run on one thread, but the loader
@@ -267,5 +286,9 @@ mod tests {
         assert_eq!(std::mem::offset_of!(HostVTable, listener), 8 + 3 * pointer);
         assert_eq!(std::mem::offset_of!(HostVTable, player), 8 + 10 * pointer);
         assert_eq!(std::mem::offset_of!(ModDesc, abi), 0);
+        assert_eq!(
+            std::mem::offset_of!(ModDesc, camera_offset),
+            8 + 8 * pointer
+        );
     }
 }

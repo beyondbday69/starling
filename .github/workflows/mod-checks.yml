@@ -11,6 +11,7 @@ on:
       - 'crates/horizon-mod-loader/**'
       - 'crates/horizon-mod-hello/**'
       - 'crates/horizon-mod-soundphysics/**'
+      - 'crates/horizon-mod-shouldersurfing/**'
       - 'crates/horizon-client-render/src/audio.rs'
       - 'crates/horizon-client-render/src/sound_engine.rs'
       - 'crates/horizon-client/src/game/mod_loader.rs'
@@ -43,9 +44,9 @@ jobs:
       - name: Clippy, warnings denied
         run: |
           cargo +stable clippy -p horizon-mod-abi -p horizon-mod-loader -p horizon-mod-hello \
-            -p horizon-mod-soundphysics --all-targets -- -D warnings
+            -p horizon-mod-soundphysics -p horizon-mod-shouldersurfing --all-targets -- -D warnings
           cargo +stable clippy -p horizon-client-render -p horizon-client --all-targets -- -D warnings
       - name: The boundary, the loader and the mod
-        run: cargo +stable test -p horizon-mod-abi -p horizon-mod-loader -p horizon-mod-soundphysics
+        run: cargo +stable test -p horizon-mod-abi -p horizon-mod-loader -p horizon-mod-soundphysics -p horizon-mod-shouldersurfing
       - name: The mixer
         run: cargo +stable test -p horizon-client-render --lib audio

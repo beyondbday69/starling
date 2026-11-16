@@ -13,6 +13,7 @@ on:
       - 'crates/horizon-mod-loader/**'
       - 'crates/horizon-mod-hello/**'
       - 'crates/horizon-mod-soundphysics/**'
+      - 'crates/horizon-mod-shouldersurfing/**'
       - 'crates/horizon-client/src/game/mod_loader.rs'
       - '.github/workflows/mod-loader.yml'
 permissions:
@@ -65,26 +66,30 @@ jobs:
         run: |
           cargo ndk -t arm64-v8a build -p horizon-mod-hello --release
           cargo ndk -t arm64-v8a build -p horizon-mod-soundphysics --release
+          cargo ndk -t arm64-v8a build -p horizon-mod-shouldersurfing --release
       # The loader accepts any lib*.so and takes the id from the mod, so the file keeps the name the
       # crate gives it; a player puts it in horizon-native-mods/<id>/.
       - name: Show what was built
         run: |
           ls -l target/aarch64-linux-android/release/lib*.so
           file target/aarch64-linux-android/release/libhello.so \
-            target/aarch64-linux-android/release/libsoundphysics.so
+            target/aarch64-linux-android/release/libsoundphysics.so \
+            target/aarch64-linux-android/release/libshouldersurfing.so
           sha256sum target/aarch64-linux-android/release/libhello.so \
-            target/aarch64-linux-android/release/libsoundphysics.so
+            target/aarch64-linux-android/release/libsoundphysics.so \
+            target/aarch64-linux-android/release/libshouldersurfing.so
       - uses: actions/upload-artifact@v4
         with:
           name: mods-arm64
           path: |
             target/aarch64-linux-android/release/libhello.so
             target/aarch64-linux-android/release/libsoundphysics.so
+            target/aarch64-linux-android/release/libshouldersurfing.so
           if-no-files-found: error
       # A release asset, so a player downloads it without a GitHub login: the phone's browser cannot
       # fetch an artifact.
       - name: Publish the library
-        if: github.ref == 'refs/heads/mod-loader'
+        if: github.ref == 'refs/heads/mod-loader' || github.ref == 'refs/heads/feat/shader-fsr-upscaling'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -97,3 +102,8 @@ jobs:
               --notes "Sound Physics as a library mod. Put libsoundphysics.so in horizon-native-mods/soundphysics/ and turn it on in Options > Mods. Phase B of docs/mod-loader.md: only occlusion is heard so far."
           gh release upload mod-loader-soundphysics \
             target/aarch64-linux-android/release/libsoundphysics.so --clobber
+          gh release view mod-loader-shouldersurfing > /dev/null 2>&1 || \
+            gh release create mod-loader-shouldersurfing --title "Shoulder Surfing (loader build)" \
+              --notes "Shoulder Surfing as a runtime library mod for Starling. Put libshouldersurfing.so in horizon-native-mods/shouldersurfing/ and configure it in Options > Mods."
+          gh release upload mod-loader-shouldersurfing \
+            target/aarch64-linux-android/release/libshouldersurfing.so --clobber

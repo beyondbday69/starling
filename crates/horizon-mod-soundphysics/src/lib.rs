@@ -381,6 +381,7 @@ static DESC: ModDesc = ModDesc {
     frame: Some(frame),
     settings: Some(settings_rows),
     settings_click: Some(settings_click),
+    camera_offset: None,
 };
 
 /// The one symbol the client looks up.

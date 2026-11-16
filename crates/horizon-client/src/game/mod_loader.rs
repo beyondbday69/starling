@@ -281,3 +281,12 @@ pub(super) fn settings_click(game: &mut Game<'_>, mod_id: &str, button: usize) {
     let mut host = GameHost { game };
     loader::settings_click(&mut host, mod_id, button);
 }
+
+/// Ask loaded mods for a third-person camera offset.
+pub(super) fn camera_offset(
+    game: &mut Game<'_>,
+    partial: f32,
+) -> Option<horizon_mod_abi::CameraOffset> {
+    let mut host = GameHost { game };
+    loader::camera_offset(&mut host, partial)
+}

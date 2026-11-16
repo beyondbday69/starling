@@ -13,8 +13,8 @@
 //! never touch the frame, and those are not worth a different rule.
 
 use horizon_mod_abi::{
-    ABI, ButtonSink, HostVTable, ItemInfo, ModDesc, PlayerInfo, RayHitOut, StartedSound,
-    WorldClock, guard,
+    ABI, ButtonSink, CameraOffset, HostVTable, ItemInfo, ModDesc, PlayerInfo, RayHitOut,
+    StartedSound, WorldClock, guard,
 };
 
 #[cfg(target_os = "android")]
@@ -337,6 +337,16 @@ impl Loaded {
             // SAFETY: the mod's own callback.
             unsafe { click(button) }
         });
+    }
+
+    fn camera_offset(&self, host: &mut dyn Host, partial: f32) -> Option<CameraOffset> {
+        let callback = self.desc.camera_offset?;
+        let mut offset = CameraOffset::default();
+        self.ran(host, "camera_offset", || {
+            // SAFETY: the pointer points to a local CameraOffset on the stack.
+            unsafe { callback(partial, &mut offset) }
+        })?;
+        Some(offset)
     }
 }
 
@@ -803,6 +813,19 @@ pub fn settings_click(host: &mut dyn Host, id: &str, button: usize) {
     for module in guard_mods.iter().filter(|m| m.id == id) {
         module.settings_click(host, button);
     }
+}
+
+/// Query third-person camera offset from loaded mods. Returns the first active offset, or None.
+pub fn camera_offset(host: &mut dyn Host, partial: f32) -> Option<CameraOffset> {
+    let guard_mods = mods().lock().unwrap_or_else(|e| e.into_inner());
+    for module in guard_mods.iter() {
+        if let Some(offset) = module.camera_offset(host, partial) {
+            if offset.active != 0 {
+                return Some(offset);
+            }
+        }
+    }
+    None
 }
 
 #[cfg(test)]

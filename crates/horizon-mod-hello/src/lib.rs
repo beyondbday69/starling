@@ -107,6 +107,7 @@ static DESC: ModDesc = ModDesc {
     frame: Some(frame),
     settings: Some(settings),
     settings_click: Some(settings_click),
+    camera_offset: None,
 };
 
 /// The one symbol a mod exports: what it is, and the callbacks it offers.

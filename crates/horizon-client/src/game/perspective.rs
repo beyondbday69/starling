@@ -281,12 +281,25 @@ impl Game<'_> {
             facts: self.res.facts(),
             context,
         };
+        let mod_offset = if self.camera_type == CameraType::ThirdPersonBack {
+            super::mod_loader::camera_offset(self, partial)
+        } else {
+            None
+        };
         view.align_with_entity_distance(
             &entity,
             partial,
             kind,
             |distance| {
-                let mut distance = distance;
+                let mut distance = if let Some(ref offset) = mod_offset {
+                    if offset.distance > 0.0 {
+                        offset.distance
+                    } else {
+                        distance
+                    }
+                } else {
+                    distance
+                };
                 self.native_camera_distance(partial, kind.is_mirrored(), &entity, &mut distance);
                 distance
             },
@@ -303,6 +316,40 @@ impl Game<'_> {
                 (!hit.miss).then_some([hit.hit.location.x, hit.hit.location.y, hit.hit.location.z])
             },
         );
+        if let Some(offset) = mod_offset {
+            if offset.active != 0 && self.camera_type == CameraType::ThirdPersonBack {
+                let from = view.position;
+                view.move_by(offset.forward, offset.up, offset.right);
+                let to = view.position;
+                if let Ok(hit) = clip_world(
+                    &mut rays,
+                    Vec3::new(from[0], from[1], from[2]),
+                    Vec3::new(to[0], to[1], to[2]),
+                    RayBlockMode::Visual,
+                    RayFluidMode::None,
+                    4096,
+                ) {
+                    if !hit.miss {
+                        let hit_loc = [hit.hit.location.x, hit.hit.location.y, hit.hit.location.z];
+                        let dir = [to[0] - from[0], to[1] - from[1], to[2] - from[2]];
+                        let len = (dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2]).sqrt();
+                        if len > 1e-4 {
+                            let hit_dist = ((hit_loc[0] - from[0]).powi(2)
+                                + (hit_loc[1] - from[1]).powi(2)
+                                + (hit_loc[2] - from[2]).powi(2))
+                            .sqrt();
+                            let factor = (hit_dist / len).clamp(0.0, 1.0);
+                            let safe_factor = (factor - 0.1).max(0.0);
+                            view.position = [
+                                from[0] + dir[0] * safe_factor,
+                                from[1] + dir[1] * safe_factor,
+                                from[2] + dir[2] * safe_factor,
+                            ];
+                        }
+                    }
+                }
+            }
+        }
         self.view = view;
         Some((
             glam::DVec3::from_array(view.position),
