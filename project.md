@@ -168,5 +168,6 @@ graph TD
   [Download `libshouldersurfing.so`](https://github.com/beyondbday69/starling/releases/download/mod-loader-shouldersurfing/libshouldersurfing.so)  
   *(Release: [mod-loader-shouldersurfing](https://github.com/beyondbday69/starling/releases/tag/mod-loader-shouldersurfing))*
 
-- **Android Client APK (ABI v6 with Face Patching):**  
-  [Download `starling-apk-arm64-v8a`](https://github.com/beyondbday69/starling/actions/runs/44032296640)
+- **Android Client APK (ABI v7 with Matrix Pose & HoldMyItems Support):**  
+  [Download `starling-apk-arm64-v8a`](https://github.com/beyondbday69/starling/actions/runs/44060380421)  
+  *(Older builds like BuildId `37ac980353ea8c5173d5420cfe4f1702de1a15df` will crash at `#00 /memfd:horizon-mod` due to the 28-byte vs 288-byte ABI v7 matrix struct size change; install this build).*
