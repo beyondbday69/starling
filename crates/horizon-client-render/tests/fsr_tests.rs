@@ -48,20 +48,18 @@ fn fsr_constants_layout_matches_spec() {
     let module = naga::front::wgsl::parse_str(FSR_WGSL).expect("fsr.wgsl parse");
     let mut found_constants = false;
     for (_, ty) in module.types.iter() {
-        if let Some(name) = &ty.name {
-            if name == "FsrConstants" {
-                found_constants = true;
-                if let naga::TypeInner::Struct { members, .. } = &ty.inner {
-                    let member_names: Vec<&str> =
-                        members.iter().filter_map(|m| m.name.as_deref()).collect();
-                    assert_eq!(
-                        member_names,
-                        vec!["src_size", "dst_size", "sharpness", "_pad"],
-                        "FsrConstants struct members do not match spec"
-                    );
-                } else {
-                    panic!("FsrConstants is not a struct");
-                }
+        if ty.name.as_deref() == Some("FsrConstants") {
+            found_constants = true;
+            if let naga::TypeInner::Struct { members, .. } = &ty.inner {
+                let member_names: Vec<&str> =
+                    members.iter().filter_map(|m| m.name.as_deref()).collect();
+                assert_eq!(
+                    member_names,
+                    vec!["src_size", "dst_size", "sharpness", "_pad"],
+                    "FsrConstants struct members do not match spec"
+                );
+            } else {
+                panic!("FsrConstants is not a struct");
             }
         }
     }
