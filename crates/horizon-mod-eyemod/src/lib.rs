@@ -590,6 +590,10 @@ static DESC: ModDesc = ModDesc {
     player_eyes: Some(player_eyes),
 };
 
+/// The entry point looked up by `horizon-mod-loader`.
+///
+/// # Safety
+/// `table` is the client's table, valid for the process's life.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn horizon_mod_entry(table: *const HostVTable) -> *const ModDesc {
     if !table.is_null() {
