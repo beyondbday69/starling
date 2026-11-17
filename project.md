@@ -164,4 +164,5 @@ graph TD
   *(Release: [mod-loader-shouldersurfing](https://github.com/beyondbday69/starling/releases/tag/mod-loader-shouldersurfing))*
 
 - **Android Client APK (Core Built-In Hold My Items 5.2.0):**  
-  Built automatically on push via GitHub Actions `android.yml` workflow with Hold My Items compiled directly into `libhorizon_android.so`. No external mod `.so` file needed on your phone!
+  [Download `starling-apk-arm64-v8a` (Actions Run #44078715258)](https://github.com/beyondbday69/starling/actions/runs/44078715258)  
+  *(Hold My Items 5.2.0 is compiled directly into `libhorizon_android.so`. No external mod `.so` file needed on your phone!)*
