@@ -382,6 +382,7 @@ static DESC: ModDesc = ModDesc {
     settings: Some(settings_rows),
     settings_click: Some(settings_click),
     camera_offset: None,
+    player_eyes: None,
 };
 
 /// The one symbol the client looks up.

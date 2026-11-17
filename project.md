@@ -83,6 +83,22 @@ graph TD
   - Updated `.github/workflows/mod-loader.yml` to compile `horizon-mod-shouldersurfing` for ARM64 (`arm64-v8a`), package artifacts, and create releases.
   - Updated `.github/workflows/mod-checks.yml` for scoped formatting, clippy, and unit tests.
 
+### Phase 5: Dynamic Eyes, Blinking, Look Tracking & Blushing (`libeyemod.so`)
+- **ABI Extension (`horizon-mod-abi` v6):**
+  - Added `PlayerEyes` struct (`active`, `blink`, `look_x`, `look_y`, `blush`, `expression`, `has_face_patch`, `face_pixels: [u32; 64]`).
+  - Added `player_eyes: Option<unsafe extern "C" fn(f32, *mut PlayerEyes)>` to `ModDesc`.
+- **Client & Loader Hook Integration:**
+  - Added `player_eyes` in `crates/horizon-mod-loader/src/lib.rs` and `crates/horizon-client/src/game/mod_loader.rs`.
+  - Added real-time 8x8 GPU atlas face patch upload (`map_patches`) in `crates/horizon-client/src/game/native_hooks.rs`.
+- **`crates/horizon-mod-eyemod` Implementation (`libeyemod.so`):**
+  - Tailored to user's anime ruby/wine-red eye skin (`#6d2337`/`#a8525b` irises, `#d3b2bd`/`#fffafb` catchlights, `#380f17` lash line).
+  - Procedural blinking with natural intervals, duration, and random double-blinks.
+  - Camera/head rotation look tracking (pupils shift left/right/up/down when turning).
+  - Blushing feature with 5 modes: Off, Soft Pink, Rosy (Cute), Intense, and Reactive (crouching/low HP).
+  - Configurable settings in Options > Mods.
+- **CI / CD Automation:**
+  - Added `horizon-mod-eyemod` to `.github/workflows/mod-loader.yml` for ARM64 compilation and GitHub Release publication.
+
 ---
 
 ## 3. Current Status & Verification
@@ -90,15 +106,17 @@ graph TD
 | Component | Status | Verification |
 |---|---|---|
 | **Merge `mod-loader`** | Complete | Commit `6246c88` committed |
-| **Camera ABI Extension** | Complete | `cargo test -p horizon-mod-abi` passed (4/4) |
-| **Loader & Client Hook** | Complete | Wired with collision safety |
-| **Crosshair Aiming (+)** | Complete | Wired in `game.rs` and `horizon-mod-shouldersurfing` |
-| **Shoulder Surfing Port** | Complete | `crates/horizon-mod-shouldersurfing` implemented |
-| **CI `.so` Automation** | Complete | `mod-loader.yml` & `mod-checks.yml` updated |
+| **Camera ABI Extension** | Complete | `cargo test -p horizon-mod-abi` passed |
+| **Crosshair Aiming (+)** | Complete | Verified in `game.rs` |
+| **Shoulder Surfing Mod** | Complete | `libshouldersurfing.so` published |
+| **Player Eyes ABI v6** | Complete | `cargo test -p horizon-mod-abi` & `loader` passed (12/12) |
+| **Dynamic Eyes & Blush Mod** | Complete | `crates/horizon-mod-eyemod` built with 0 warnings |
+| **CI Automation** | Complete | `mod-loader.yml` & `mod-checks.yml` updated |
 
 ---
 
 ## 4. Next Steps
-1. Download updated `libshouldersurfing.so` and updated Android client APK.
-2. Place `libshouldersurfing.so` in `horizon-native-mods/shouldersurfing/` on Android.
-3. Verify over-the-shoulder camera with crosshair (+) aiming enabled.
+1. Push changes to `feat/shader-fsr-upscaling`.
+2. GitHub Actions compiles `libeyemod.so` and the updated Android APK.
+3. Install `libeyemod.so` in `horizon-native-mods/eyemod/` on Android.
+4. Enjoy dynamic animated eyes, look tracking, and cute blushing in-game!

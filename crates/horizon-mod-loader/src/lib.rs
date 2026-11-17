@@ -13,9 +13,10 @@
 //! never touch the frame, and those are not worth a different rule.
 
 use horizon_mod_abi::{
-    ABI, ButtonSink, CameraOffset, HostVTable, ItemInfo, ModDesc, PlayerInfo, RayHitOut,
-    StartedSound, WorldClock, guard,
+    ABI, ButtonSink, HostVTable, ItemInfo, ModDesc, PlayerInfo, RayHitOut, StartedSound,
+    WorldClock, guard,
 };
+pub use horizon_mod_abi::{CameraOffset, PlayerEyes};
 
 #[cfg(target_os = "android")]
 mod android;
@@ -347,6 +348,24 @@ impl Loaded {
             unsafe { callback(partial, &mut offset) }
         })?;
         Some(offset)
+    }
+
+    fn player_eyes(
+        &self,
+        host: &mut dyn Host,
+        partial: f32,
+        initial_face: Option<&[u32; 64]>,
+    ) -> Option<PlayerEyes> {
+        let callback = self.desc.player_eyes?;
+        let mut eyes = PlayerEyes::default();
+        if let Some(face) = initial_face {
+            eyes.face_pixels.copy_from_slice(face);
+        }
+        self.ran(host, "player_eyes", || {
+            // SAFETY: the pointer points to a local PlayerEyes on the stack.
+            unsafe { callback(partial, &mut eyes) }
+        })?;
+        Some(eyes)
     }
 }
 
@@ -822,6 +841,23 @@ pub fn camera_offset(host: &mut dyn Host, partial: f32) -> Option<CameraOffset> 
         if let Some(offset) = module.camera_offset(host, partial) {
             if offset.active != 0 {
                 return Some(offset);
+            }
+        }
+    }
+    None
+}
+
+/// Query player eyes and face animation from loaded mods. Returns the first active result, or None.
+pub fn player_eyes(
+    host: &mut dyn Host,
+    partial: f32,
+    initial_face: Option<&[u32; 64]>,
+) -> Option<PlayerEyes> {
+    let guard_mods = mods().lock().unwrap_or_else(|e| e.into_inner());
+    for module in guard_mods.iter() {
+        if let Some(eyes) = module.player_eyes(host, partial, initial_face) {
+            if eyes.active != 0 {
+                return Some(eyes);
             }
         }
     }

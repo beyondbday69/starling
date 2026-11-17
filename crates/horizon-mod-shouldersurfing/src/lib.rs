@@ -423,6 +423,7 @@ static DESC: ModDesc = ModDesc {
     settings: Some(settings_rows),
     settings_click: Some(settings_click),
     camera_offset: Some(camera_offset),
+    player_eyes: None,
 };
 
 /// Entry point looked up by `horizon-mod-loader`.

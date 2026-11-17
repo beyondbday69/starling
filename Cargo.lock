@@ -1641,6 +1641,13 @@ name = "horizon-mod-abi"
 version = "0.1.0"
 
 [[package]]
+name = "horizon-mod-eyemod"
+version = "0.1.0"
+dependencies = [
+ "horizon-mod-abi",
+]
+
+[[package]]
 name = "horizon-mod-hello"
 version = "0.1.0"
 dependencies = [

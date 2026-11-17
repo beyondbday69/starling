@@ -38,7 +38,7 @@ pub(super) struct OwnSkin {
     loaded: bool,
     choice: SkinChoice,
     /// The chosen skin's 64x64 RGBA; None for the default one.
-    image: Option<Vec<u8>>,
+    pub(super) image: Option<Vec<u8>>,
     /// Whether the slot holds `image` as it is now.
     uploaded: bool,
     /// The title screen's player, its skin and name looked at every frame.

@@ -290,3 +290,13 @@ pub(super) fn camera_offset(
     let mut host = GameHost { game };
     loader::camera_offset(&mut host, partial)
 }
+
+/// Ask loaded mods for player eyes and face animation.
+pub(super) fn player_eyes(
+    game: &mut Game<'_>,
+    partial: f32,
+    initial_face: Option<&[u32; 64]>,
+) -> Option<horizon_mod_abi::PlayerEyes> {
+    let mut host = GameHost { game };
+    loader::player_eyes(&mut host, partial, initial_face)
+}
