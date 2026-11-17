@@ -1300,7 +1300,7 @@ fn flip_degrees(m: &Mob) -> f32 {
     }
 }
 fn species_rotations(m: &Mob, alpha: f32) -> glam::Mat4 {
-    match m.species() {
+    let result = match m.species() {
         Species::Cat => super::tame::cat_rotations(m, alpha),
         Species::Panda => super::panda::rotations(m, alpha),
         Species::Shulker => super::shulker::rotations(m),
@@ -1315,7 +1315,8 @@ fn species_rotations(m: &Mob, alpha: f32) -> glam::Mat4 {
             glam::Mat4::from_rotation_x(pitch.to_radians())
         }
         _ => glam::Mat4::IDENTITY,
-    }
+    };
+    super::livingmotion::body(m, alpha, result)
 }
 /// Creeper.getSwelling: the fuse's progress, past 1 in its last two ticks.
 fn creeper_swelling(m: &Mob, alpha: f32) -> f32 {

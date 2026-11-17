@@ -102,6 +102,7 @@ mod world;
 pub use world::{TargetInfo, visual_clip};
 pub mod dragon_contacts;
 pub mod zombie_villager;
+pub mod livingmotion;
 
 use crate::{blocks::BlockFacts, mesher::Vertex, world::World};
 pub use data::MobData;

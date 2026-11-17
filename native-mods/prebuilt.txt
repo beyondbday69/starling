@@ -2,4 +2,8 @@
 # this folder separated by spaces. The game offers these at once; other sets are asked for.
 wrench
 holdmyitems
+zoom
+elytratrails
+livingmotion
 wrench holdmyitems
+wrench holdmyitems zoom elytratrails livingmotion

@@ -766,6 +766,7 @@ pub fn setup(
     p: &mut Poses,
     w_anims: &HashMap<String, super::keyframes::Animation>,
 ) {
+    super::livingmotion::pose_start(m, s);
     if super::body_anim::anim(m, s, p, w_anims) {
         return;
     }
@@ -1087,6 +1088,7 @@ fn player_model_visibility(p: &mut Poses, hidden: u8, spectator: bool) {
     ] {
         p.visible(part, hidden & (1 << bit) == 0);
     }
+    super::livingmotion::pose(p);
 }
 #[cfg(test)]
 mod flight_pose_tests {

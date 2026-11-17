@@ -2034,6 +2034,7 @@ impl Game<'_> {
     /// Once a frame, in a world or not, after Horizon's extras.
     pub(super) fn native_frame(&mut self, elapsed: Duration) {
         self.holdmyitems_frame(elapsed);
+        self.livingmotion_frame();
         mod_api::dispatch_frame(self, mod_api::mods(), elapsed);
         let partial = (elapsed.as_secs_f32() * 20.0).clamp(0.0, 1.0);
         super::mod_loader::frame(self, partial);
@@ -2169,6 +2170,7 @@ impl Game<'_> {
     /// there: the single player server thread, a dedicated server).
     pub(super) fn native_tick(&mut self) {
         self.holdmyitems_tick();
+        self.elytratrails_tick();
         mod_api::dispatch_tick(self, mod_api::mods());
         super::mod_loader::tick(self);
     }
@@ -2315,6 +2317,7 @@ impl Game<'_> {
         context: &NativeLifecycleContext,
         phase: ServerTickPhase,
     ) {
+        self.elytratrails_net_server_tick();
         mod_api::dispatch_server_tick(self, mod_api::mods(), context, phase);
     }
     /// Before an authoritative server level's tick pass. `dimension` is its ID.
@@ -2426,6 +2429,8 @@ impl Game<'_> {
     /// `native_playing`), mouse buttons while playing. Repeats are left out.
     pub(super) fn native_key(&mut self, key: &str, pressed: bool) {
         self.holdmyitems_key(key, pressed);
+        self.zoom_key(key, pressed);
+        self.livingmotion_key(key, pressed);
         mod_api::dispatch_key(self, mod_api::mods(), key, pressed);
     }
     /// A real window key event after handling, including repeats and consumed shortcuts.
@@ -2458,6 +2463,7 @@ impl Game<'_> {
     }
     /// Wheel steps while playing: set `claimed` to keep them from the hotbar.
     pub(super) fn native_wheel(&mut self, steps: f32, claimed: &mut bool) {
+        self.zoom_wheel(steps, claimed);
         mod_api::dispatch_wheel(self, mod_api::mods(), steps, claimed);
     }
     /// Gameplay scrolling after whole steps accumulate, before hotbar/spectator handling.
@@ -2558,6 +2564,7 @@ impl Game<'_> {
     /// The zoom a native mod asks for, applied while playing (the spyglass's
     /// own view wins): set `zoom` when it is none yet.
     pub(super) fn native_zoom(&self, zoom: &mut Option<NativeZoom>) {
+        self.zoom_view(zoom);
         mod_api::dispatch_zoom(self, mod_api::mods(), zoom);
     }
     /// Computed world fog RGB, after ordinary effects and before upload. Title panoramas skip it.
@@ -2655,6 +2662,7 @@ impl Game<'_> {
         roll: &mut f32,
         scale: &mut f32,
     ) {
+        self.livingmotion_hand_pose(hand, stack, partial, swing, x, y, z, pitch, yaw, roll);
         mod_api::dispatch_render_hand_pose(
             self,
             mod_api::mods(),
@@ -2809,6 +2817,15 @@ impl Game<'_> {
         if !mods.iter().any(|m| m.id == "holdmyitems") {
             mods.push(Self::holdmyitems_mod_entry());
         }
+        if !mods.iter().any(|m| m.id == "zoom") {
+            Self::zoom_listed(mods);
+        }
+        if !mods.iter().any(|m| m.id == "elytratrails") {
+            self.elytratrails_listed(mods);
+        }
+        if !mods.iter().any(|m| m.id == "livingmotion") {
+            self.livingmotion_listed(mods);
+        }
         mod_api::dispatch_mods(self, mod_api::mods(), mods);
         // Mods built as shared libraries list themselves the same way, and are only known once
         // their folder has been read.
@@ -2822,6 +2839,18 @@ impl Game<'_> {
             buttons.extend(self.holdmyitems_settings());
             return;
         }
+        if mod_id == "zoom" {
+            self.zoom_page(mod_id, buttons);
+            return;
+        }
+        if mod_id == "elytratrails" {
+            buttons.extend(self.elytratrails_page_buttons());
+            return;
+        }
+        if mod_id == "livingmotion" {
+            self.livingmotion_settings_page(mod_id, buttons);
+            return;
+        }
         mod_api::dispatch_settings(self, mod_api::mods(), mod_id, buttons);
         super::mod_loader::settings(self, mod_id, buttons);
     }
@@ -2829,6 +2858,18 @@ impl Game<'_> {
     pub(super) fn native_settings_click(&mut self, mod_id: &str, button: usize) {
         if mod_id == "holdmyitems" {
             self.holdmyitems_settings_click(button);
+            return;
+        }
+        if mod_id == "zoom" {
+            self.zoom_click(mod_id, button);
+            return;
+        }
+        if mod_id == "elytratrails" {
+            self.elytratrails_page_click(button);
+            return;
+        }
+        if mod_id == "livingmotion" {
+            self.livingmotion_settings_click(mod_id, button);
             return;
         }
         mod_api::dispatch_settings_click(self, mod_api::mods(), mod_id, button);
@@ -6418,11 +6459,13 @@ impl Game<'_> {
     /// player's own bytes, checked by nothing. Runs in the tick after it
     /// arrives, with no player's state swapped in. Server-side. API 40.
     pub(super) fn native_net_from_client(&mut self, player: u128, channel: &str, data: &[u8]) {
+        self.elytratrails_net_from_client(player, channel, data);
         mod_api::dispatch_net_from_client(self, mod_api::mods(), player, channel, data);
     }
     /// A message from the server on `channel` (`mod_id:name`), whose `data`
     /// is the sender's own bytes. The window's game only. API 40.
     pub(super) fn native_net_from_server(&mut self, channel: &str, data: &[u8]) {
+        self.elytratrails_net_from_server(channel, data);
         mod_api::dispatch_net_from_server(self, mod_api::mods(), channel, data);
     }
     /// `dimension`'s level opened on the server (NeoForge's `LevelEvent.Load`,
