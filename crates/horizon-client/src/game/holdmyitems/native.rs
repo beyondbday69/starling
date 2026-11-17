@@ -337,7 +337,7 @@ impl Game<'_> {
     }
 
     /// `horizon_client::game::hand::Game<'_>::swing_hand` HEAD hook.
-    pub(super) fn holdmyitems_swing_hand(&mut self, hand: Hand) {
+    pub(crate) fn holdmyitems_swing_hand(&mut self, hand: Hand) {
         if !enabled(self) {
             return;
         }
@@ -373,7 +373,7 @@ impl Game<'_> {
     /// `native_tick` (20 TPS): syncs haste/fatigue amplifiers and sanitizes input state.
     /// Swing progression itself is stepped in `holdmyitems_frame` via `dt` so it never
     /// desynchronizes or double-steps across threads.
-    pub(super) fn holdmyitems_tick(&mut self) {
+    pub(crate) fn holdmyitems_tick(&mut self) {
         if !enabled(self) || self.player.is_none() {
             return;
         }
@@ -399,7 +399,7 @@ impl Game<'_> {
 
     /// `native_frame`: steps HMI spring-damper physics, plays switch/bell/flower sounds,
     /// and pre-caches local map vertices when a filled map is held.
-    pub(super) fn holdmyitems_frame(&mut self, elapsed: Duration) {
+    pub(crate) fn holdmyitems_frame(&mut self, elapsed: Duration) {
         if !enabled(self) {
             return;
         }
@@ -492,7 +492,7 @@ impl Game<'_> {
     /// replaces `out` (the first-person hand vertex buffer from `hand_geometry`) with
     /// the complete Hold My Items 5.1.1 first-person arms, 3D blocks, items, per-quad
     /// animations, maps, and first-person particles.
-    pub(super) fn holdmyitems_render_hands(&self, partial: f32, out: &mut Vec<Vertex>) {
+    pub(crate) fn holdmyitems_render_hands(&self, partial: f32, out: &mut Vec<Vertex>) {
         if !enabled(self) {
             return;
         }
@@ -936,7 +936,7 @@ impl Game<'_> {
     }
 
     /// `native_camera_shake`: applies HMI camera pitch/roll/offset feedback during eating, drinking, walking, and landing.
-    pub(super) fn holdmyitems_shake(&self, _partial: f32, shake: &mut NativeShake) {
+    pub(crate) fn holdmyitems_shake(&self, _partial: f32, shake: &mut NativeShake) {
         if !enabled(self) || !self.native_playing() {
             return;
         }
@@ -953,7 +953,7 @@ impl Game<'_> {
     }
 
     /// `native_visuals`: emits dynamic camera-local colored light when holding a light source.
-    pub(super) fn holdmyitems_visuals(&self, lights: &mut Vec<NativeColoredLight>) {
+    pub(crate) fn holdmyitems_visuals(&self, lights: &mut Vec<NativeColoredLight>) {
         if !enabled(self) {
             return;
         }
@@ -981,7 +981,7 @@ impl Game<'_> {
     }
 
     /// `native_key`: tracks the Inspect keybind (`key.holdmyitems.inspect`, default C).
-    pub(super) fn holdmyitems_key(&mut self, key: &str, pressed: bool) {
+    pub(crate) fn holdmyitems_key(&mut self, key: &str, pressed: bool) {
         if !enabled(self) {
             with_state(|s| s.inspect_down = false);
             return;
@@ -992,7 +992,7 @@ impl Game<'_> {
     }
 
     /// `native_hud`: renders any queued HMI debug lines.
-    pub(super) fn holdmyitems_hud(&mut self, batch: &mut HudBatch) {
+    pub(crate) fn holdmyitems_hud(&mut self, batch: &mut HudBatch) {
         if !enabled(self) {
             return;
         }
@@ -1003,7 +1003,7 @@ impl Game<'_> {
     }
 
     /// `native_command`: handles `/hmi` and `/holdmyitems` commands.
-    pub(super) fn holdmyitems_command(&mut self, command: &str, ran: &mut bool) {
+    pub(crate) fn holdmyitems_command(&mut self, command: &str, ran: &mut bool) {
         if *ran {
             return;
         }
@@ -1086,7 +1086,7 @@ impl Game<'_> {
     }
 
     /// `native_mods`: lists Hold My Items 5.2.0 in `Options > Mods`.
-    pub(super) fn holdmyitems_mod_entry() -> NativeMod {
+    pub(crate) fn holdmyitems_mod_entry() -> NativeMod {
         NativeMod {
             id: hmi::ID.to_owned(),
             title: hmi::TITLE.to_owned(),
@@ -1100,12 +1100,12 @@ impl Game<'_> {
     }
 
     /// `native_settings`: returns button labels for `Options > Mods > Hold My Items`.
-    pub(super) fn holdmyitems_settings(&self) -> Vec<String> {
+    pub(crate) fn holdmyitems_settings(&self) -> Vec<String> {
         hmi::settings_labels(&loaded_config(self))
     }
 
     /// `native_settings_click`: toggles settings and writes `config.json`.
-    pub(super) fn holdmyitems_settings_click(&mut self, button: usize) {
+    pub(crate) fn holdmyitems_settings_click(&mut self, button: usize) {
         match hmi::settings_click(&loaded_config(self), button) {
             Some(SettingsEffect::Save(cfg)) => {
                 self.native_set_setting(hmi::ID, hmi::CONFIG_FILE, &cfg.to_json());
