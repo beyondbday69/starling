@@ -13,7 +13,6 @@ on:
       - 'crates/horizon-mod-soundphysics/**'
       - 'crates/horizon-mod-shouldersurfing/**'
       - 'crates/horizon-mod-eyemod/**'
-      - 'crates/horizon-mod-holdmyitems/**'
       - 'crates/horizon-client-render/src/audio.rs'
       - 'crates/horizon-client-render/src/sound_engine.rs'
       - 'crates/horizon-client/src/game/mod_loader.rs'
@@ -44,13 +43,13 @@ jobs:
       - name: Formatting
         run: |
           cargo +stable fmt --check -p horizon-mod-abi -p horizon-mod-loader -p horizon-mod-hello \
-            -p horizon-mod-soundphysics -p horizon-mod-shouldersurfing -p horizon-mod-eyemod -p horizon-mod-holdmyitems
+            -p horizon-mod-soundphysics -p horizon-mod-shouldersurfing -p horizon-mod-eyemod
       - name: Clippy, warnings denied
         run: |
           cargo +stable clippy -p horizon-mod-abi -p horizon-mod-loader -p horizon-mod-hello \
-            -p horizon-mod-soundphysics -p horizon-mod-shouldersurfing -p horizon-mod-eyemod -p horizon-mod-holdmyitems --all-targets -- -D warnings
+            -p horizon-mod-soundphysics -p horizon-mod-shouldersurfing -p horizon-mod-eyemod --all-targets -- -D warnings
           cargo +stable clippy -p horizon-client-render -p horizon-client --all-targets -- -D warnings
       - name: The boundary, the loader and the mod
-        run: cargo +stable test -p horizon-mod-abi -p horizon-mod-loader -p horizon-mod-soundphysics -p horizon-mod-shouldersurfing -p horizon-mod-eyemod -p horizon-mod-holdmyitems
+        run: cargo +stable test -p horizon-mod-abi -p horizon-mod-loader -p horizon-mod-soundphysics -p horizon-mod-shouldersurfing -p horizon-mod-eyemod
       - name: The mixer
         run: cargo +stable test -p horizon-client-render --lib audio

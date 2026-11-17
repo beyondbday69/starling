@@ -13,7 +13,6 @@ members = [
     "crates/horizon-mod-soundphysics",
     "crates/horizon-mod-shouldersurfing",
     "crates/horizon-mod-eyemod",
-    "crates/horizon-mod-holdmyitems",
     "crates/horizon-world",
     "crates/horizon-client",
     # Starling: the game as a NativeActivity library; empty on other targets.

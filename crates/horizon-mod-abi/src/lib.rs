@@ -12,7 +12,7 @@ use std::ffi::{CStr, c_char, c_void};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 /// The version of this boundary. A mod is refused when it disagrees.
-pub const ABI: u32 = 7;
+pub const ABI: u32 = 6;
 
 /// The symbol a mod exports.
 pub const ENTRY: &str = "horizon_mod_entry";
@@ -216,65 +216,6 @@ impl Default for PlayerEyes {
     }
 }
 
-/// First-person item holding settings from a mod.
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct HoldMyItems {
-    /// 1 if this mod wants to control first-person hand holding.
-    pub active: u8,
-    /// 1 to render the player's arm holding the main hand item.
-    pub show_main_arm: u8,
-    /// 1 to render the player's arm holding the offhand item.
-    pub show_off_arm: u8,
-    /// 1 to enable two-handed grip for swords & large tools when offhand is empty.
-    pub two_handed: u8,
-    /// Arm position offset (X, Y, Z in blocks).
-    pub offset_x: f32,
-    pub offset_y: f32,
-    pub offset_z: f32,
-    /// Arm rotation angles (Pitch, Yaw, Roll in degrees).
-    pub pitch: f32,
-    pub yaw: f32,
-    pub roll: f32,
-    /// 1 if 4x4 matrix poses are provided by the mod.
-    pub has_matrices: u8,
-    pub _pad: [u8; 3],
-    /// Main-hand arm transform matrix (4x4 column-major).
-    pub main_arm_matrix: [f32; 16],
-    /// Main-hand item transform matrix (4x4 column-major).
-    pub main_item_matrix: [f32; 16],
-    /// Off-hand arm transform matrix (4x4 column-major).
-    pub off_arm_matrix: [f32; 16],
-    /// Off-hand item transform matrix (4x4 column-major).
-    pub off_item_matrix: [f32; 16],
-}
-
-impl Default for HoldMyItems {
-    fn default() -> Self {
-        const I: [f32; 16] = [
-            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-        ];
-        Self {
-            active: 0,
-            show_main_arm: 1,
-            show_off_arm: 1,
-            two_handed: 1,
-            offset_x: 0.0,
-            offset_y: 0.0,
-            offset_z: 0.0,
-            pitch: 0.0,
-            yaw: 0.0,
-            roll: 0.0,
-            has_matrices: 0,
-            _pad: [0; 3],
-            main_arm_matrix: I,
-            main_item_matrix: I,
-            off_arm_matrix: I,
-            off_item_matrix: I,
-        }
-    }
-}
-
 /// A row the client asks a mod for, through [`ButtonSink::push`].
 #[repr(C)]
 pub struct ButtonSink {
@@ -314,8 +255,6 @@ pub struct ModDesc {
     pub camera_offset: Option<unsafe extern "C" fn(f32, *mut CameraOffset)>,
     /// Eye animations, blinking, looking, and blushing for the player model.
     pub player_eyes: Option<unsafe extern "C" fn(f32, *mut PlayerEyes)>,
-    /// First-person item holding configuration and arm rendering.
-    pub hold_my_items: Option<unsafe extern "C" fn(f32, *mut HoldMyItems)>,
 }
 
 // A mod's description is read on one thread and its callbacks run on one thread, but the loader
@@ -395,18 +334,10 @@ mod tests {
             8 + 8 * pointer
         );
         assert_eq!(std::mem::offset_of!(ModDesc, player_eyes), 8 + 9 * pointer);
-        assert_eq!(
-            std::mem::offset_of!(ModDesc, hold_my_items),
-            8 + 10 * pointer
-        );
         assert_eq!(std::mem::size_of::<CameraOffset>(), 20);
         assert_eq!(std::mem::offset_of!(CameraOffset, crosshair), 1);
         assert_eq!(std::mem::size_of::<PlayerEyes>(), 264);
         assert_eq!(std::mem::offset_of!(PlayerEyes, has_face_patch), 6);
         assert_eq!(std::mem::offset_of!(PlayerEyes, face_pixels), 8);
-        assert_eq!(std::mem::size_of::<HoldMyItems>(), 288);
-        assert_eq!(std::mem::offset_of!(HoldMyItems, offset_x), 4);
-        assert_eq!(std::mem::offset_of!(HoldMyItems, has_matrices), 28);
-        assert_eq!(std::mem::offset_of!(HoldMyItems, main_arm_matrix), 32);
     }
 }

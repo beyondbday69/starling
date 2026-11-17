@@ -15,7 +15,6 @@ on:
       - 'crates/horizon-mod-soundphysics/**'
       - 'crates/horizon-mod-shouldersurfing/**'
       - 'crates/horizon-mod-eyemod/**'
-      - 'crates/horizon-mod-holdmyitems/**'
       - 'crates/horizon-client/src/game/mod_loader.rs'
       - '.github/workflows/mod-loader.yml'
 permissions:
@@ -70,7 +69,6 @@ jobs:
           cargo ndk -t arm64-v8a build -p horizon-mod-soundphysics --release
           cargo ndk -t arm64-v8a build -p horizon-mod-shouldersurfing --release
           cargo ndk -t arm64-v8a build -p horizon-mod-eyemod --release
-          cargo ndk -t arm64-v8a build -p horizon-mod-holdmyitems --release
       # The loader accepts any lib*.so and takes the id from the mod, so the file keeps the name the
       # crate gives it; a player puts it in horizon-native-mods/<id>/.
       - name: Show what was built
@@ -79,13 +77,11 @@ jobs:
           file target/aarch64-linux-android/release/libhello.so \
             target/aarch64-linux-android/release/libsoundphysics.so \
             target/aarch64-linux-android/release/libshouldersurfing.so \
-            target/aarch64-linux-android/release/libeyemod.so \
-            target/aarch64-linux-android/release/libholdmyitems.so
+            target/aarch64-linux-android/release/libeyemod.so
           sha256sum target/aarch64-linux-android/release/libhello.so \
             target/aarch64-linux-android/release/libsoundphysics.so \
             target/aarch64-linux-android/release/libshouldersurfing.so \
-            target/aarch64-linux-android/release/libeyemod.so \
-            target/aarch64-linux-android/release/libholdmyitems.so
+            target/aarch64-linux-android/release/libeyemod.so
       - uses: actions/upload-artifact@v4
         with:
           name: mods-arm64
@@ -94,7 +90,6 @@ jobs:
             target/aarch64-linux-android/release/libsoundphysics.so
             target/aarch64-linux-android/release/libshouldersurfing.so
             target/aarch64-linux-android/release/libeyemod.so
-            target/aarch64-linux-android/release/libholdmyitems.so
           if-no-files-found: error
       # A release asset, so a player downloads it without a GitHub login: the phone's browser cannot
       # fetch an artifact.
@@ -122,8 +117,3 @@ jobs:
               --notes "Dynamic Eyes & Blush as a runtime library mod for Starling. Put libeyemod.so in horizon-native-mods/eyemod/ and configure it in Options > Mods."
           gh release upload mod-loader-eyemod \
             target/aarch64-linux-android/release/libeyemod.so --clobber
-          gh release view mod-loader-holdmyitems > /dev/null 2>&1 || \
-            gh release create mod-loader-holdmyitems --title "Hold My Items (loader build)" \
-              --notes "Hold My Items as a runtime library mod for Starling. Put libholdmyitems.so in horizon-native-mods/holdmyitems/ and configure it in Options > Mods."
-          gh release upload mod-loader-holdmyitems \
-            target/aarch64-linux-android/release/libholdmyitems.so --clobber

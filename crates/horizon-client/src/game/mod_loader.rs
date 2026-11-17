@@ -300,12 +300,3 @@ pub(super) fn player_eyes(
     let mut host = GameHost { game };
     loader::player_eyes(&mut host, partial, initial_face)
 }
-
-/// Ask loaded mods for first-person item holding settings.
-pub(super) fn hold_my_items(
-    game: &mut Game<'_>,
-    partial: f32,
-) -> Option<horizon_mod_abi::HoldMyItems> {
-    let mut host = GameHost { game };
-    loader::hold_my_items(&mut host, partial)
-}

@@ -561,7 +561,12 @@ unsafe extern "C" fn frame(partial: f32) {
                 let mut item_buf = [0; 64];
                 let mut item_info = ItemInfo::default();
                 let has_item = unsafe {
-                    (host.item)(0, item_buf.as_mut_ptr(), item_buf.len(), &mut item_info) != 0
+                    (host.item)(
+                        0,
+                        item_buf.as_mut_ptr(),
+                        item_buf.len(),
+                        &mut item_info,
+                    ) != 0
                 };
                 if has_item {
                     if let Some(name) = unsafe { text(item_buf.as_ptr()) } {
@@ -859,13 +864,17 @@ unsafe extern "C" fn player_eyes(_partial: f32, out: *mut PlayerEyes) {
                 let w = size_x * 0.8;
                 eyes.face_pixels[4 * 8 + 3] =
                     lerp_u32(eyes.face_pixels[4 * 8 + 3], C_LASH, size_x * eff_h);
-                eyes.face_pixels[5 * 8 + 3] = lerp_u32(eyes.face_pixels[5 * 8 + 3], C_WHITE_BOT, w);
-                eyes.face_pixels[6 * 8 + 3] = lerp_u32(eyes.face_pixels[6 * 8 + 3], C_PUPIL_BOT, w);
+                eyes.face_pixels[5 * 8 + 3] =
+                    lerp_u32(eyes.face_pixels[5 * 8 + 3], C_WHITE_BOT, w);
+                eyes.face_pixels[6 * 8 + 3] =
+                    lerp_u32(eyes.face_pixels[6 * 8 + 3], C_PUPIL_BOT, w);
 
                 eyes.face_pixels[4 * 8 + 4] =
                     lerp_u32(eyes.face_pixels[4 * 8 + 4], C_LASH, size_x * eff_h);
-                eyes.face_pixels[5 * 8 + 4] = lerp_u32(eyes.face_pixels[5 * 8 + 4], C_WHITE_BOT, w);
-                eyes.face_pixels[6 * 8 + 4] = lerp_u32(eyes.face_pixels[6 * 8 + 4], C_PUPIL_BOT, w);
+                eyes.face_pixels[5 * 8 + 4] =
+                    lerp_u32(eyes.face_pixels[5 * 8 + 4], C_WHITE_BOT, w);
+                eyes.face_pixels[6 * 8 + 4] =
+                    lerp_u32(eyes.face_pixels[6 * 8 + 4], C_PUPIL_BOT, w);
             }
 
             // 7. Shock reaction extras: anime sweat drop & surprised open mouth
@@ -1002,7 +1011,6 @@ static DESC: ModDesc = ModDesc {
     settings_click: Some(settings_click),
     camera_offset: None,
     player_eyes: Some(player_eyes),
-    hold_my_items: None,
 };
 
 /// The entry point looked up by `horizon-mod-loader`.
@@ -1075,3 +1083,4 @@ mod tests {
         assert_eq!(eyes.has_face_patch, 1);
     }
 }
+
