@@ -236,10 +236,24 @@ pub struct HoldMyItems {
     pub pitch: f32,
     pub yaw: f32,
     pub roll: f32,
+    /// 1 if 4x4 matrix poses are provided by the mod.
+    pub has_matrices: u8,
+    pub _pad: [u8; 3],
+    /// Main-hand arm transform matrix (4x4 column-major).
+    pub main_arm_matrix: [f32; 16],
+    /// Main-hand item transform matrix (4x4 column-major).
+    pub main_item_matrix: [f32; 16],
+    /// Off-hand arm transform matrix (4x4 column-major).
+    pub off_arm_matrix: [f32; 16],
+    /// Off-hand item transform matrix (4x4 column-major).
+    pub off_item_matrix: [f32; 16],
 }
 
 impl Default for HoldMyItems {
     fn default() -> Self {
+        const I: [f32; 16] = [
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ];
         Self {
             active: 0,
             show_main_arm: 1,
@@ -251,6 +265,12 @@ impl Default for HoldMyItems {
             pitch: 0.0,
             yaw: 0.0,
             roll: 0.0,
+            has_matrices: 0,
+            _pad: [0; 3],
+            main_arm_matrix: I,
+            main_item_matrix: I,
+            off_arm_matrix: I,
+            off_item_matrix: I,
         }
     }
 }
@@ -384,7 +404,9 @@ mod tests {
         assert_eq!(std::mem::size_of::<PlayerEyes>(), 264);
         assert_eq!(std::mem::offset_of!(PlayerEyes, has_face_patch), 6);
         assert_eq!(std::mem::offset_of!(PlayerEyes, face_pixels), 8);
-        assert_eq!(std::mem::size_of::<HoldMyItems>(), 28);
+        assert_eq!(std::mem::size_of::<HoldMyItems>(), 288);
         assert_eq!(std::mem::offset_of!(HoldMyItems, offset_x), 4);
+        assert_eq!(std::mem::offset_of!(HoldMyItems, has_matrices), 28);
+        assert_eq!(std::mem::offset_of!(HoldMyItems, main_arm_matrix), 32);
     }
 }

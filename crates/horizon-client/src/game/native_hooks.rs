@@ -2061,39 +2061,32 @@ impl Game<'_> {
         };
         let mut base_face = [0u32; 64];
         let mut has_base = false;
-        if let Some(img) = self.own_skin.image.as_ref() {
-            if img.len() >= 64 * 64 * 4 {
-                for y in 0..8 {
-                    for x in 0..8 {
-                        let idx = ((y + 8) * 64 + (x + 8)) * 4;
-                        let px = u32::from_le_bytes([
-                            img[idx],
-                            img[idx + 1],
-                            img[idx + 2],
-                            img[idx + 3],
-                        ]);
-                        base_face[y * 8 + x] = px;
-                    }
+        if let Some(img) = self.own_skin.image.as_ref()
+            && img.len() >= 64 * 64 * 4
+        {
+            for y in 0..8 {
+                for x in 0..8 {
+                    let idx = ((y + 8) * 64 + (x + 8)) * 4;
+                    let px =
+                        u32::from_le_bytes([img[idx], img[idx + 1], img[idx + 2], img[idx + 3]]);
+                    base_face[y * 8 + x] = px;
                 }
-                has_base = true;
             }
+            has_base = true;
         }
-        if !has_base && let Some((img, _)) = horizon_client::skins::offline_skin() {
-            if img.len() >= 64 * 64 * 4 {
-                for y in 0..8 {
-                    for x in 0..8 {
-                        let idx = ((y + 8) * 64 + (x + 8)) * 4;
-                        let px = u32::from_le_bytes([
-                            img[idx],
-                            img[idx + 1],
-                            img[idx + 2],
-                            img[idx + 3],
-                        ]);
-                        base_face[y * 8 + x] = px;
-                    }
+        if !has_base
+            && let Some((img, _)) = horizon_client::skins::offline_skin()
+            && img.len() >= 64 * 64 * 4
+        {
+            for y in 0..8 {
+                for x in 0..8 {
+                    let idx = ((y + 8) * 64 + (x + 8)) * 4;
+                    let px =
+                        u32::from_le_bytes([img[idx], img[idx + 1], img[idx + 2], img[idx + 3]]);
+                    base_face[y * 8 + x] = px;
                 }
-                has_base = true;
             }
+            has_base = true;
         }
 
         let eyes = super::mod_loader::player_eyes(
@@ -2101,26 +2094,27 @@ impl Game<'_> {
             partial,
             if has_base { Some(&base_face) } else { None },
         );
-        if let Some(eyes) = eyes {
-            if eyes.active != 0 && eyes.has_face_patch != 0 {
-                let (w, h) = (self.gui.atlas.width as f32, self.gui.atlas.height as f32);
-                let skin_x = (rect.u0 * w).round() as u32;
-                let skin_y = (rect.v0 * h).round() as u32;
-                let face_x = skin_x + 8;
-                let face_y = skin_y + 8;
+        if let Some(eyes) = eyes
+            && eyes.active != 0
+            && eyes.has_face_patch != 0
+        {
+            let (w, h) = (self.gui.atlas.width as f32, self.gui.atlas.height as f32);
+            let skin_x = (rect.u0 * w).round() as u32;
+            let skin_y = (rect.v0 * h).round() as u32;
+            let face_x = skin_x + 8;
+            let face_y = skin_y + 8;
 
-                let mut rgba = Vec::with_capacity(256);
-                for &pixel in &eyes.face_pixels {
-                    rgba.extend_from_slice(&pixel.to_le_bytes());
-                }
-                self.map_patches.push(horizon_client::font::Patch {
-                    x: face_x,
-                    y: face_y,
-                    width: 8,
-                    height: 8,
-                    rgba,
-                });
+            let mut rgba = Vec::with_capacity(256);
+            for &pixel in &eyes.face_pixels {
+                rgba.extend_from_slice(&pixel.to_le_bytes());
             }
+            self.map_patches.push(horizon_client::font::Patch {
+                x: face_x,
+                y: face_y,
+                width: 8,
+                height: 8,
+                rgba,
+            });
         }
     }
     /// The frame rate this window is about to be held to: Max Framerate after the

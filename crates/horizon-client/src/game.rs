@@ -14140,18 +14140,41 @@ impl Game<'_> {
                 }
                 _ => ItemPose::Swing,
             };
-            let m = to_world
+            let mut m = to_world
                 * horizon_client::first_person::item_pose(left, inverse_height, attack, pose);
 
             // Hold My Items: render player arms holding items in first person.
-            if let Some(hold) = mod_loader::hold_my_items(self, a) {
-                if hold.active != 0 && !self.own_invisible() {
-                    let show_this_arm = if hand == Hand::Main {
-                        hold.show_main_arm != 0
+            if let Some(hold) = mod_loader::hold_my_items(self, a)
+                && hold.active != 0
+                && !self.own_invisible()
+            {
+                let show_this_arm = if hand == Hand::Main {
+                    hold.show_main_arm != 0
+                } else {
+                    hold.show_off_arm != 0
+                };
+                if show_this_arm {
+                    if hold.has_matrices != 0 {
+                        let arm_mat = if hand == Hand::Main {
+                            hold.main_arm_matrix
+                        } else {
+                            hold.off_arm_matrix
+                        };
+                        let item_mat = if hand == Hand::Main {
+                            hold.main_item_matrix
+                        } else {
+                            hold.off_item_matrix
+                        };
+                        let arm_m = to_world * glam::Mat4::from_cols_array(&arm_mat);
+                        m = to_world * glam::Mat4::from_cols_array(&item_mat);
+                        self.first_person_arm(left, arm_m, packed, &mut out);
+
+                        if hand == Hand::Main && hold.two_handed != 0 && off_hand_empty {
+                            let support_m =
+                                to_world * glam::Mat4::from_cols_array(&hold.off_arm_matrix);
+                            self.first_person_arm(!left, support_m, packed, &mut out);
+                        }
                     } else {
-                        hold.show_off_arm != 0
-                    };
-                    if show_this_arm {
                         let arm_m = to_world
                             * horizon_client::first_person::held_item_arm_pose(
                                 left,

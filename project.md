@@ -116,30 +116,21 @@ graph TD
 ### Phase 7: Hold My Items Mod (`libholdmyitems.so` & ABI v7)
 - **Problem Statement:**
   - In vanilla first-person rendering, Minecraft/Horizon intentionally hid the player's arm whenever any item or block was held (`item.is_some()`), making items appear as floating disjointed models without hands or arms holding them.
-  - The player wanted the **Hold My Items** mod (`libholdmyitems.so`), providing visible first-person arms holding tools, weapons, and blocks, realistic hand grip alignments, two-handed support stances, and configurable placement.
+  - The player wanted the **Hold My Items** mod (`libholdmyitems.so`), porting the full **Hold My Items 5.2.0** native animation engine from [`beyondbday69/Horizon-HoldMyItems`](https://github.com/beyondbday69/Horizon-HoldMyItems.git).
 - **Architecture & Implementation:**
-  - **ABI v7 (`crates/horizon-mod-abi`):**
-    - Bumped `ABI = 7;`.
-    - Added `HoldMyItems` struct (28 bytes) carrying active status, main/offhand arm visibility, two-handed combat stance, translation offsets (`x, y, z`), and orientation rotations (`pitch, yaw, roll`).
-    - Added `hold_my_items: Option<unsafe extern "C" fn(f32, *mut HoldMyItems)>` to `ModDesc`.
-  - **Mod Loader Integration (`crates/horizon-mod-loader`):**
-    - Updated ABI verification to accept ABIs 5, 6, and 7 (`desc.abi < 5 || desc.abi > ABI`), guaranteeing full backwards compatibility for existing `libsoundphysics.so`, `libshouldersurfing.so`, and `libeyemod.so`.
-    - Added `Module::hold_my_items` dispatch and `loader::hold_my_items(partial, out)`.
-  - **First-Person Arm Geometry & Poses (`crates/horizon-client`):**
-    - Created `held_item_arm_pose(left, swing, equip_progress)` in `first_person.rs`, attaching the player's forearm and hand smoothly to the item handle.
-    - Created `two_handed_support_arm_pose(swing, equip_progress)` positioning the off-hand arm across the chest to grip heavy two-handed weapons (swords, axes, heavy tools).
-    - In `game.rs:hand_geometry`, dynamically rendered `self.first_person_arm` with player skin and armor textures alongside the held item geometry whenever `hold_my_items.active` is true.
-  - **Standalone Mod (`crates/horizon-mod-holdmyitems`):**
-    - Created standalone crate producing `libholdmyitems.so`.
-    - Integrated with Starling's Options > Mods menu with 5 configurable options:
-      1. *Hold My Items* (Enabled / Disabled)
-      2. *Two-Handed Stance* (On / Off for swords, axes, and tools)
-      3. *Offhand Arm* (Show / Hide)
-      4. *Grip Placement* (Natural, Compact, Extended, Tactical)
-      5. *Arm Bobbing* (Realistic swing & equip sway)
+  - **Full HMI 5.2.0 Runtime (`crates/horizon-mod-holdmyitems/src/runtime.rs`):**
+    - Ported full 166 KB HMI 5.2.0 engine into the `.so` crate: 12 easing curves, 4x4 matrix transforms (`Mat4f`), spring-damper viewmodel inertia physics (pitch/yaw inertia, fall/jump spring-dampers, walking/sprinting/sneaking sway), alternating 2-hit sword combo slashes, pickaxe/axe/shovel jabs, per-item swing speed tables, and weapon inspection (`C` key 360° spin).
+  - **ABI v7 Extension (`crates/horizon-mod-abi`):**
+    - Extended `HoldMyItems` struct (288 bytes) with `has_matrices: u8`, `main_arm_matrix: [f32; 16]`, `main_item_matrix: [f32; 16]`, `off_arm_matrix: [f32; 16]`, and `off_item_matrix: [f32; 16]`.
+    - Preserved backwards compatibility for ABIs 5, 6, and 7 across all native mods.
+  - **Client Geometry & Matrix Transforms (`crates/horizon-client`):**
+    - In `game.rs:hand_geometry`, when `hold.has_matrices != 0`, dynamically transformed both item and arm models with `to_world * glam::Mat4::from_cols_array(&item_mat)` and `to_world * glam::Mat4::from_cols_array(&arm_mat)`.
+    - Rendered two-handed support arm grip on two-handed weapons when the offhand is empty.
+  - **In-Game Settings (Options > Mods > Hold My Items):**
+    - Integrated HMI 5.2.0's 9 configurable options (3D Held Blocks, Hand Glow & Petals, Dynamic Hand Lighting, Camera Shake, Switch Sounds, Alternating Sword Combos, Base Swing Speed 6..15t, Viewmodel Offset X/Y/Z, and Reset Defaults).
   - **CI / CD Automation (`.github/workflows/mod-loader.yml`):**
-    - Added ARM64 cross-compilation target: `cargo ndk -t arm64-v8a build -p horizon-mod-holdmyitems --release`.
-    - Configured GitHub Release publication under `mod-loader-holdmyitems`.
+    - Configured ARM64 cross-compilation (`cargo ndk -t arm64-v8a build -p horizon-mod-holdmyitems --release`).
+    - Automated GitHub Release publication to `mod-loader-holdmyitems`.
 
 ---
 
