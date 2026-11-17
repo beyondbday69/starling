@@ -1,5 +1,5 @@
-//! EyeMod: Procedural animated eyes, blinking, camera look tracking, and blushing
-//! for the Starling player model.
+//! EyeMod: Procedural animated eyes, silky smooth blinking, sub-pixel look tracking,
+//! and blushing for the Starling player model.
 
 use horizon_mod_abi::{ABI, ButtonSink, HostVTable, ModDesc, PlayerEyes, PlayerInfo, guard, text};
 use std::ffi::c_char;
@@ -105,21 +105,23 @@ struct State {
     blush_mode: BlushMode,
     blink_rate: BlinkRate,
 
-    // Animation state
+    // Smooth animation state
     time_to_next_blink: f32,
-    blink_progress: f32, // < 0 means not blinking, 0.0..0.18 means blinking
+    blink_progress: f32, // < 0 means not blinking, >= 0 means active
     is_double_blink: bool,
 
-    // Look tracking state
+    // Smooth look tracking state
     last_yaw: f32,
     last_pitch: f32,
     current_look_x: f32, // -1.0 (left) .. 1.0 (right)
     current_look_y: f32, // -1.0 (down) .. 1.0 (up)
 
+    // Smooth blushing state
+    current_blush: f32,
+
     // Idle glance
     time_to_next_glance: f32,
     glance_target_x: f32,
-    glance_duration: f32,
 
     // Random generator state (simple XorShift)
     rng_seed: u32,
@@ -142,9 +144,10 @@ impl State {
             current_look_x: 0.0,
             current_look_y: 0.0,
 
+            current_blush: 0.65,
+
             time_to_next_glance: 2.5,
             glance_target_x: 0.0,
-            glance_duration: 0.0,
 
             rng_seed: 0x1234_5678,
         }
@@ -233,6 +236,56 @@ const C_WHITE_TOP: u32 = 0xFFBDB2D3; // #d3b2bd (R=D3, G=B2, B=BD)
 const C_WHITE_BOT: u32 = 0xFFFBFAFF; // #fffafb (R=FF, G=FA, B=FB)
 const C_SKIN_TOP: u32 = 0xFF94ABE9; // #e9ab94 (R=E9, G=AB, B=94)
 
+/// Sub-pixel color linear interpolation with clamping.
+#[inline]
+fn lerp_u32(c1: u32, c2: u32, t: f32) -> u32 {
+    let t = t.clamp(0.0, 1.0);
+    let inv = 1.0 - t;
+
+    let r1 = (c1 & 0xFF) as f32;
+    let g1 = ((c1 >> 8) & 0xFF) as f32;
+    let b1 = ((c1 >> 16) & 0xFF) as f32;
+    let a1 = (c1 >> 24) & 0xFF;
+
+    let r2 = (c2 & 0xFF) as f32;
+    let g2 = ((c2 >> 8) & 0xFF) as f32;
+    let b2 = ((c2 >> 16) & 0xFF) as f32;
+
+    let r = (r1 * inv + r2 * t).round() as u32;
+    let g = (g1 * inv + g2 * t).round() as u32;
+    let b = (b1 * inv + b2 * t).round() as u32;
+
+    r | (g << 8) | (b << 16) | (a1 << 24)
+}
+
+/// Continuous eyelid coverage blending.
+///
+/// `y_lid` runs smoothly from `0.0` (fully open) to `2.0` (fully closed).
+#[inline]
+fn apply_eyelid(base: u32, lash: u32, skin: u32, row: usize, y_lid: f32) -> u32 {
+    if row == 5 {
+        if y_lid <= 0.0 {
+            base
+        } else if y_lid >= 1.0 {
+            // Eyelid line has passed row 5; smoothly fade from lash into eyelid skin
+            let f_skin = (y_lid - 1.0).clamp(0.0, 1.0);
+            lerp_u32(lash, skin, f_skin)
+        } else {
+            // Eyelid edge is moving through row 5
+            lerp_u32(base, lash, y_lid)
+        }
+    } else {
+        // row == 6
+        if y_lid <= 1.0 {
+            base
+        } else {
+            // Eyelid edge is moving through row 6 towards full closure
+            let f_lash = (y_lid - 1.0).clamp(0.0, 1.0);
+            lerp_u32(base, lash, f_lash)
+        }
+    }
+}
+
 fn blend_color(base: u32, r_target: u8, g_target: u8, b_target: u8, alpha: f32) -> u32 {
     let b_r = (base & 0xFF) as f32;
     let b_g = ((base >> 8) & 0xFF) as f32;
@@ -263,14 +316,14 @@ unsafe extern "C" fn frame(partial: f32) {
         let in_world = unsafe { (host.player)(&mut player) != 0 };
 
         with_state(|state| {
-            // Delta time estimation (frame tick fraction ~ partial)
-            let dt = (partial * 0.05).clamp(0.005, 0.1);
+            // Delta time estimation from tick fraction (partial)
+            let dt = (partial * 0.05).clamp(0.005, 0.05);
 
-            // 1. Procedural Blinking update
+            // 1. Procedural Smooth Blinking update
+            let blink_duration = if state.is_double_blink { 0.36 } else { 0.22 };
             if state.blinking_enabled {
                 if state.blink_progress >= 0.0 {
                     state.blink_progress += dt;
-                    let blink_duration = if state.is_double_blink { 0.28 } else { 0.16 };
                     if state.blink_progress >= blink_duration {
                         state.blink_progress = -1.0;
                         state.is_double_blink = false;
@@ -281,7 +334,7 @@ unsafe extern "C" fn frame(partial: f32) {
                     state.time_to_next_blink -= dt;
                     if state.time_to_next_blink <= 0.0 {
                         state.blink_progress = 0.0;
-                        // 15% chance of a double blink
+                        // 15% chance of a natural double blink
                         state.is_double_blink = state.rand_f32() < 0.15;
                     }
                 }
@@ -289,44 +342,70 @@ unsafe extern "C" fn frame(partial: f32) {
                 state.blink_progress = -1.0;
             }
 
-            // 2. Look Tracking update
+            // 2. Smooth Look Tracking update
             if in_world && state.tracking_enabled {
-                let yaw_diff = player.yaw - state.last_yaw;
+                let mut yaw_diff = player.yaw - state.last_yaw;
+                while yaw_diff > 180.0 {
+                    yaw_diff -= 360.0;
+                }
+                while yaw_diff < -180.0 {
+                    yaw_diff += 360.0;
+                }
+
                 state.last_yaw = player.yaw;
                 state.last_pitch = player.pitch;
 
-                // Shift target look based on yaw turning rate
-                let turn_factor = (yaw_diff * 0.08).clamp(-1.0, 1.0);
-                let pitch_factor = (-player.pitch * 0.03).clamp(-1.0, 1.0);
+                // Continuous head turn factor
+                let turn_factor = (yaw_diff * 0.06).clamp(-1.0, 1.0);
+                let pitch_factor = (-player.pitch * 0.02).clamp(-1.0, 1.0);
 
-                // Idle wandering glance
+                // Idle wandering glance timer
                 state.time_to_next_glance -= dt;
                 if state.time_to_next_glance <= 0.0 {
                     let r = state.rand_f32();
-                    state.glance_target_x = if r < 0.3 {
-                        -0.8
-                    } else if r > 0.7 {
-                        0.8
+                    state.glance_target_x = if r < 0.33 {
+                        -0.65
+                    } else if r > 0.66 {
+                        0.65
                     } else {
                         0.0
                     };
-                    state.glance_duration = state.rand_range(0.8, 1.8);
                     state.time_to_next_glance = state.rand_range(2.0, 4.5);
                 }
 
-                let target_x = if turn_factor.abs() > 0.05 {
+                let target_x = if turn_factor.abs() > 0.03 {
                     turn_factor
                 } else {
                     state.glance_target_x
                 };
+                let target_y = pitch_factor;
 
-                // Smooth approach towards target look
-                state.current_look_x += (target_x - state.current_look_x) * (dt * 8.0).min(1.0);
-                state.current_look_y += (pitch_factor - state.current_look_y) * (dt * 6.0).min(1.0);
+                // Smooth exponential dampening towards target look
+                let smooth_speed = 6.0;
+                state.current_look_x +=
+                    (target_x - state.current_look_x) * (dt * smooth_speed).min(1.0);
+                state.current_look_y +=
+                    (target_y - state.current_look_y) * (dt * smooth_speed).min(1.0);
             } else {
                 state.current_look_x *= 0.9;
                 state.current_look_y *= 0.9;
             }
+
+            // 3. Smooth Blushing update
+            let target_blush = match state.blush_mode {
+                BlushMode::Off => 0.0,
+                BlushMode::Soft => 0.35,
+                BlushMode::Rosy => 0.65,
+                BlushMode::Intense => 0.90,
+                BlushMode::Reactive => {
+                    if in_world && (player.sneaking() || player.health < 6.0) {
+                        0.80
+                    } else {
+                        0.10
+                    }
+                }
+            };
+            state.current_blush += (target_blush - state.current_blush) * (dt * 3.0).min(1.0);
         });
     });
 }
@@ -338,155 +417,103 @@ unsafe extern "C" fn player_eyes(_partial: f32, out: *mut PlayerEyes) {
         }
         let eyes = unsafe { &mut *out };
 
-        let Some(host) = host() else { return };
-        let mut player = PlayerInfo::default();
-        let in_world = unsafe { (host.player)(&mut player) != 0 };
-
         with_state(|state| {
             eyes.active = 1;
             eyes.has_face_patch = 1;
 
-            // Compute blink phase (0: open, 1: half, 2: full closed)
-            let mut blink_phase = 0u8;
+            // 1. Calculate continuous blink closure (0.0: wide open, 1.0: fully closed)
+            let mut closure = 0.0f32;
             if state.blink_progress >= 0.0 {
-                let p = state.blink_progress;
-                if state.is_double_blink {
-                    // Double blink timeline: 0.0..0.12 (blink 1), 0.12..0.16 (open), 0.16..0.28 (blink 2)
-                    if (0.02..0.10).contains(&p) || (0.18..0.26).contains(&p) {
-                        blink_phase = 2;
+                let duration = if state.is_double_blink { 0.36 } else { 0.22 };
+                let norm = (state.blink_progress / duration).clamp(0.0, 1.0);
+
+                closure = if state.is_double_blink {
+                    // Double blink: two smooth sine-squared peaks
+                    if norm < 0.5 {
+                        let sub = norm / 0.5;
+                        (sub * std::f32::consts::PI).sin().powi(2)
                     } else {
-                        blink_phase = 1;
+                        let sub = (norm - 0.5) / 0.5;
+                        (sub * std::f32::consts::PI).sin().powi(2)
                     }
-                } else if (0.03..0.13).contains(&p) {
-                    blink_phase = 2; // full closed
                 } else {
-                    blink_phase = 1; // half blink
-                }
+                    // Single smooth blink: peak at center with zero velocity at endpoints
+                    (norm * std::f32::consts::PI).sin().powi(2)
+                };
             }
-            eyes.blink = blink_phase;
+            eyes.blink = (closure * 2.0).round() as u8;
 
-            // Discrete look direction: -1, 0, 1
-            let look_x = if state.current_look_x < -0.3 {
-                -1
-            } else if state.current_look_x > 0.3 {
-                1
-            } else {
-                0
-            };
-            let look_y = if state.current_look_y < -0.3 {
-                -1
-            } else if state.current_look_y > 0.3 {
-                1
-            } else {
-                0
-            };
-            eyes.look_x = look_x;
-            eyes.look_y = look_y;
+            // 2. Continuous sub-pixel pupil positions
+            let look_x = state.current_look_x.clamp(-1.0, 1.0);
+            let look_y = state.current_look_y.clamp(-1.0, 1.0);
+            eyes.look_x = look_x.round() as i8;
+            eyes.look_y = look_y.round() as i8;
 
-            // Blushing determination
-            let blush_intensity = match state.blush_mode {
-                BlushMode::Off => 0.0,
-                BlushMode::Soft => 0.35,
-                BlushMode::Rosy => 0.65,
-                BlushMode::Intense => 0.90,
-                BlushMode::Reactive => {
-                    if in_world && (player.sneaking() || player.health < 6.0) {
-                        0.75
-                    } else {
-                        0.15
-                    }
-                }
+            // Right Eye base colors before eyelid:
+            // Center (0.0): Col 1 is White, Col 2 is Pupil.
+            let (r1_5, r2_5, r1_6, r2_6) = if look_x < 0.0 {
+                // Glancing left (pupils smoothly shift towards col 1):
+                let t = -look_x; // 0.0 .. 1.0
+                (
+                    lerp_u32(C_WHITE_TOP, C_PUPIL_TOP, t),
+                    lerp_u32(C_PUPIL_TOP, C_WHITE_TOP, t),
+                    lerp_u32(C_WHITE_BOT, C_PUPIL_BOT, t),
+                    lerp_u32(C_PUPIL_BOT, C_WHITE_BOT, t),
+                )
+            } else {
+                // Glancing right:
+                let t = look_x;
+                (
+                    C_WHITE_TOP,
+                    lerp_u32(C_PUPIL_TOP, C_PUPIL_TOP, t),
+                    C_WHITE_BOT,
+                    lerp_u32(C_PUPIL_BOT, C_PUPIL_BOT, t),
+                )
             };
 
-            // When blushing is active:
-            eyes.blush = if blush_intensity > 0.5 {
-                2
-            } else if blush_intensity > 0.1 {
-                1
+            // Left Eye base colors before eyelid:
+            // Center (0.0): Col 5 is Pupil, Col 6 is White.
+            let (l1_5, l2_5, l1_6, l2_6) = if look_x > 0.0 {
+                // Glancing right (pupils smoothly shift towards col 6):
+                let t = look_x; // 0.0 .. 1.0
+                (
+                    lerp_u32(C_PUPIL_TOP, C_WHITE_TOP, t),
+                    lerp_u32(C_WHITE_TOP, C_PUPIL_TOP, t),
+                    lerp_u32(C_PUPIL_BOT, C_WHITE_BOT, t),
+                    lerp_u32(C_WHITE_BOT, C_PUPIL_BOT, t),
+                )
             } else {
-                0
+                // Glancing left:
+                let t = -look_x;
+                (
+                    lerp_u32(C_PUPIL_TOP, C_PUPIL_TOP, t),
+                    C_WHITE_TOP,
+                    lerp_u32(C_PUPIL_BOT, C_PUPIL_BOT, t),
+                    C_WHITE_BOT,
+                )
             };
 
-            // Render face pixels (8x8 grid: y=0..8, x=0..8)
-            // Rows correspond to skin face y=8..15:
-            // row 4: y=12 (eyelash top)
-            // row 5: y=13 (upper eye)
-            // row 6: y=14 (lower eye)
-            // row 7: y=15 (cheeks under eyes)
+            // 3. Smooth vertical eyelid coverage
+            // Looking down gives a natural subtle eyelid droop:
+            let droop = if look_y < 0.0 { -look_y * 0.35 } else { 0.0 };
+            let y_lid = (closure * 2.0 + droop).clamp(0.0, 2.0);
 
-            if blink_phase == 2 {
-                // FULL BLINK: eyes completely closed
-                // Row 5 (y=13) eyelid skin
-                eyes.face_pixels[5 * 8 + 1] = C_SKIN_TOP;
-                eyes.face_pixels[5 * 8 + 2] = C_SKIN_TOP;
-                eyes.face_pixels[5 * 8 + 5] = C_SKIN_TOP;
-                eyes.face_pixels[5 * 8 + 6] = C_SKIN_TOP;
+            // Apply smooth eyelid coverage to Right Eye (cols 1, 2)
+            eyes.face_pixels[5 * 8 + 1] = apply_eyelid(r1_5, C_LASH, C_SKIN_TOP, 5, y_lid);
+            eyes.face_pixels[5 * 8 + 2] = apply_eyelid(r2_5, C_LASH, C_SKIN_TOP, 5, y_lid);
+            eyes.face_pixels[6 * 8 + 1] = apply_eyelid(r1_6, C_LASH, C_SKIN_TOP, 6, y_lid);
+            eyes.face_pixels[6 * 8 + 2] = apply_eyelid(r2_6, C_LASH, C_SKIN_TOP, 6, y_lid);
 
-                // Row 6 (y=14) closed eyelash line
-                eyes.face_pixels[6 * 8 + 1] = C_LASH;
-                eyes.face_pixels[6 * 8 + 2] = C_LASH;
-                eyes.face_pixels[6 * 8 + 5] = C_LASH;
-                eyes.face_pixels[6 * 8 + 6] = C_LASH;
-            } else if blink_phase == 1 {
-                // HALF BLINK: squint / half closed
-                // Row 5 gets eyelash
-                eyes.face_pixels[5 * 8 + 1] = C_LASH;
-                eyes.face_pixels[5 * 8 + 2] = C_LASH;
-                eyes.face_pixels[5 * 8 + 5] = C_LASH;
-                eyes.face_pixels[5 * 8 + 6] = C_LASH;
+            // Apply smooth eyelid coverage to Left Eye (cols 5, 6)
+            eyes.face_pixels[5 * 8 + 5] = apply_eyelid(l1_5, C_LASH, C_SKIN_TOP, 5, y_lid);
+            eyes.face_pixels[5 * 8 + 6] = apply_eyelid(l2_5, C_LASH, C_SKIN_TOP, 5, y_lid);
+            eyes.face_pixels[6 * 8 + 5] = apply_eyelid(l1_6, C_LASH, C_SKIN_TOP, 6, y_lid);
+            eyes.face_pixels[6 * 8 + 6] = apply_eyelid(l2_6, C_LASH, C_SKIN_TOP, 6, y_lid);
 
-                // Row 6 narrow slit
-                eyes.face_pixels[6 * 8 + 1] = C_WHITE_BOT;
-                eyes.face_pixels[6 * 8 + 2] = C_PUPIL_BOT;
-                eyes.face_pixels[6 * 8 + 5] = C_PUPIL_BOT;
-                eyes.face_pixels[6 * 8 + 6] = C_WHITE_BOT;
-            } else {
-                // EYES OPEN: apply look direction
-                // Right Eye (cols 1, 2) and Left Eye (cols 5, 6)
-                if look_x == -1 {
-                    // Looking LEFT (screen left, player right): pupils shift left
-                    // Right eye: pupil at col 1, sclera at col 2
-                    eyes.face_pixels[5 * 8 + 1] = C_PUPIL_TOP;
-                    eyes.face_pixels[5 * 8 + 2] = C_WHITE_TOP;
-                    eyes.face_pixels[6 * 8 + 1] = C_PUPIL_BOT;
-                    eyes.face_pixels[6 * 8 + 2] = C_WHITE_BOT;
-
-                    // Left eye: pupil at col 5, sclera at col 6
-                    eyes.face_pixels[5 * 8 + 5] = C_PUPIL_TOP;
-                    eyes.face_pixels[5 * 8 + 6] = C_WHITE_TOP;
-                    eyes.face_pixels[6 * 8 + 5] = C_PUPIL_BOT;
-                    eyes.face_pixels[6 * 8 + 6] = C_WHITE_BOT;
-                } else if look_x == 1 {
-                    // Looking RIGHT (screen right, player left): pupils shift right
-                    // Right eye: sclera at col 1, pupil at col 2
-                    eyes.face_pixels[5 * 8 + 1] = C_WHITE_TOP;
-                    eyes.face_pixels[5 * 8 + 2] = C_PUPIL_TOP;
-                    eyes.face_pixels[6 * 8 + 1] = C_WHITE_BOT;
-                    eyes.face_pixels[6 * 8 + 2] = C_PUPIL_BOT;
-
-                    // Left eye: sclera at col 5, pupil at col 6
-                    eyes.face_pixels[5 * 8 + 5] = C_WHITE_TOP;
-                    eyes.face_pixels[5 * 8 + 6] = C_PUPIL_TOP;
-                    eyes.face_pixels[6 * 8 + 5] = C_WHITE_BOT;
-                    eyes.face_pixels[6 * 8 + 6] = C_PUPIL_BOT;
-                } else {
-                    // Looking CENTER (default anime look)
-                    eyes.face_pixels[5 * 8 + 1] = C_WHITE_TOP;
-                    eyes.face_pixels[5 * 8 + 2] = C_PUPIL_TOP;
-                    eyes.face_pixels[6 * 8 + 1] = C_WHITE_BOT;
-                    eyes.face_pixels[6 * 8 + 2] = C_PUPIL_BOT;
-
-                    eyes.face_pixels[5 * 8 + 5] = C_PUPIL_TOP;
-                    eyes.face_pixels[5 * 8 + 6] = C_WHITE_TOP;
-                    eyes.face_pixels[6 * 8 + 5] = C_PUPIL_BOT;
-                    eyes.face_pixels[6 * 8 + 6] = C_WHITE_BOT;
-                }
-            }
-
-            // BLUSHING EFFECT:
-            // Apply rosy tint on cheeks at row 7 (y=15), cols 1..2 and cols 5..6
-            if blush_intensity > 0.05 {
-                // Sweet strawberry rose blush: RGB(242, 120, 142)
+            // 4. Smooth Blushing Effect on cheeks (row 7: y=15)
+            eyes.blush = (state.current_blush * 3.0).round() as u8;
+            if state.current_blush > 0.01 {
+                let b = state.current_blush;
                 let r_blush = 242u8;
                 let g_blush = 120u8;
                 let b_blush = 142u8;
@@ -495,26 +522,25 @@ unsafe extern "C" fn player_eyes(_partial: f32, out: *mut PlayerEyes) {
                 let base_r1 = eyes.face_pixels[7 * 8 + 1];
                 let base_r2 = eyes.face_pixels[7 * 8 + 2];
                 eyes.face_pixels[7 * 8 + 1] =
-                    blend_color(base_r1, r_blush, g_blush, b_blush, blush_intensity * 0.85);
-                eyes.face_pixels[7 * 8 + 2] =
-                    blend_color(base_r2, r_blush, g_blush, b_blush, blush_intensity);
+                    blend_color(base_r1, r_blush, g_blush, b_blush, b * 0.85);
+                eyes.face_pixels[7 * 8 + 2] = blend_color(base_r2, r_blush, g_blush, b_blush, b);
 
                 // Left cheek (cols 5, 6)
                 let base_l1 = eyes.face_pixels[7 * 8 + 5];
                 let base_l2 = eyes.face_pixels[7 * 8 + 6];
-                eyes.face_pixels[7 * 8 + 5] =
-                    blend_color(base_l1, r_blush, g_blush, b_blush, blush_intensity);
+                eyes.face_pixels[7 * 8 + 5] = blend_color(base_l1, r_blush, g_blush, b_blush, b);
                 eyes.face_pixels[7 * 8 + 6] =
-                    blend_color(base_l2, r_blush, g_blush, b_blush, blush_intensity * 0.85);
+                    blend_color(base_l2, r_blush, g_blush, b_blush, b * 0.85);
 
-                // If intense blush, softly tint bridge at row 6, cols 3..4
-                if blush_intensity > 0.7 {
+                // Soft blush on nose bridge when blushing intensely:
+                if b > 0.6 {
+                    let nose_b = (b - 0.6) / 0.4 * 0.35;
                     let base_b1 = eyes.face_pixels[6 * 8 + 3];
                     let base_b2 = eyes.face_pixels[6 * 8 + 4];
                     eyes.face_pixels[6 * 8 + 3] =
-                        blend_color(base_b1, r_blush, g_blush, b_blush, 0.35);
+                        blend_color(base_b1, r_blush, g_blush, b_blush, nose_b);
                     eyes.face_pixels[6 * 8 + 4] =
-                        blend_color(base_b2, r_blush, g_blush, b_blush, 0.35);
+                        blend_color(base_b2, r_blush, g_blush, b_blush, nose_b);
                 }
             }
         });
