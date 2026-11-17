@@ -1089,9 +1089,6 @@ impl Graphics {
         text += &self.blue_map.serialize();
         text
     }
-    pub fn to_string(&self) -> String {
-        self.serialize()
-    }
     /// Binds Horizon's graphics key `name` (`HDR_KEY`); false for another name.
     pub fn set_key(&mut self, name: &str, value: String) -> bool {
         match name {
