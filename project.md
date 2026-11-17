@@ -135,6 +135,19 @@ graph TD
     - Reverted `crates/horizon-mod-holdmyitems` and restored clean ABI v6 for other mods (`eyemod`, `shouldersurfing`).
     - No `/memfd:horizon-mod` or dlopen: Hold My Items is compiled directly into `libhorizon_android.so` inside the APK!
 
+### Phase 8: Core Mods & Cinematic Interactions Integration
+- **Direct Core Client Integration of Official / Native Mods:**
+  - **Zoom (`crates/horizon-client/src/game/zoom.rs`):** Built-in core zoom with wheel scaling, smooth zoom, and sensitivity scaling.
+  - **ElytraTrails (`crates/horizon-client/src/game/elytratrails/`):** Dynamic fading wingtip contrails with LAN/server color sync (`elytratrails:color`).
+  - **Living Motion (`crates/horizon-client/src/game/livingmotion/`, `crates/horizon-client/src/mobs/livingmotion.rs`):** Dynamic procedural animation rig (swings, leaning, jumping, banking, swimming, climbing, inspections).
+- **Cinematic Interactions (`native-mods/cinematic_interactions`):**
+  - Integrated `CinematicInteractionsHorizon` (smooth camera gliding over crafting tables/stations, hands resting on table surfaces, in-world station interaction, recipe book & campfire animations).
+  - Fixed return type in `hands.rs` to match Starling's `hand_geometry` (`ControlFlow<Vec<Vertex>>`).
+  - Patched `packaging/android/native_build.sh` to preserve `native-data/` across mixin staging.
+- **Combined All-In-One APK:**
+  - Compiled and signed via GitHub Actions Run `#44175839634`.
+  - Includes Hold My Items, Zoom, ElytraTrails, Living Motion, and Cinematic Interactions built directly into the client.
+
 ---
 
 ## 3. Current Status & Verification
@@ -149,11 +162,19 @@ graph TD
 | **Resizable Eye Sizes** | Complete | 2x2, 2x3, 3x2, 3x3, auto dynamic verified |
 | **Reactive Shock Reaction** | Complete | Damage/fall shock, sweat drop, mouth verified |
 | **Hold My Items Direct Core Integration** | Complete | Integrated into `crates/horizon-client/src/game/holdmyitems/` |
-| **Direct APK Compilation** | Complete | Compiled into core `libhorizon_android.so` with zero external `.so` needed |
+| **Zoom Mod** | Complete | Integrated into `crates/horizon-client/src/game/zoom.rs` |
+| **ElytraTrails Mod** | Complete | Integrated into `crates/horizon-client/src/game/elytratrails/` |
+| **Living Motion Mod** | Complete | Integrated into `crates/horizon-client/src/game/livingmotion/` |
+| **Cinematic Interactions Mod** | Complete | Applied & compiled into APK via `native_build.sh` |
+| **Direct APK Compilation** | Complete | Run `#44175839634` built and verified |
 
 ---
 
 ## 4. Key Artifacts & Download Links
+
+- **Android Client APK (Cinematic Interactions + Living Motion + ElytraTrails + Zoom + Hold My Items):**  
+  [Download `starling-apk-arm64-v8a` (Actions Run #44175839634)](https://github.com/beyondbday69/starling/actions/runs/44175839634)  
+  *(Artifact ID: `14371345303`, size: 35.16 MB. All 5 mods are built directly into the APK!)*
 
 - **Latest `libeyemod.so` (Resizable Eyes & Shock Reactions):**  
   [Download `libeyemod.so`](https://github.com/beyondbday69/starling/releases/download/mod-loader-eyemod/libeyemod.so)  
@@ -162,7 +183,3 @@ graph TD
 - **Shoulder Surfing Mod:**  
   [Download `libshouldersurfing.so`](https://github.com/beyondbday69/starling/releases/download/mod-loader-shouldersurfing/libshouldersurfing.so)  
   *(Release: [mod-loader-shouldersurfing](https://github.com/beyondbday69/starling/releases/tag/mod-loader-shouldersurfing))*
-
-- **Android Client APK (Core Built-In Hold My Items 5.2.0):**  
-  [Download `starling-apk-arm64-v8a` (Actions Run #44078715258)](https://github.com/beyondbday69/starling/actions/runs/44078715258)  
-  *(Hold My Items 5.2.0 is compiled directly into `libhorizon_android.so`. No external mod `.so` file needed on your phone!)*
