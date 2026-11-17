@@ -1011,6 +1011,7 @@ static DESC: ModDesc = ModDesc {
     settings_click: Some(settings_click),
     camera_offset: None,
     player_eyes: Some(player_eyes),
+    hold_my_items: None,
 };
 
 /// The entry point looked up by `horizon-mod-loader`.

@@ -109,6 +109,7 @@ static DESC: ModDesc = ModDesc {
     settings_click: Some(settings_click),
     camera_offset: None,
     player_eyes: None,
+    hold_my_items: None,
 };
 
 /// The one symbol a mod exports: what it is, and the callbacks it offers.
