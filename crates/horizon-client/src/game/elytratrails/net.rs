@@ -61,7 +61,14 @@ pub fn style_of(id: u32) -> Option<(usize, usize)> {
 
 impl Game<'_> {
     pub(crate) fn elytratrails_own_uuid(&self) -> u128 {
-        self.profile.as_ref().map_or(0, |p| p.id)
+        if let Some(r) = self.remote.as_ref() {
+            return r.profile();
+        }
+        self.lan_acting_uuid.unwrap_or_else(|| {
+            self.level.player_uuid.map_or(0, |u| {
+                u.iter().fold(0u128, |a, &w| (a << 32) | u128::from(w as u32))
+            })
+        })
     }
 
     pub(crate) fn elytratrails_net_from_client(&mut self, player: u128, channel: &str, data: &[u8]) {
