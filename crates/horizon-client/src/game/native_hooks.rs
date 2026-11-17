@@ -2061,7 +2061,7 @@ impl Game<'_> {
         };
         let mut base_face = [0u32; 64];
         let mut has_base = false;
-        if let Some(ref img) = self.own_skin.image {
+        if let Some(img) = self.own_skin.image.as_ref() {
             if img.len() >= 64 * 64 * 4 {
                 for y in 0..8 {
                     for x in 0..8 {
@@ -2073,7 +2073,7 @@ impl Game<'_> {
                 has_base = true;
             }
         }
-        if !has_base && let Some((ref img, _)) = horizon_client::skins::offline_skin() {
+        if !has_base && let Some((img, _)) = horizon_client::skins::offline_skin() {
             if img.len() >= 64 * 64 * 4 {
                 for y in 0..8 {
                     for x in 0..8 {
