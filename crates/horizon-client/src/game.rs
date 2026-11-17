@@ -155,6 +155,7 @@ mod glowing;
 mod golems;
 mod growth;
 mod hand;
+pub(crate) mod holdmyitems;
 mod headless;
 mod ime;
 mod imports;

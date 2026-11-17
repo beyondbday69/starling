@@ -2033,6 +2033,7 @@ impl Game<'_> {
     }
     /// Once a frame, in a world or not, after Horizon's extras.
     pub(super) fn native_frame(&mut self, elapsed: Duration) {
+        self.holdmyitems_frame(elapsed);
         mod_api::dispatch_frame(self, mod_api::mods(), elapsed);
         let partial = (elapsed.as_secs_f32() * 20.0).clamp(0.0, 1.0);
         super::mod_loader::frame(self, partial);
@@ -2167,6 +2168,7 @@ impl Game<'_> {
     /// and on servers), and the server's own (`native_window` is false
     /// there: the single player server thread, a dedicated server).
     pub(super) fn native_tick(&mut self) {
+        self.holdmyitems_tick();
         mod_api::dispatch_tick(self, mod_api::mods());
         super::mod_loader::tick(self);
     }
@@ -2188,6 +2190,7 @@ impl Game<'_> {
         rims: &mut Vec<NativeBlockRim>,
         lights: &mut Vec<NativeColoredLight>,
     ) {
+        self.holdmyitems_visuals(lights);
         mod_api::dispatch_visuals(self, mod_api::mods(), rims, lights);
     }
     /// At most 32 pairs of already-loaded base and transparent overlay sprites.
@@ -2327,6 +2330,7 @@ impl Game<'_> {
     /// `native_fill` and `native_text`. Skip a corner `native_corner_shown`
     /// says is taken.
     pub(super) fn native_hud(&mut self, batch: &mut HudBatch, corners: &mut Corners) {
+        self.holdmyitems_hud(batch);
         mod_api::dispatch_hud(self, mod_api::mods(), batch, corners);
     }
     /// Before one of vanilla's HUD layers is drawn (`RenderGuiLayerEvent.Pre`):
@@ -2421,6 +2425,7 @@ impl Game<'_> {
     /// (`key.keyboard.z`, `key.mouse.left`): keys on any screen (check
     /// `native_playing`), mouse buttons while playing. Repeats are left out.
     pub(super) fn native_key(&mut self, key: &str, pressed: bool) {
+        self.holdmyitems_key(key, pressed);
         mod_api::dispatch_key(self, mod_api::mods(), key, pressed);
     }
     /// A real window key event after handling, including repeats and consumed shortcuts.
@@ -2510,6 +2515,7 @@ impl Game<'_> {
     /// A command typed or clicked in chat, without its slash, before the
     /// server and Horizon's commands see it: set `ran` when the mod ran it.
     pub(super) fn native_command(&mut self, command: &str, ran: &mut bool) {
+        self.holdmyitems_command(command, ran);
         mod_api::dispatch_command(self, mod_api::mods(), command, ran);
     }
     /// The commands `native_command` runs, by name and without their slash:
@@ -2518,6 +2524,9 @@ impl Game<'_> {
     /// completes and lists them as the game's own; a name the game already
     /// has keeps that command's behaviour. API 35.
     pub(super) fn native_commands(&mut self, commands: &mut Vec<&'static str>) {
+        if !commands.contains(&"hmi") {
+            commands.push("hmi");
+        }
         mod_api::dispatch_commands(self, mod_api::mods(), commands);
     }
     /// Player FOV scale, after vanilla effects and before zoom and easing.
@@ -2581,6 +2590,7 @@ impl Game<'_> {
     /// Horizon scales the sum by Distortion Effects and bounds it
     /// (`native_shake_matrix`). API 82.
     pub(super) fn native_camera_shake(&self, partial: f32, shake: &mut NativeShake) {
+        self.holdmyitems_shake(partial, shake);
         mod_api::dispatch_camera_shake(self, mod_api::mods(), partial, shake);
     }
     /// Name tag visibility and optional replacement text. API @API:render_name_tag@.
@@ -2796,6 +2806,9 @@ impl Game<'_> {
     }
     /// Options > Mods lists the native mods: push yours.
     pub(super) fn native_mods(&mut self, mods: &mut Vec<NativeMod>) {
+        if !mods.iter().any(|m| m.id == "holdmyitems") {
+            mods.push(Self::holdmyitems_mod_entry());
+        }
         mod_api::dispatch_mods(self, mod_api::mods(), mods);
         // Mods built as shared libraries list themselves the same way, and are only known once
         // their folder has been read.
@@ -2805,11 +2818,19 @@ impl Game<'_> {
     /// their labels when it is yours. Asked again each time the page opens
     /// and after each click.
     pub(super) fn native_settings(&mut self, mod_id: &str, buttons: &mut Vec<String>) {
+        if mod_id == "holdmyitems" {
+            buttons.extend(self.holdmyitems_settings());
+            return;
+        }
         mod_api::dispatch_settings(self, mod_api::mods(), mod_id, buttons);
         super::mod_loader::settings(self, mod_id, buttons);
     }
     /// Button `button` of mod `mod_id`'s settings page was clicked.
     pub(super) fn native_settings_click(&mut self, mod_id: &str, button: usize) {
+        if mod_id == "holdmyitems" {
+            self.holdmyitems_settings_click(button);
+            return;
+        }
         mod_api::dispatch_settings_click(self, mod_api::mods(), mod_id, button);
         super::mod_loader::settings_click(self, mod_id, button);
     }

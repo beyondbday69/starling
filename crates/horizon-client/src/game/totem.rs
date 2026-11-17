@@ -167,6 +167,7 @@ impl Game<'_> {
         aspect: f32,
         out: &mut Vec<Vertex>,
     ) {
+        self.holdmyitems_render_hands(partial, out);
         if self.ui.hide_gui {
             return;
         }

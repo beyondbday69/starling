@@ -113,24 +113,27 @@ graph TD
   - Fixed `clippy::inherent_to_string_shadow_display` in `crates/horizon-client-render/src/graphics.rs`.
   - ARM64 `libeyemod.so` compiled and published to GitHub Release `mod-loader-eyemod`.
 
-### Phase 7: Hold My Items Mod (`libholdmyitems.so` & ABI v7)
+### Phase 7: Hold My Items Core Integration (Direct APK Compilation)
 - **Problem Statement:**
   - In vanilla first-person rendering, Minecraft/Horizon intentionally hid the player's arm whenever any item or block was held (`item.is_some()`), making items appear as floating disjointed models without hands or arms holding them.
-  - The player wanted the **Hold My Items** mod (`libholdmyitems.so`), porting the full **Hold My Items 5.2.0** native animation engine from [`beyondbday69/Horizon-HoldMyItems`](https://github.com/beyondbday69/Horizon-HoldMyItems.git).
+  - Dynamic `.so` mod loading on Android via `memfd_create` / `android_dlopen_ext` can lead to linker namespace errors, SELinux denials, or ABI struct size mismatches across OS versions.
+  - The user requested compiling Hold My Items directly into the core APK (`libhorizon_android.so`) from [`beyondbday69/Horizon-HoldMyItems`](https://github.com/beyondbday69/Horizon-HoldMyItems.git), skipping dynamic `.so` mod loading.
 - **Architecture & Implementation:**
-  - **Full HMI 5.2.0 Runtime (`crates/horizon-mod-holdmyitems/src/runtime.rs`):**
-    - Ported full 166 KB HMI 5.2.0 engine into the `.so` crate: 12 easing curves, 4x4 matrix transforms (`Mat4f`), spring-damper viewmodel inertia physics (pitch/yaw inertia, fall/jump spring-dampers, walking/sprinting/sneaking sway), alternating 2-hit sword combo slashes, pickaxe/axe/shovel jabs, per-item swing speed tables, and weapon inspection (`C` key 360° spin).
-  - **ABI v7 Extension (`crates/horizon-mod-abi`):**
-    - Extended `HoldMyItems` struct (288 bytes) with `has_matrices: u8`, `main_arm_matrix: [f32; 16]`, `main_item_matrix: [f32; 16]`, `off_arm_matrix: [f32; 16]`, and `off_item_matrix: [f32; 16]`.
-    - Preserved backwards compatibility for ABIs 5, 6, and 7 across all native mods.
-  - **Client Geometry & Matrix Transforms (`crates/horizon-client`):**
-    - In `game.rs:hand_geometry`, when `hold.has_matrices != 0`, dynamically transformed both item and arm models with `to_world * glam::Mat4::from_cols_array(&item_mat)` and `to_world * glam::Mat4::from_cols_array(&arm_mat)`.
-    - Rendered two-handed support arm grip on two-handed weapons when the offhand is empty.
-  - **In-Game Settings (Options > Mods > Hold My Items):**
-    - Integrated HMI 5.2.0's 9 configurable options (3D Held Blocks, Hand Glow & Petals, Dynamic Hand Lighting, Camera Shake, Switch Sounds, Alternating Sword Combos, Base Swing Speed 6..15t, Viewmodel Offset X/Y/Z, and Reset Defaults).
-  - **CI / CD Automation (`.github/workflows/mod-loader.yml`):**
-    - Configured ARM64 cross-compilation (`cargo ndk -t arm64-v8a build -p horizon-mod-holdmyitems --release`).
-    - Automated GitHub Release publication to `mod-loader-holdmyitems`.
+  - **Direct Core Client Integration (`crates/horizon-client/src/game/holdmyitems/`):**
+    - Ported the full HMI 5.2.0 engine directly into `horizon-client` core:
+      - `runtime.rs`: 12 easing curves, 4x4 matrix transforms (`Mat4f`), spring-damper viewmodel inertia physics (pitch/yaw inertia, fall/jump spring-dampers, walking/sprinting/sneaking sway), alternating 2-hit sword combo slashes, pickaxe/axe/shovel jabs, per-item swing speed tables, and weapon inspection (`C` key 360° spin).
+      - `native.rs`: Complete `impl Game<'_>` adapter interfacing with Horizon's first-person renderer, item meshes, 3D block geometry, map rendering, particles, dynamic colored lighting, and in-game Options menu.
+      - `features.rs`: Sound physics and camera overhaul feature requests.
+    - Embedded bundled resource pack and Lua configs in `native-data/holdmyitems/` compiled in with `native_data!`.
+  - **Hook Injections in `crates/horizon-client`:**
+    - `totem.rs:item_activation_geometry`: HEAD hook replaces vanilla hands with HMI 5.2.0 first-person arms, 3D blocks, per-quad animations, maps, and particles.
+    - `hand.rs:swing_hand`: Notifies HMI of main-hand and off-hand swing starts.
+    - `native_hooks.rs`: Directly wires `native_frame`, `native_tick`, `native_camera_shake`, `native_visuals`, `native_key`, `native_hud`, `native_command`, `native_commands`, `native_mods`, and `native_settings`.
+  - **Native Mods Parity:**
+    - Added `native-mods/holdmyitems` and updated `native-mods/prebuilt.txt`.
+  - **Zero Dynamic Mod Loading Overhead:**
+    - Reverted `crates/horizon-mod-holdmyitems` and restored clean ABI v6 for other mods (`eyemod`, `shouldersurfing`).
+    - No `/memfd:horizon-mod` or dlopen: Hold My Items is compiled directly into `libhorizon_android.so` inside the APK!
 
 ---
 
@@ -138,8 +141,6 @@ graph TD
 
 | Component | Status | Verification |
 |---|---|---|
-| **Merge `mod-loader`** | Complete | Commit `6246c88` committed |
-| **Camera ABI Extension (v5)** | Complete | `cargo test -p horizon-mod-abi` passed |
 | **Aiming Crosshair (+)** | Complete | Verified in `game.rs` |
 | **Shoulder Surfing Mod** | Complete | `libshouldersurfing.so` published |
 | **Player Eyes ABI v6** | Complete | 12/12 tests passed in abi & loader |
@@ -147,18 +148,12 @@ graph TD
 | **Smooth Look Tracking** | Complete | Continuous lerp & droop verified |
 | **Resizable Eye Sizes** | Complete | 2x2, 2x3, 3x2, 3x3, auto dynamic verified |
 | **Reactive Shock Reaction** | Complete | Damage/fall shock, sweat drop, mouth verified |
-| **Hold My Items ABI v7** | Complete | 14/14 tests passed in abi, loader & holdmyitems |
-| **Client First-Person Arm Rendering** | Complete | `cargo check -p horizon-client` passed |
-| **Hold My Items Mod (`libholdmyitems.so`)** | Complete | Crate, options, poses & CI configured |
-| **CI / CD Mod Release** | Active | `.github/workflows/mod-loader.yml` updated |
+| **Hold My Items Direct Core Integration** | Complete | Integrated into `crates/horizon-client/src/game/holdmyitems/` |
+| **Direct APK Compilation** | Complete | Compiled into core `libhorizon_android.so` with zero external `.so` needed |
 
 ---
 
 ## 4. Key Artifacts & Download Links
-
-- **Hold My Items Mod (`libholdmyitems.so`):**  
-  [Download `libholdmyitems.so`](https://github.com/beyondbday69/starling/releases/download/mod-loader-holdmyitems/libholdmyitems.so)  
-  *(Release: [mod-loader-holdmyitems](https://github.com/beyondbday69/starling/releases/tag/mod-loader-holdmyitems))*
 
 - **Latest `libeyemod.so` (Resizable Eyes & Shock Reactions):**  
   [Download `libeyemod.so`](https://github.com/beyondbday69/starling/releases/download/mod-loader-eyemod/libeyemod.so)  
@@ -168,6 +163,5 @@ graph TD
   [Download `libshouldersurfing.so`](https://github.com/beyondbday69/starling/releases/download/mod-loader-shouldersurfing/libshouldersurfing.so)  
   *(Release: [mod-loader-shouldersurfing](https://github.com/beyondbday69/starling/releases/tag/mod-loader-shouldersurfing))*
 
-- **Android Client APK (ABI v7 with Matrix Pose & HoldMyItems Support):**  
-  [Download `starling-apk-arm64-v8a`](https://github.com/beyondbday69/starling/actions/runs/44060380421)  
-  *(Older builds like BuildId `37ac980353ea8c5173d5420cfe4f1702de1a15df` will crash at `#00 /memfd:horizon-mod` due to the 28-byte vs 288-byte ABI v7 matrix struct size change; install this build).*
+- **Android Client APK (Core Built-In Hold My Items 5.2.0):**  
+  Built automatically on push via GitHub Actions `android.yml` workflow with Hold My Items compiled directly into `libhorizon_android.so`. No external mod `.so` file needed on your phone!
