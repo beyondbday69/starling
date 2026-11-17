@@ -1655,6 +1655,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "horizon-mod-holdmyitems"
+version = "0.1.0"
+dependencies = [
+ "horizon-mod-abi",
+]
+
+[[package]]
 name = "horizon-mod-loader"
 version = "0.1.0"
 dependencies = [

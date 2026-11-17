@@ -16,7 +16,7 @@ use horizon_mod_abi::{
     ABI, ButtonSink, HostVTable, ItemInfo, ModDesc, PlayerInfo, RayHitOut, StartedSound,
     WorldClock, guard,
 };
-pub use horizon_mod_abi::{CameraOffset, PlayerEyes};
+pub use horizon_mod_abi::{CameraOffset, HoldMyItems, PlayerEyes};
 
 #[cfg(target_os = "android")]
 mod android;
@@ -228,7 +228,7 @@ impl Loaded {
         }
         // SAFETY: the mod returned a pointer to its own static description.
         let desc = unsafe { *desc };
-        if desc.abi != ABI {
+        if desc.abi < 5 || desc.abi > ABI {
             return Err(Refused::Abi {
                 built: desc.abi,
                 client: ABI,
@@ -366,6 +366,16 @@ impl Loaded {
             unsafe { callback(partial, &mut eyes) }
         })?;
         Some(eyes)
+    }
+
+    fn hold_my_items(&self, host: &mut dyn Host, partial: f32) -> Option<HoldMyItems> {
+        let callback = self.desc.hold_my_items?;
+        let mut config = HoldMyItems::default();
+        self.ran(host, "hold_my_items", || {
+            // SAFETY: the pointer points to a local HoldMyItems on the stack.
+            unsafe { callback(partial, &mut config) }
+        })?;
+        Some(config)
     }
 }
 
@@ -858,6 +868,19 @@ pub fn player_eyes(
         if let Some(eyes) = module.player_eyes(host, partial, initial_face) {
             if eyes.active != 0 {
                 return Some(eyes);
+            }
+        }
+    }
+    None
+}
+
+/// Query first-person item holding configuration from loaded mods. Returns the first active result, or None.
+pub fn hold_my_items(host: &mut dyn Host, partial: f32) -> Option<HoldMyItems> {
+    let guard_mods = mods().lock().unwrap_or_else(|e| e.into_inner());
+    for module in guard_mods.iter() {
+        if let Some(config) = module.hold_my_items(host, partial) {
+            if config.active != 0 {
+                return Some(config);
             }
         }
     }

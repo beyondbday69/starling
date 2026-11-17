@@ -113,6 +113,34 @@ graph TD
   - Fixed `clippy::inherent_to_string_shadow_display` in `crates/horizon-client-render/src/graphics.rs`.
   - ARM64 `libeyemod.so` compiled and published to GitHub Release `mod-loader-eyemod`.
 
+### Phase 7: Hold My Items Mod (`libholdmyitems.so` & ABI v7)
+- **Problem Statement:**
+  - In vanilla first-person rendering, Minecraft/Horizon intentionally hid the player's arm whenever any item or block was held (`item.is_some()`), making items appear as floating disjointed models without hands or arms holding them.
+  - The player wanted the **Hold My Items** mod (`libholdmyitems.so`), providing visible first-person arms holding tools, weapons, and blocks, realistic hand grip alignments, two-handed support stances, and configurable placement.
+- **Architecture & Implementation:**
+  - **ABI v7 (`crates/horizon-mod-abi`):**
+    - Bumped `ABI = 7;`.
+    - Added `HoldMyItems` struct (28 bytes) carrying active status, main/offhand arm visibility, two-handed combat stance, translation offsets (`x, y, z`), and orientation rotations (`pitch, yaw, roll`).
+    - Added `hold_my_items: Option<unsafe extern "C" fn(f32, *mut HoldMyItems)>` to `ModDesc`.
+  - **Mod Loader Integration (`crates/horizon-mod-loader`):**
+    - Updated ABI verification to accept ABIs 5, 6, and 7 (`desc.abi < 5 || desc.abi > ABI`), guaranteeing full backwards compatibility for existing `libsoundphysics.so`, `libshouldersurfing.so`, and `libeyemod.so`.
+    - Added `Module::hold_my_items` dispatch and `loader::hold_my_items(partial, out)`.
+  - **First-Person Arm Geometry & Poses (`crates/horizon-client`):**
+    - Created `held_item_arm_pose(left, swing, equip_progress)` in `first_person.rs`, attaching the player's forearm and hand smoothly to the item handle.
+    - Created `two_handed_support_arm_pose(swing, equip_progress)` positioning the off-hand arm across the chest to grip heavy two-handed weapons (swords, axes, heavy tools).
+    - In `game.rs:hand_geometry`, dynamically rendered `self.first_person_arm` with player skin and armor textures alongside the held item geometry whenever `hold_my_items.active` is true.
+  - **Standalone Mod (`crates/horizon-mod-holdmyitems`):**
+    - Created standalone crate producing `libholdmyitems.so`.
+    - Integrated with Starling's Options > Mods menu with 5 configurable options:
+      1. *Hold My Items* (Enabled / Disabled)
+      2. *Two-Handed Stance* (On / Off for swords, axes, and tools)
+      3. *Offhand Arm* (Show / Hide)
+      4. *Grip Placement* (Natural, Compact, Extended, Tactical)
+      5. *Arm Bobbing* (Realistic swing & equip sway)
+  - **CI / CD Automation (`.github/workflows/mod-loader.yml`):**
+    - Added ARM64 cross-compilation target: `cargo ndk -t arm64-v8a build -p horizon-mod-holdmyitems --release`.
+    - Configured GitHub Release publication under `mod-loader-holdmyitems`.
+
 ---
 
 ## 3. Current Status & Verification
@@ -124,17 +152,22 @@ graph TD
 | **Aiming Crosshair (+)** | Complete | Verified in `game.rs` |
 | **Shoulder Surfing Mod** | Complete | `libshouldersurfing.so` published |
 | **Player Eyes ABI v6** | Complete | 12/12 tests passed in abi & loader |
-| **Android APK (ABI v6)** | Complete | Actions run `44032296640` passed |
 | **Smooth Sub-pixel Blinking** | Complete | Continuous $\sin^2$ curve verified |
 | **Smooth Look Tracking** | Complete | Continuous lerp & droop verified |
 | **Resizable Eye Sizes** | Complete | 2x2, 2x3, 3x2, 3x3, auto dynamic verified |
 | **Reactive Shock Reaction** | Complete | Damage/fall shock, sweat drop, mouth verified |
-| **Interactive Mod Settings** | Complete | 6 Options > Mods rows active |
-| **`libeyemod.so` Build** | Complete | Release `mod-loader-eyemod` updated |
+| **Hold My Items ABI v7** | Complete | 14/14 tests passed in abi, loader & holdmyitems |
+| **Client First-Person Arm Rendering** | Complete | `cargo check -p horizon-client` passed |
+| **Hold My Items Mod (`libholdmyitems.so`)** | Complete | Crate, options, poses & CI configured |
+| **CI / CD Mod Release** | Active | `.github/workflows/mod-loader.yml` updated |
 
 ---
 
 ## 4. Key Artifacts & Download Links
+
+- **Hold My Items Mod (`libholdmyitems.so`):**  
+  [Download `libholdmyitems.so`](https://github.com/beyondbday69/starling/releases/download/mod-loader-holdmyitems/libholdmyitems.so)  
+  *(Release: [mod-loader-holdmyitems](https://github.com/beyondbday69/starling/releases/tag/mod-loader-holdmyitems))*
 
 - **Latest `libeyemod.so` (Resizable Eyes & Shock Reactions):**  
   [Download `libeyemod.so`](https://github.com/beyondbday69/starling/releases/download/mod-loader-eyemod/libeyemod.so)  

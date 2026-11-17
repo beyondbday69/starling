@@ -238,6 +238,48 @@ pub fn player_arm_pose(left: bool, inverse_height: f32, attack: f32) -> glam::Ma
         * Mat4::from_translation(Vec3::new(f * 5.6, 0.0, 0.0))
 }
 
+/// Pose of the arm when gripping a held item in first person.
+pub fn held_item_arm_pose(
+    left: bool,
+    inverse_height: f32,
+    attack: f32,
+    offset_x: f32,
+    offset_y: f32,
+    offset_z: f32,
+    pitch: f32,
+    yaw: f32,
+    roll: f32,
+) -> glam::Mat4 {
+    use glam::{Mat4, Vec3};
+    let f = if left { -1.0 } else { 1.0 };
+    let deg = |d: f32| d.to_radians();
+
+    let base = player_arm_pose(left, inverse_height, attack);
+    let grip = Mat4::from_translation(Vec3::new(f * (0.02 + offset_x), -0.06 + offset_y, 0.05 + offset_z))
+        * Mat4::from_rotation_x(deg(pitch))
+        * Mat4::from_rotation_y(deg(f * (10.0 + yaw)))
+        * Mat4::from_rotation_z(deg(f * (-5.0 + roll)));
+    base * grip
+}
+
+/// Pose for the offhand supporting arm in two-handed grip stance.
+pub fn two_handed_support_arm_pose(
+    left: bool,
+    inverse_height: f32,
+    attack: f32,
+) -> glam::Mat4 {
+    use glam::{Mat4, Vec3};
+    let f = if left { -1.0 } else { 1.0 };
+    let deg = |d: f32| d.to_radians();
+
+    let base = player_arm_pose(left, inverse_height, attack);
+    let reach = Mat4::from_translation(Vec3::new(f * -0.22, 0.05, -0.08))
+        * Mat4::from_rotation_y(deg(f * 35.0))
+        * Mat4::from_rotation_x(deg(-15.0))
+        * Mat4::from_rotation_z(deg(f * -20.0));
+    base * reach
+}
+
 /// `renderTwoHandedMap` up to its arms: the swing, the tilt from the view
 /// pitch (`calculateMapTilt`) and the turn towards the player.
 pub fn two_handed_map_base(pitch: f32, inverse_height: f32, attack: f32) -> glam::Mat4 {

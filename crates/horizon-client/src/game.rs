@@ -14142,6 +14142,42 @@ impl Game<'_> {
             };
             let m = to_world
                 * horizon_client::first_person::item_pose(left, inverse_height, attack, pose);
+
+            // Hold My Items: render player arms holding items in first person.
+            if let Some(hold) = mod_loader::hold_my_items(self, a) {
+                if hold.active != 0 && !self.own_invisible() {
+                    let show_this_arm = if hand == Hand::Main {
+                        hold.show_main_arm != 0
+                    } else {
+                        hold.show_off_arm != 0
+                    };
+                    if show_this_arm {
+                        let arm_m = to_world
+                            * horizon_client::first_person::held_item_arm_pose(
+                                left,
+                                inverse_height,
+                                attack,
+                                hold.offset_x,
+                                hold.offset_y,
+                                hold.offset_z,
+                                hold.pitch,
+                                hold.yaw,
+                                hold.roll,
+                            );
+                        self.first_person_arm(left, arm_m, packed, &mut out);
+
+                        if hand == Hand::Main && hold.two_handed != 0 && off_hand_empty {
+                            let support_m = to_world
+                                * horizon_client::first_person::two_handed_support_arm_pose(
+                                    !left,
+                                    inverse_height,
+                                    attack,
+                                );
+                            self.first_person_arm(!left, support_m, packed, &mut out);
+                        }
+                    }
+                }
+            }
             // Seeded by the player id plus the context ordinal.
             let (context, seed) = if left {
                 (
