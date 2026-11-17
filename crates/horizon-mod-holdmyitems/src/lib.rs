@@ -1,8 +1,6 @@
 //! HoldMyItems: First-person visible arms, hands, and two-handed grips for held items.
 
-use horizon_mod_abi::{
-    ABI, ButtonSink, HostVTable, HoldMyItems, ModDesc, guard, text,
-};
+use horizon_mod_abi::{ABI, ButtonSink, HoldMyItems, HostVTable, ModDesc, guard, text};
 use std::ffi::c_char;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicPtr, Ordering};
@@ -87,32 +85,28 @@ impl State {
         let Some(host) = host() else { return };
         let mut buf = [0; horizon_mod_abi::TEXT];
 
-        if unsafe { (host.setting)(c"enabled".as_ptr(), buf.as_mut_ptr(), buf.len()) } > 0 {
-            if let Some(val) = unsafe { text(buf.as_ptr()) } {
-                self.enabled = val != "0";
+        let mut read_setting = |key: &core::ffi::CStr| -> Option<&str> {
+            if unsafe { (host.setting)(key.as_ptr(), buf.as_mut_ptr(), buf.len()) } > 0 {
+                unsafe { text(buf.as_ptr()) }
+            } else {
+                None
             }
+        };
+
+        if let Some(val) = read_setting(c"enabled") {
+            self.enabled = val != "0";
         }
-        if unsafe { (host.setting)(c"two_handed".as_ptr(), buf.as_mut_ptr(), buf.len()) } > 0 {
-            if let Some(val) = unsafe { text(buf.as_ptr()) } {
-                self.two_handed = val != "0";
-            }
+        if let Some(val) = read_setting(c"two_handed") {
+            self.two_handed = val != "0";
         }
-        if unsafe { (host.setting)(c"offhand_arm".as_ptr(), buf.as_mut_ptr(), buf.len()) } > 0 {
-            if let Some(val) = unsafe { text(buf.as_ptr()) } {
-                self.offhand_arm = val != "0";
-            }
+        if let Some(val) = read_setting(c"offhand_arm") {
+            self.offhand_arm = val != "0";
         }
-        if unsafe { (host.setting)(c"grip_style".as_ptr(), buf.as_mut_ptr(), buf.len()) } > 0 {
-            if let Some(val) = unsafe { text(buf.as_ptr()) } {
-                if let Ok(idx) = val.parse::<usize>() {
-                    self.grip_style = GripStyle::from_index(idx);
-                }
-            }
+        if let Some(Ok(idx)) = read_setting(c"grip_style").map(|val| val.parse::<usize>()) {
+            self.grip_style = GripStyle::from_index(idx);
         }
-        if unsafe { (host.setting)(c"arm_bobbing".as_ptr(), buf.as_mut_ptr(), buf.len()) } > 0 {
-            if let Some(val) = unsafe { text(buf.as_ptr()) } {
-                self.arm_bobbing = val != "0";
-            }
+        if let Some(val) = read_setting(c"arm_bobbing") {
+            self.arm_bobbing = val != "0";
         }
     }
 

@@ -1044,7 +1044,10 @@ pub(super) fn set_shader_upscaling(upscaling: crate::graphics::ShaderUpscaling, 
         crate::graphics::ShaderUpscaling::Integer => 3,
     };
     SHADER_UPSCALING.store(mode, std::sync::atomic::Ordering::Relaxed);
-    FSR_SHARPNESS.store(sharpness.clamp(0.0, 1.0).to_bits(), std::sync::atomic::Ordering::Relaxed);
+    FSR_SHARPNESS.store(
+        sharpness.clamp(0.0, 1.0).to_bits(),
+        std::sync::atomic::Ordering::Relaxed,
+    );
 }
 
 pub(super) fn global_shader_upscaling() -> (crate::graphics::ShaderUpscaling, f32) {
@@ -4406,36 +4409,15 @@ impl PackPost {
             let colortex0 = view(self.main, 0, false).expect("colortex0");
             let (upscaling, sharpness) = self.upscaling();
             if upscaling == crate::graphics::ShaderUpscaling::Integer {
-                self.fsr.run_integer(
-                    device,
-                    queue,
-                    encoder,
-                    colortex0,
-                    screen,
-                    size,
-                    window,
-                );
+                self.fsr
+                    .run_integer(device, queue, encoder, colortex0, screen, size, window);
             } else if upscaling != crate::graphics::ShaderUpscaling::Off && size != window {
                 self.fsr.run(
-                    device,
-                    queue,
-                    encoder,
-                    colortex0,
-                    screen,
-                    size,
-                    window,
-                    sharpness,
+                    device, queue, encoder, colortex0, screen, size, window, sharpness,
                 );
             } else if upscaling != crate::graphics::ShaderUpscaling::Off && sharpness > 0.0 {
-                self.fsr.run_rcas(
-                    device,
-                    queue,
-                    encoder,
-                    colortex0,
-                    screen,
-                    window,
-                    sharpness,
-                );
+                self.fsr
+                    .run_rcas(device, queue, encoder, colortex0, screen, window, sharpness);
             } else {
                 let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
                     label: Some("Shader pack colortex0"),

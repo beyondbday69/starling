@@ -5928,11 +5928,7 @@ impl Renderer {
         pack_post::set_prepass(on);
     }
     /// Sets shader pack upscaling mode and sharpness for packs loaded from now on.
-    pub fn set_shader_upscaling(
-        &mut self,
-        mode: crate::graphics::ShaderUpscaling,
-        sharpness: f32,
-    ) {
+    pub fn set_shader_upscaling(&mut self, mode: crate::graphics::ShaderUpscaling, sharpness: f32) {
         pack_post::set_shader_upscaling(mode, sharpness);
         if let Some((_, Some(post))) = &mut self.pack_post {
             post.set_upscaling(mode, sharpness);

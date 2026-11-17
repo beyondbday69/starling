@@ -3058,9 +3058,7 @@ impl OptionsUi {
                 Page::Graphics
                 | Page::GraphicsAdvanced
                 | Page::GraphicsHdr
-                | Page::GraphicsShaders => {
-                    self.graphics.typing()
-                }
+                | Page::GraphicsShaders => self.graphics.typing(),
                 _ => self.settings_search_active(),
             }
     }
@@ -3263,9 +3261,7 @@ impl OptionsUi {
             | Page::GraphicsAdvanced
             | Page::GraphicsHdr
             | Page::GraphicsShaders
-            | Page::HdrCalibration => {
-                "options.videoTitle"
-            }
+            | Page::HdrCalibration => "options.videoTitle",
             Page::Controller => "horizon.pages.controller",
             Page::PadBinds => "horizon.pages.controller_binds",
             Page::Extras => "horizon.pages.extras",
@@ -5367,7 +5363,12 @@ impl OptionsUi {
             Page::ShaderOptions | Page::ShaderPacks | Page::NativePackOptions(..)
         );
         if is_shader_page {
-            crate::graphics_style::fill(batch, atlas, [0.0, 0.0, w, h], crate::graphics_style::VEIL);
+            crate::graphics_style::fill(
+                batch,
+                atlas,
+                [0.0, 0.0, w, h],
+                crate::graphics_style::VEIL,
+            );
         } else {
             ui::menu_background(batch, atlas, 0.0, 0.0, w, h, in_world);
             if bottom > top {
@@ -5482,7 +5483,9 @@ impl OptionsUi {
                                     (hover, *active, false),
                                 );
                             } else {
-                                ui::button(batch, atlas, wd.x, wd.y, wd.w, wd.h, label, *active, hover);
+                                ui::button(
+                                    batch, atlas, wd.x, wd.y, wd.w, wd.h, label, *active, hover,
+                                );
                             }
                         }
                     }

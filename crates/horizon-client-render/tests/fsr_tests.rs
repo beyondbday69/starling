@@ -21,7 +21,11 @@ fn fsr_wgsl_parses_and_validates() {
     }
 
     // Verify entry points exist
-    let entry_points: Vec<&str> = module.entry_points.iter().map(|ep| ep.name.as_str()).collect();
+    let entry_points: Vec<&str> = module
+        .entry_points
+        .iter()
+        .map(|ep| ep.name.as_str())
+        .collect();
     assert!(
         entry_points.contains(&"vs_fsr"),
         "Missing vs_fsr entry point in fsr.wgsl; found: {:?}",
@@ -48,10 +52,8 @@ fn fsr_constants_layout_matches_spec() {
             if name == "FsrConstants" {
                 found_constants = true;
                 if let naga::TypeInner::Struct { members, .. } = &ty.inner {
-                    let member_names: Vec<&str> = members
-                        .iter()
-                        .filter_map(|m| m.name.as_deref())
-                        .collect();
+                    let member_names: Vec<&str> =
+                        members.iter().filter_map(|m| m.name.as_deref()).collect();
                     assert_eq!(
                         member_names,
                         vec!["src_size", "dst_size", "sharpness", "_pad"],
@@ -87,4 +89,3 @@ fn fsr_constants_rust_struct_layout() {
     let decoded: FsrConstants = *bytemuck::from_bytes(bytes);
     assert_eq!(decoded, constants);
 }
-

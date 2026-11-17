@@ -2066,7 +2066,12 @@ impl Game<'_> {
                 for y in 0..8 {
                     for x in 0..8 {
                         let idx = ((y + 8) * 64 + (x + 8)) * 4;
-                        let px = u32::from_le_bytes([img[idx], img[idx + 1], img[idx + 2], img[idx + 3]]);
+                        let px = u32::from_le_bytes([
+                            img[idx],
+                            img[idx + 1],
+                            img[idx + 2],
+                            img[idx + 3],
+                        ]);
                         base_face[y * 8 + x] = px;
                     }
                 }
@@ -2078,7 +2083,12 @@ impl Game<'_> {
                 for y in 0..8 {
                     for x in 0..8 {
                         let idx = ((y + 8) * 64 + (x + 8)) * 4;
-                        let px = u32::from_le_bytes([img[idx], img[idx + 1], img[idx + 2], img[idx + 3]]);
+                        let px = u32::from_le_bytes([
+                            img[idx],
+                            img[idx + 1],
+                            img[idx + 2],
+                            img[idx + 3],
+                        ]);
                         base_face[y * 8 + x] = px;
                     }
                 }
@@ -2086,7 +2096,11 @@ impl Game<'_> {
             }
         }
 
-        let eyes = super::mod_loader::player_eyes(self, partial, if has_base { Some(&base_face) } else { None });
+        let eyes = super::mod_loader::player_eyes(
+            self,
+            partial,
+            if has_base { Some(&base_face) } else { None },
+        );
         if let Some(eyes) = eyes {
             if eyes.active != 0 && eyes.has_face_patch != 0 {
                 let (w, h) = (self.gui.atlas.width as f32, self.gui.atlas.height as f32);

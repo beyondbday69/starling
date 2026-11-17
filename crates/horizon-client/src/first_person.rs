@@ -255,19 +255,18 @@ pub fn held_item_arm_pose(
     let deg = |d: f32| d.to_radians();
 
     let base = player_arm_pose(left, inverse_height, attack);
-    let grip = Mat4::from_translation(Vec3::new(f * (0.02 + offset_x), -0.06 + offset_y, 0.05 + offset_z))
-        * Mat4::from_rotation_x(deg(pitch))
+    let grip = Mat4::from_translation(Vec3::new(
+        f * (0.02 + offset_x),
+        -0.06 + offset_y,
+        0.05 + offset_z,
+    )) * Mat4::from_rotation_x(deg(pitch))
         * Mat4::from_rotation_y(deg(f * (10.0 + yaw)))
         * Mat4::from_rotation_z(deg(f * (-5.0 + roll)));
     base * grip
 }
 
 /// Pose for the offhand supporting arm in two-handed grip stance.
-pub fn two_handed_support_arm_pose(
-    left: bool,
-    inverse_height: f32,
-    attack: f32,
-) -> glam::Mat4 {
+pub fn two_handed_support_arm_pose(left: bool, inverse_height: f32, attack: f32) -> glam::Mat4 {
     use glam::{Mat4, Vec3};
     let f = if left { -1.0 } else { 1.0 };
     let deg = |d: f32| d.to_radians();

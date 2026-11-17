@@ -323,13 +323,11 @@ pub fn rows() -> Vec<(Page, Vec<(&'static str, Vec<Setting>)>)> {
                 ),
                 (
                     "Screenshots",
-                    vec![
-                        h(
-                            H::ScreenshotQuality,
-                            None,
-                            "F2 screenshots at this many times the game's resolution. Higher takes longer.",
-                        ),
-                    ],
+                    vec![h(
+                        H::ScreenshotQuality,
+                        None,
+                        "F2 screenshots at this many times the game's resolution. Higher takes longer.",
+                    )],
                 ),
             ],
         ),
@@ -441,13 +439,11 @@ pub fn rows() -> Vec<(Page, Vec<(&'static str, Vec<Setting>)>)> {
             vec![
                 (
                     "Resolution",
-                    vec![
-                        h(
-                            H::ResolutionScale,
-                            High,
-                            "World pixels per screen pixel. Active when Upscale Mode is Custom.",
-                        ),
-                    ],
+                    vec![h(
+                        H::ResolutionScale,
+                        High,
+                        "World pixels per screen pixel. Active when Upscale Mode is Custom.",
+                    )],
                 ),
                 (
                     "Vanilla upscaling",
@@ -885,9 +881,10 @@ impl H {
             ),
             H::ShaderUpscaling => labelled("Shader Upscaling", g.shader_upscaling.label()),
             H::ShaderUpscaleMode => labelled("Upscale Mode", g.shader_upscale_mode.label()),
-            H::FsrSharpness => {
-                labelled("FSR Sharpness", format!("{}%", (g.fsr_sharpness * 100.0).round() as u32))
-            }
+            H::FsrSharpness => labelled(
+                "FSR Sharpness",
+                format!("{}%", (g.fsr_sharpness * 100.0).round() as u32),
+            ),
             H::ShaderPack => {
                 let title = if s.horizon.shader_pack.is_empty() {
                     "Off".to_string()
@@ -1057,15 +1054,35 @@ impl H {
                 let current = &s.horizon.shader_pack;
                 let pos = packs.iter().position(|p| p == current).unwrap_or(0);
                 let n = packs.len();
-                let next = if back { (pos + n - 1) % n } else { (pos + 1) % n };
+                let next = if back {
+                    (pos + n - 1) % n
+                } else {
+                    (pos + 1) % n
+                };
                 s.horizon.shader_pack = packs[next].clone();
                 s.horizon.shader_profile.clear();
             }
             H::ShaderProfile => {
                 let choices: &[&str] = if cfg!(target_os = "android") {
-                    &[crate::graphics::AUTO_PROFILE, "default", "lite", "low", "medium", "high", "ultra"]
+                    &[
+                        crate::graphics::AUTO_PROFILE,
+                        "default",
+                        "lite",
+                        "low",
+                        "medium",
+                        "high",
+                        "ultra",
+                    ]
                 } else {
-                    &["default", "lite", "low", "medium", "high", "ultra", crate::graphics::AUTO_PROFILE]
+                    &[
+                        "default",
+                        "lite",
+                        "low",
+                        "medium",
+                        "high",
+                        "ultra",
+                        crate::graphics::AUTO_PROFILE,
+                    ]
                 };
                 let current = s.horizon.shader_profile.as_str();
                 let pos = choices
@@ -1073,7 +1090,11 @@ impl H {
                     .position(|&p| p == current || (p == "default" && current.is_empty()))
                     .unwrap_or(0);
                 let n = choices.len();
-                let next = if back { (pos + n - 1) % n } else { (pos + 1) % n };
+                let next = if back {
+                    (pos + n - 1) % n
+                } else {
+                    (pos + 1) % n
+                };
                 s.horizon.shader_profile = choices[next].to_string();
             }
             _ => {}
@@ -3506,7 +3527,10 @@ mod tests {
 
         upscaling.cycle(&mut s, false, [854, 480]);
         assert_eq!(s.horizon.shader_upscaling, ShaderUpscaling::Integer);
-        assert_eq!(upscaling.label(&s).plain(), "Shader Upscaling: Integer (Nearest)");
+        assert_eq!(
+            upscaling.label(&s).plain(),
+            "Shader Upscaling: Integer (Nearest)"
+        );
 
         upscaling.cycle(&mut s, false, [854, 480]);
         assert_eq!(s.horizon.shader_upscaling, ShaderUpscaling::Off);
