@@ -1,0 +1,19 @@
+{
+  "horizon_revision": "fdc87aecdbd116bf1e08adcd062fcbaea8c2e2ca",
+  "horizon_repository": "https://github.com/horizon-rust/horizon",
+  "horizon_mixins_repository": "https://github.com/horizon-rust/horizon-mixins",
+  "horizon_mixins_revision": "d9c83d7096b7ea5b83678da2efdfd6161f74997e",
+  "mixin_schema": 6,
+  "source_sha256": {
+    "crates/horizon-client/src/lib.rs": "3899ca984b7853a9c3f5e852f4eb24670be60dd2a24ab357c4ce46c6444fafcc",
+    "crates/horizon-client/src/game.rs": "419c2bdd785f2fef499ae460c41f0bfc125b19fb12a8a8c3cef54b27de4687df",
+    "crates/horizon-client/src/game/perspective.rs": "208b02524aa39033b7c97d6cfafcd63414dba99036e88dbf1ad11a779aa100c0",
+    "crates/horizon-client/src/game/remote.rs": "cfd3a13f5f52df60cc6c83340e2aaf68494dd8b91243adf2a54674ad713dcd7f",
+    "crates/horizon-client/src/game/fov.rs": "97162b2252787b46758cb89bcdcce47010b1d60ccdc2c1c378f307a387791d0f",
+    "crates/horizon-client/src/game/native_hooks.rs": "2cb9c8f04dd92484ae22788c61d658a76b34ab74bf9deab06b0e44958eecd5bd",
+    "crates/horizon-client/src/game/recipe_book.rs": "ddfc8fde17446490878594df88ef26c3be6b08170b92a9d8712a2aff5247e717",
+    "crates/horizon-client/src/client_lib.rs": "96a5a5708f3adae7a50685d174826e2feca709007f89454663d4f17e5c8a9265",
+    "crates/horizon-client/src/game/stations.rs": "af27fedd82454284cf3a8938b63ba62e5a27f0ca99de0df780a2e68e822aec1e",
+    "crates/horizon-client-render/src/gfx/reuse.rs": "f418314fe469fcaaa24c2ddcfab417be542029d58de3f44e2ca1b23927cb4764"
+  }
+}

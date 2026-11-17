@@ -5,5 +5,7 @@ holdmyitems
 zoom
 elytratrails
 livingmotion
+cinematic_interactions
 wrench holdmyitems
 wrench holdmyitems zoom elytratrails livingmotion
+wrench holdmyitems zoom elytratrails livingmotion cinematic_interactions
