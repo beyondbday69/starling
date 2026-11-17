@@ -1,7 +1,9 @@
 //! EyeMod: Procedural animated eyes, silky smooth blinking, sub-pixel look tracking,
-//! and blushing for the Starling player model.
+//! resizable eye scales, reactive shock & expressions, and blushing for the Starling player model.
 
-use horizon_mod_abi::{ABI, ButtonSink, HostVTable, ModDesc, PlayerEyes, PlayerInfo, guard, text};
+use horizon_mod_abi::{
+    ABI, ButtonSink, HostVTable, ItemInfo, ModDesc, PlayerEyes, PlayerInfo, guard, text,
+};
 use std::ffi::c_char;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicPtr, Ordering};
@@ -14,6 +16,96 @@ fn host() -> Option<&'static HostVTable> {
         None
     } else {
         Some(unsafe { &*ptr })
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum EyeSize {
+    Normal,   // 2x2
+    Tall,     // 2x3 (Big Eyes)
+    Wide,     // 3x2 (Wide Eyes)
+    Huge,     // 3x3 (Huge Anime Eyes)
+    Reactive, // Auto Dynamic (Smoothly resizes on reaction/speed/sprint)
+}
+
+impl EyeSize {
+    fn from_index(idx: usize) -> Self {
+        match idx {
+            1 => Self::Tall,
+            2 => Self::Wide,
+            3 => Self::Huge,
+            4 => Self::Reactive,
+            _ => Self::Normal,
+        }
+    }
+
+    fn to_index(self) -> usize {
+        match self {
+            Self::Normal => 0,
+            Self::Tall => 1,
+            Self::Wide => 2,
+            Self::Huge => 3,
+            Self::Reactive => 4,
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Normal => "Normal (2x2)",
+            Self::Tall => "Tall / Big (2x3)",
+            Self::Wide => "Wide (3x2)",
+            Self::Huge => "Huge Anime (3x3)",
+            Self::Reactive => "Auto Dynamic (Reactive)",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum ExpressionMode {
+    Auto,    // Reactive to damage, falling, sneaking, items, low HP
+    Shock,   // Preview: Shock (Big Eyes, trembling pupils, sweat drop, 'o' mouth)
+    BigEyes, // Preview: Big Eyes
+    Squint,  // Preview: Squint (narrowed focused eyes)
+    Happy,   // Preview: Happy (^ ^ crescent eyes)
+    Sparkle, // Preview: Sparkle (* * star eyes)
+    Off,     // Expressions disabled
+}
+
+impl ExpressionMode {
+    fn from_index(idx: usize) -> Self {
+        match idx {
+            1 => Self::Shock,
+            2 => Self::BigEyes,
+            3 => Self::Squint,
+            4 => Self::Happy,
+            5 => Self::Sparkle,
+            6 => Self::Off,
+            _ => Self::Auto,
+        }
+    }
+
+    fn to_index(self) -> usize {
+        match self {
+            Self::Auto => 0,
+            Self::Shock => 1,
+            Self::BigEyes => 2,
+            Self::Squint => 3,
+            Self::Happy => 4,
+            Self::Sparkle => 5,
+            Self::Off => 6,
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Auto => "Auto Reactive",
+            Self::Shock => "Preview: Shock",
+            Self::BigEyes => "Preview: Big Eyes",
+            Self::Squint => "Preview: Squint",
+            Self::Happy => "Preview: Happy (^ ^)",
+            Self::Sparkle => "Preview: Sparkle (* *)",
+            Self::Off => "Off",
+        }
     }
 }
 
@@ -102,6 +194,8 @@ impl BlinkRate {
 struct State {
     blinking_enabled: bool,
     tracking_enabled: bool,
+    eye_size: EyeSize,
+    expression_mode: ExpressionMode,
     blush_mode: BlushMode,
     blink_rate: BlinkRate,
 
@@ -119,6 +213,17 @@ struct State {
     // Smooth blushing state
     current_blush: f32,
 
+    // Smooth eye resizing scale:
+    current_size_scale_y: f32, // 0.0 (2-row) .. 1.0 (3-row tall)
+    current_size_scale_x: f32, // 0.0 (2-col) .. 1.0 (3-col wide)
+
+    // Reactive shock & expression state:
+    shock_timer: f32,
+    current_shock_anim: f32,
+    last_health: f32,
+    holding_shiny: bool,
+    total_time: f32,
+
     // Idle glance
     time_to_next_glance: f32,
     glance_target_x: f32,
@@ -132,6 +237,8 @@ impl State {
         Self {
             blinking_enabled: true,
             tracking_enabled: true,
+            eye_size: EyeSize::Reactive,
+            expression_mode: ExpressionMode::Auto,
             blush_mode: BlushMode::Rosy,
             blink_rate: BlinkRate::Normal,
 
@@ -145,6 +252,15 @@ impl State {
             current_look_y: 0.0,
 
             current_blush: 0.65,
+
+            current_size_scale_y: 0.0,
+            current_size_scale_x: 0.0,
+
+            shock_timer: 0.0,
+            current_shock_anim: 0.0,
+            last_health: 20.0,
+            holding_shiny: false,
+            total_time: 0.0,
 
             time_to_next_glance: 2.5,
             glance_target_x: 0.0,
@@ -178,6 +294,20 @@ impl State {
                 self.tracking_enabled = val != "0";
             }
         }
+        if unsafe { (host.setting)(c"eye_size".as_ptr(), buf.as_mut_ptr(), buf.len()) } > 0 {
+            if let Some(val) = unsafe { text(buf.as_ptr()) } {
+                if let Ok(idx) = val.parse::<usize>() {
+                    self.eye_size = EyeSize::from_index(idx);
+                }
+            }
+        }
+        if unsafe { (host.setting)(c"expression".as_ptr(), buf.as_mut_ptr(), buf.len()) } > 0 {
+            if let Some(val) = unsafe { text(buf.as_ptr()) } {
+                if let Ok(idx) = val.parse::<usize>() {
+                    self.expression_mode = ExpressionMode::from_index(idx);
+                }
+            }
+        }
         if unsafe { (host.setting)(c"blush".as_ptr(), buf.as_mut_ptr(), buf.len()) } > 0 {
             if let Some(val) = unsafe { text(buf.as_ptr()) } {
                 if let Ok(idx) = val.parse::<usize>() {
@@ -198,6 +328,22 @@ impl State {
         let Some(host) = host() else { return };
         let s_blink = if self.blinking_enabled { c"1" } else { c"0" };
         let s_track = if self.tracking_enabled { c"1" } else { c"0" };
+        let s_size = match self.eye_size {
+            EyeSize::Normal => c"0",
+            EyeSize::Tall => c"1",
+            EyeSize::Wide => c"2",
+            EyeSize::Huge => c"3",
+            EyeSize::Reactive => c"4",
+        };
+        let s_expr = match self.expression_mode {
+            ExpressionMode::Auto => c"0",
+            ExpressionMode::Shock => c"1",
+            ExpressionMode::BigEyes => c"2",
+            ExpressionMode::Squint => c"3",
+            ExpressionMode::Happy => c"4",
+            ExpressionMode::Sparkle => c"5",
+            ExpressionMode::Off => c"6",
+        };
         let s_blush = match self.blush_mode {
             BlushMode::Off => c"0",
             BlushMode::Soft => c"1",
@@ -214,6 +360,8 @@ impl State {
         unsafe {
             (host.set_setting)(c"blink".as_ptr(), s_blink.as_ptr());
             (host.set_setting)(c"tracking".as_ptr(), s_track.as_ptr());
+            (host.set_setting)(c"eye_size".as_ptr(), s_size.as_ptr());
+            (host.set_setting)(c"expression".as_ptr(), s_expr.as_ptr());
             (host.set_setting)(c"blush".as_ptr(), s_blush.as_ptr());
             (host.set_setting)(c"blink_rate".as_ptr(), s_rate.as_ptr());
         }
@@ -235,6 +383,9 @@ const C_PUPIL_BOT: u32 = 0xFF5B52A8; // #a8525b (R=A8, G=52, B=5B)
 const C_WHITE_TOP: u32 = 0xFFBDB2D3; // #d3b2bd (R=D3, G=B2, B=BD)
 const C_WHITE_BOT: u32 = 0xFFFBFAFF; // #fffafb (R=FF, G=FA, B=FB)
 const C_SKIN_TOP: u32 = 0xFF94ABE9; // #e9ab94 (R=E9, G=AB, B=94)
+const C_SKIN_BOT: u32 = 0xFFA8C6F4; // #f4c6a8 (R=F4, G=C6, B=A8)
+const C_SWEAT: u32 = 0xFFFBDB48; // #48dbfb (R=48, G=DB, B=FB)
+const C_GOLD: u32 = 0xFF30D3FE; // #fed330 (R=FE, G=D3, B=30)
 
 /// Sub-pixel color linear interpolation with clamping.
 #[inline]
@@ -258,29 +409,42 @@ fn lerp_u32(c1: u32, c2: u32, t: f32) -> u32 {
     r | (g << 8) | (b << 16) | (a1 << 24)
 }
 
-/// Continuous eyelid coverage blending.
+/// Continuous dynamic eyelid coverage blending supporting resizable 2-row and 3-row eyes.
 ///
-/// `y_lid` runs smoothly from `0.0` (fully open) to `2.0` (fully closed).
+/// `y_lid` runs smoothly from `0.0` (fully open) to `2.0 + h` (fully closed).
 #[inline]
-fn apply_eyelid(base: u32, lash: u32, skin: u32, row: usize, y_lid: f32) -> u32 {
-    if row == 5 {
+fn apply_eyelid_dynamic(base: u32, lash: u32, skin: u32, row: usize, y_lid: f32, h: f32) -> u32 {
+    if row == 4 {
+        if h <= 0.001 {
+            return lash;
+        }
         if y_lid <= 0.0 {
-            base
+            lerp_u32(lash, base, h)
         } else if y_lid >= 1.0 {
-            // Eyelid line has passed row 5; smoothly fade from lash into eyelid skin
             let f_skin = (y_lid - 1.0).clamp(0.0, 1.0);
             lerp_u32(lash, skin, f_skin)
         } else {
-            // Eyelid edge is moving through row 5
-            lerp_u32(base, lash, y_lid)
+            let open_color = lerp_u32(lash, base, h);
+            lerp_u32(open_color, lash, y_lid)
+        }
+    } else if row == 5 {
+        let start = 1.0 * h;
+        if y_lid <= start {
+            base
+        } else if y_lid >= start + 1.0 {
+            let f_skin = (y_lid - (start + 1.0)).clamp(0.0, 1.0);
+            lerp_u32(lash, skin, f_skin)
+        } else {
+            let f_lash = y_lid - start;
+            lerp_u32(base, lash, f_lash)
         }
     } else {
         // row == 6
-        if y_lid <= 1.0 {
+        let start = 1.0 + 1.0 * h;
+        if y_lid <= start {
             base
         } else {
-            // Eyelid edge is moving through row 6 towards full closure
-            let f_lash = (y_lid - 1.0).clamp(0.0, 1.0);
+            let f_lash = (y_lid - start).clamp(0.0, 1.0);
             lerp_u32(base, lash, f_lash)
         }
     }
@@ -318,6 +482,7 @@ unsafe extern "C" fn frame(partial: f32) {
         with_state(|state| {
             // Delta time estimation from tick fraction (partial)
             let dt = (partial * 0.05).clamp(0.005, 0.05);
+            state.total_time += dt;
 
             // 1. Procedural Smooth Blinking update
             let blink_duration = if state.is_double_blink { 0.36 } else { 0.22 };
@@ -391,7 +556,105 @@ unsafe extern "C" fn frame(partial: f32) {
                 state.current_look_y *= 0.9;
             }
 
-            // 3. Smooth Blushing update
+            // 3. Held item detection for sparkle reaction
+            if in_world {
+                let mut item_buf = [0; 64];
+                let mut item_info = ItemInfo::default();
+                let has_item = unsafe {
+                    (host.item)(
+                        0,
+                        item_buf.as_mut_ptr(),
+                        item_buf.len(),
+                        &mut item_info,
+                    ) != 0
+                };
+                if has_item {
+                    if let Some(name) = unsafe { text(item_buf.as_ptr()) } {
+                        let n = name.to_ascii_lowercase();
+                        state.holding_shiny = n.contains("diamond")
+                            || n.contains("emerald")
+                            || n.contains("golden_apple")
+                            || n.contains("totem")
+                            || n.contains("star")
+                            || n.contains("cake");
+                    } else {
+                        state.holding_shiny = false;
+                    }
+                } else {
+                    state.holding_shiny = false;
+                }
+            }
+
+            // 4. Reactive Shock Detection (Damage / Falling)
+            if in_world {
+                // Damage taken check
+                if state.last_health > 0.0 && player.health < state.last_health - 0.15 {
+                    state.shock_timer = 2.2;
+                }
+                // Fast fall velocity check (steep drop)
+                if player.vy < -0.45 && !player.on_ground() {
+                    state.shock_timer = state.shock_timer.max(1.6);
+                }
+                state.last_health = player.health;
+            }
+
+            if state.shock_timer > 0.0 {
+                state.shock_timer = (state.shock_timer - dt).max(0.0);
+            }
+
+            let is_shock_active = state.expression_mode == ExpressionMode::Shock
+                || (state.expression_mode == ExpressionMode::Auto && state.shock_timer > 0.0);
+
+            let target_shock_anim = if is_shock_active { 1.0 } else { 0.0 };
+            state.current_shock_anim +=
+                (target_shock_anim - state.current_shock_anim) * (dt * 10.0).min(1.0);
+
+            // 5. Smooth Eye Sizing scales update
+            let (base_scale_y, base_scale_x) = match state.eye_size {
+                EyeSize::Normal => (0.0, 0.0),
+                EyeSize::Tall => (1.0, 0.0),
+                EyeSize::Wide => (0.0, 1.0),
+                EyeSize::Huge => (1.0, 1.0),
+                EyeSize::Reactive => {
+                    let mut sy = 0.0f32;
+                    let mut sx = 0.0f32;
+                    if in_world && player.sprinting() {
+                        sy += 0.2;
+                        sx += 0.2;
+                    }
+                    (sy, sx)
+                }
+            };
+
+            let (target_scale_y, target_scale_x) = match state.expression_mode {
+                ExpressionMode::Shock => (1.0, 0.5),
+                ExpressionMode::BigEyes => (1.0, 0.0),
+                ExpressionMode::Squint => (-0.3, 0.0),
+                ExpressionMode::Happy => (0.0, 0.0),
+                ExpressionMode::Sparkle => (0.8, 0.3),
+                ExpressionMode::Off => (base_scale_y, base_scale_x),
+                ExpressionMode::Auto => {
+                    let mut sy = base_scale_y;
+                    let mut sx = base_scale_x;
+                    if state.current_shock_anim > 0.01 {
+                        sy = sy.max(state.current_shock_anim * 1.0);
+                        sx = sx.max(state.current_shock_anim * 0.5);
+                    } else if in_world && player.sneaking() {
+                        sy -= 0.3;
+                    } else if state.holding_shiny {
+                        sy = sy.max(0.8);
+                        sx = sx.max(0.3);
+                    }
+                    (sy, sx)
+                }
+            };
+
+            state.current_size_scale_y +=
+                (target_scale_y - state.current_size_scale_y) * (dt * 8.0).min(1.0);
+            state.current_size_scale_x +=
+                (target_scale_x - state.current_size_scale_x) * (dt * 8.0).min(1.0);
+
+            // 6. Smooth Blushing update
             let target_blush = match state.blush_mode {
                 BlushMode::Off => 0.0,
                 BlushMode::Soft => 0.35,
@@ -421,6 +684,10 @@ unsafe extern "C" fn player_eyes(_partial: f32, out: *mut PlayerEyes) {
             eyes.active = 1;
             eyes.has_face_patch = 1;
 
+            let shock_anim = state.current_shock_anim;
+            let size_y = state.current_size_scale_y.clamp(-0.5, 1.0);
+            let size_x = state.current_size_scale_x.clamp(0.0, 1.0);
+
             // 1. Calculate continuous blink closure (0.0: wide open, 1.0: fully closed)
             let mut closure = 0.0f32;
             if state.blink_progress >= 0.0 {
@@ -428,7 +695,6 @@ unsafe extern "C" fn player_eyes(_partial: f32, out: *mut PlayerEyes) {
                 let norm = (state.blink_progress / duration).clamp(0.0, 1.0);
 
                 closure = if state.is_double_blink {
-                    // Double blink: two smooth sine-squared peaks
                     if norm < 0.5 {
                         let sub = norm / 0.5;
                         (sub * std::f32::consts::PI).sin().powi(2)
@@ -437,83 +703,204 @@ unsafe extern "C" fn player_eyes(_partial: f32, out: *mut PlayerEyes) {
                         (sub * std::f32::consts::PI).sin().powi(2)
                     }
                 } else {
-                    // Single smooth blink: peak at center with zero velocity at endpoints
                     (norm * std::f32::consts::PI).sin().powi(2)
                 };
             }
             eyes.blink = (closure * 2.0).round() as u8;
 
-            // 2. Continuous sub-pixel pupil positions
-            let look_x = state.current_look_x.clamp(-1.0, 1.0);
-            let look_y = state.current_look_y.clamp(-1.0, 1.0);
+            // 2. Eyebrows on Row 3 (lifted high on shock / big eyes)
+            let brow_amt = (size_y * 0.9 + shock_anim * 0.4).clamp(0.0, 1.0);
+            if brow_amt > 0.01 {
+                eyes.face_pixels[3 * 8 + 1] =
+                    lerp_u32(eyes.face_pixels[3 * 8 + 1], C_LASH, brow_amt);
+                eyes.face_pixels[3 * 8 + 2] =
+                    lerp_u32(eyes.face_pixels[3 * 8 + 2], C_LASH, brow_amt * 0.85);
+                eyes.face_pixels[3 * 8 + 5] =
+                    lerp_u32(eyes.face_pixels[3 * 8 + 5], C_LASH, brow_amt * 0.85);
+                eyes.face_pixels[3 * 8 + 6] =
+                    lerp_u32(eyes.face_pixels[3 * 8 + 6], C_LASH, brow_amt);
+            }
+
+            // 3. Continuous sub-pixel pupil positions with shock tremor
+            let mut look_x = state.current_look_x.clamp(-1.0, 1.0);
+            let mut look_y = state.current_look_y.clamp(-1.0, 1.0);
+
+            if shock_anim > 0.05 {
+                let jitter_x = (state.total_time * 35.0).sin() * 0.15 * shock_anim;
+                let jitter_y = (state.total_time * 42.0).cos() * 0.12 * shock_anim;
+                look_x = (look_x + jitter_x).clamp(-1.0, 1.0);
+                look_y = (look_y + jitter_y).clamp(-1.0, 1.0);
+            }
+
             eyes.look_x = look_x.round() as i8;
             eyes.look_y = look_y.round() as i8;
 
-            // Right Eye base colors before eyelid:
-            // Center (0.0): Col 1 is White, Col 2 is Pupil.
-            let (r1_5, r2_5, r1_6, r2_6) = if look_x < 0.0 {
-                // Glancing left (pupils smoothly shift towards col 1):
-                let t = -look_x; // 0.0 .. 1.0
+            // Base pupil & sclera colors before eyelid:
+            let (r1_4, r2_4, r1_5, r2_5, r1_6, r2_6);
+            let (l1_4, l2_4, l1_5, l2_5, l1_6, l2_6);
+
+            if shock_anim > 0.3 {
+                // Iconic anime shock eye: contracted pupil in Row 5 surrounded by wide sclera
+                r1_4 = C_WHITE_BOT;
+                r2_4 = C_WHITE_BOT;
+                r1_5 = C_WHITE_BOT;
+                r2_5 = C_PUPIL_TOP;
+                r1_6 = C_WHITE_BOT;
+                r2_6 = C_WHITE_BOT;
+
+                l1_4 = C_WHITE_BOT;
+                l2_4 = C_WHITE_BOT;
+                l1_5 = C_PUPIL_TOP;
+                l2_5 = C_WHITE_BOT;
+                l1_6 = C_WHITE_BOT;
+                l2_6 = C_WHITE_BOT;
+            } else {
+                // Right Eye glance interpolation
+                if look_x < 0.0 {
+                    let t = -look_x;
+                    r1_4 = lerp_u32(C_WHITE_TOP, C_PUPIL_TOP, t);
+                    r2_4 = lerp_u32(C_PUPIL_TOP, C_WHITE_TOP, t);
+                    r1_5 = lerp_u32(C_WHITE_TOP, C_PUPIL_TOP, t);
+                    r2_5 = lerp_u32(C_PUPIL_TOP, C_WHITE_TOP, t);
+                    r1_6 = lerp_u32(C_WHITE_BOT, C_PUPIL_BOT, t);
+                    r2_6 = lerp_u32(C_PUPIL_BOT, C_WHITE_BOT, t);
+                } else {
+                    r1_4 = C_WHITE_TOP;
+                    r2_4 = C_PUPIL_TOP;
+                    r1_5 = C_WHITE_TOP;
+                    r2_5 = C_PUPIL_TOP;
+                    r1_6 = C_WHITE_BOT;
+                    r2_6 = C_PUPIL_BOT;
+                }
+
+                // Left Eye glance interpolation
+                if look_x > 0.0 {
+                    let t = look_x;
+                    l1_4 = lerp_u32(C_PUPIL_TOP, C_WHITE_TOP, t);
+                    l2_4 = lerp_u32(C_WHITE_TOP, C_PUPIL_TOP, t);
+                    l1_5 = lerp_u32(C_PUPIL_TOP, C_WHITE_TOP, t);
+                    l2_5 = lerp_u32(C_WHITE_TOP, C_PUPIL_TOP, t);
+                    l1_6 = lerp_u32(C_PUPIL_BOT, C_WHITE_BOT, t);
+                    l2_6 = lerp_u32(C_WHITE_BOT, C_PUPIL_BOT, t);
+                } else {
+                    l1_4 = C_PUPIL_TOP;
+                    l2_4 = C_WHITE_TOP;
+                    l1_5 = C_PUPIL_TOP;
+                    l2_5 = C_WHITE_TOP;
+                    l1_6 = C_PUPIL_BOT;
+                    l2_6 = C_WHITE_BOT;
+                }
+            }
+
+            // Sparkle star catchlights
+            let is_sparkle = state.expression_mode == ExpressionMode::Sparkle
+                || (state.expression_mode == ExpressionMode::Auto && state.holding_shiny);
+            let (r1_5, r2_6, l2_5, l1_6) = if is_sparkle {
                 (
-                    lerp_u32(C_WHITE_TOP, C_PUPIL_TOP, t),
-                    lerp_u32(C_PUPIL_TOP, C_WHITE_TOP, t),
-                    lerp_u32(C_WHITE_BOT, C_PUPIL_BOT, t),
-                    lerp_u32(C_PUPIL_BOT, C_WHITE_BOT, t),
+                    lerp_u32(r1_5, C_GOLD, 0.85),
+                    lerp_u32(r2_6, C_GOLD, 0.85),
+                    lerp_u32(l2_5, C_GOLD, 0.85),
+                    lerp_u32(l1_6, C_GOLD, 0.85),
                 )
             } else {
-                // Glancing right:
-                let t = look_x;
-                (
-                    C_WHITE_TOP,
-                    lerp_u32(C_PUPIL_TOP, C_PUPIL_TOP, t),
-                    C_WHITE_BOT,
-                    lerp_u32(C_PUPIL_BOT, C_PUPIL_BOT, t),
-                )
+                (r1_5, r2_6, l2_5, l1_6)
             };
 
-            // Left Eye base colors before eyelid:
-            // Center (0.0): Col 5 is Pupil, Col 6 is White.
-            let (l1_5, l2_5, l1_6, l2_6) = if look_x > 0.0 {
-                // Glancing right (pupils smoothly shift towards col 6):
-                let t = look_x; // 0.0 .. 1.0
-                (
-                    lerp_u32(C_PUPIL_TOP, C_WHITE_TOP, t),
-                    lerp_u32(C_WHITE_TOP, C_PUPIL_TOP, t),
-                    lerp_u32(C_PUPIL_BOT, C_WHITE_BOT, t),
-                    lerp_u32(C_WHITE_BOT, C_PUPIL_BOT, t),
-                )
-            } else {
-                // Glancing left:
-                let t = -look_x;
-                (
-                    lerp_u32(C_PUPIL_TOP, C_PUPIL_TOP, t),
-                    C_WHITE_TOP,
-                    lerp_u32(C_PUPIL_BOT, C_PUPIL_BOT, t),
-                    C_WHITE_BOT,
-                )
-            };
+            // 4. Dynamic vertical eyelid coverage
+            let is_squint = state.expression_mode == ExpressionMode::Squint
+                || (state.expression_mode == ExpressionMode::Auto && size_y < -0.15);
+            let squint_droop = if is_squint { 0.45 } else { 0.0 };
+            let droop = if look_y < 0.0 { -look_y * 0.35 } else { 0.0 } + squint_droop;
 
-            // 3. Smooth vertical eyelid coverage
-            // Looking down gives a natural subtle eyelid droop:
-            let droop = if look_y < 0.0 { -look_y * 0.35 } else { 0.0 };
-            let y_lid = (closure * 2.0 + droop).clamp(0.0, 2.0);
+            let eff_h = size_y.max(0.0);
+            let max_travel = 2.0 + eff_h;
+            let y_lid = (closure * max_travel + droop).clamp(0.0, max_travel);
 
             // Apply smooth eyelid coverage to Right Eye (cols 1, 2)
-            eyes.face_pixels[5 * 8 + 1] = apply_eyelid(r1_5, C_LASH, C_SKIN_TOP, 5, y_lid);
-            eyes.face_pixels[5 * 8 + 2] = apply_eyelid(r2_5, C_LASH, C_SKIN_TOP, 5, y_lid);
-            eyes.face_pixels[6 * 8 + 1] = apply_eyelid(r1_6, C_LASH, C_SKIN_TOP, 6, y_lid);
-            eyes.face_pixels[6 * 8 + 2] = apply_eyelid(r2_6, C_LASH, C_SKIN_TOP, 6, y_lid);
+            eyes.face_pixels[4 * 8 + 1] =
+                apply_eyelid_dynamic(r1_4, C_LASH, C_SKIN_TOP, 4, y_lid, eff_h);
+            eyes.face_pixels[4 * 8 + 2] =
+                apply_eyelid_dynamic(r2_4, C_LASH, C_SKIN_TOP, 4, y_lid, eff_h);
+            eyes.face_pixels[5 * 8 + 1] =
+                apply_eyelid_dynamic(r1_5, C_LASH, C_SKIN_TOP, 5, y_lid, eff_h);
+            eyes.face_pixels[5 * 8 + 2] =
+                apply_eyelid_dynamic(r2_5, C_LASH, C_SKIN_TOP, 5, y_lid, eff_h);
+            eyes.face_pixels[6 * 8 + 1] =
+                apply_eyelid_dynamic(r1_6, C_LASH, C_SKIN_TOP, 6, y_lid, eff_h);
+            eyes.face_pixels[6 * 8 + 2] =
+                apply_eyelid_dynamic(r2_6, C_LASH, C_SKIN_TOP, 6, y_lid, eff_h);
 
             // Apply smooth eyelid coverage to Left Eye (cols 5, 6)
-            eyes.face_pixels[5 * 8 + 5] = apply_eyelid(l1_5, C_LASH, C_SKIN_TOP, 5, y_lid);
-            eyes.face_pixels[5 * 8 + 6] = apply_eyelid(l2_5, C_LASH, C_SKIN_TOP, 5, y_lid);
-            eyes.face_pixels[6 * 8 + 5] = apply_eyelid(l1_6, C_LASH, C_SKIN_TOP, 6, y_lid);
-            eyes.face_pixels[6 * 8 + 6] = apply_eyelid(l2_6, C_LASH, C_SKIN_TOP, 6, y_lid);
+            eyes.face_pixels[4 * 8 + 5] =
+                apply_eyelid_dynamic(l1_4, C_LASH, C_SKIN_TOP, 4, y_lid, eff_h);
+            eyes.face_pixels[4 * 8 + 6] =
+                apply_eyelid_dynamic(l2_4, C_LASH, C_SKIN_TOP, 4, y_lid, eff_h);
+            eyes.face_pixels[5 * 8 + 5] =
+                apply_eyelid_dynamic(l1_5, C_LASH, C_SKIN_TOP, 5, y_lid, eff_h);
+            eyes.face_pixels[5 * 8 + 6] =
+                apply_eyelid_dynamic(l2_5, C_LASH, C_SKIN_TOP, 5, y_lid, eff_h);
+            eyes.face_pixels[6 * 8 + 5] =
+                apply_eyelid_dynamic(l1_6, C_LASH, C_SKIN_TOP, 6, y_lid, eff_h);
+            eyes.face_pixels[6 * 8 + 6] =
+                apply_eyelid_dynamic(l2_6, C_LASH, C_SKIN_TOP, 6, y_lid, eff_h);
 
-            // 4. Smooth Blushing Effect on cheeks (row 7: y=15)
-            eyes.blush = (state.current_blush * 3.0).round() as u8;
-            if state.current_blush > 0.01 {
-                let b = state.current_blush;
+            // 5. Happy (^ ^) crescent eyes override
+            if state.expression_mode == ExpressionMode::Happy {
+                eyes.face_pixels[4 * 8 + 2] = C_LASH;
+                eyes.face_pixels[5 * 8 + 1] = C_LASH;
+                eyes.face_pixels[5 * 8 + 2] = C_SKIN_TOP;
+                eyes.face_pixels[6 * 8 + 1] = C_SKIN_BOT;
+                eyes.face_pixels[6 * 8 + 2] = C_SKIN_BOT;
+
+                eyes.face_pixels[4 * 8 + 5] = C_LASH;
+                eyes.face_pixels[5 * 8 + 6] = C_LASH;
+                eyes.face_pixels[5 * 8 + 5] = C_SKIN_TOP;
+                eyes.face_pixels[6 * 8 + 5] = C_SKIN_BOT;
+                eyes.face_pixels[6 * 8 + 6] = C_SKIN_BOT;
+            }
+
+            // 6. Wide Eye columns expansion (cols 3 & 4)
+            if size_x > 0.05 {
+                let w = size_x * 0.8;
+                eyes.face_pixels[4 * 8 + 3] =
+                    lerp_u32(eyes.face_pixels[4 * 8 + 3], C_LASH, size_x * eff_h);
+                eyes.face_pixels[5 * 8 + 3] =
+                    lerp_u32(eyes.face_pixels[5 * 8 + 3], C_WHITE_BOT, w);
+                eyes.face_pixels[6 * 8 + 3] =
+                    lerp_u32(eyes.face_pixels[6 * 8 + 3], C_PUPIL_BOT, w);
+
+                eyes.face_pixels[4 * 8 + 4] =
+                    lerp_u32(eyes.face_pixels[4 * 8 + 4], C_LASH, size_x * eff_h);
+                eyes.face_pixels[5 * 8 + 4] =
+                    lerp_u32(eyes.face_pixels[5 * 8 + 4], C_WHITE_BOT, w);
+                eyes.face_pixels[6 * 8 + 4] =
+                    lerp_u32(eyes.face_pixels[6 * 8 + 4], C_PUPIL_BOT, w);
+            }
+
+            // 7. Shock reaction extras: anime sweat drop & surprised open mouth
+            if shock_anim > 0.05 {
+                // Blue sweat drop on temple/forehead: Row 2 Col 1
+                eyes.face_pixels[2 * 8 + 1] =
+                    lerp_u32(eyes.face_pixels[2 * 8 + 1], C_SWEAT, shock_anim * 0.95);
+                // Surprised open mouth 'o' on Row 7 Cols 3 & 4
+                eyes.face_pixels[7 * 8 + 3] =
+                    lerp_u32(eyes.face_pixels[7 * 8 + 3], C_LASH, shock_anim * 0.9);
+                eyes.face_pixels[7 * 8 + 4] =
+                    lerp_u32(eyes.face_pixels[7 * 8 + 4], C_LASH, shock_anim * 0.9);
+            }
+
+            // 8. Smooth Blushing Effect on cheeks (row 7: y=15)
+            let mut eff_blush = state.current_blush;
+            if shock_anim > 0.05 {
+                eff_blush = (eff_blush + shock_anim * 0.25).min(1.0);
+            }
+            if state.expression_mode == ExpressionMode::Happy {
+                eff_blush = (eff_blush + 0.3).min(1.0);
+            }
+
+            eyes.blush = (eff_blush * 3.0).round() as u8;
+            if eff_blush > 0.01 {
+                let b = eff_blush;
                 let r_blush = 242u8;
                 let g_blush = 120u8;
                 let b_blush = 142u8;
@@ -563,10 +950,12 @@ unsafe extern "C" fn settings_rows(sink: *const ButtonSink) {
                 "Eye Tracking: {}",
                 if state.tracking_enabled { "ON" } else { "OFF" }
             );
-            let row2 = format!("Blushing: {}", state.blush_mode.name());
-            let row3 = format!("Blink Frequency: {}", state.blink_rate.name());
+            let row2 = format!("Eye Size: {}", state.eye_size.name());
+            let row3 = format!("Expression: {}", state.expression_mode.name());
+            let row4 = format!("Blushing: {}", state.blush_mode.name());
+            let row5 = format!("Blink Frequency: {}", state.blink_rate.name());
 
-            for row in &[row0, row1, row2, row3] {
+            for row in &[row0, row1, row2, row3, row4, row5] {
                 let mut c_str = row.as_bytes().to_vec();
                 c_str.push(0);
                 unsafe { (sink.push)(sink.ctx, c_str.as_ptr() as *const c_char) };
@@ -582,10 +971,18 @@ unsafe extern "C" fn settings_click(button: u32) {
                 0 => state.blinking_enabled = !state.blinking_enabled,
                 1 => state.tracking_enabled = !state.tracking_enabled,
                 2 => {
+                    let next = (state.eye_size.to_index() + 1) % 5;
+                    state.eye_size = EyeSize::from_index(next);
+                }
+                3 => {
+                    let next = (state.expression_mode.to_index() + 1) % 7;
+                    state.expression_mode = ExpressionMode::from_index(next);
+                }
+                4 => {
                     let next = (state.blush_mode.to_index() + 1) % 5;
                     state.blush_mode = BlushMode::from_index(next);
                 }
-                3 => {
+                5 => {
                     let next = (state.blink_rate.to_index() + 1) % 3;
                     state.blink_rate = BlinkRate::from_index(next);
                 }
@@ -597,9 +994,9 @@ unsafe extern "C" fn settings_click(button: u32) {
 }
 
 static ID: &[u8] = b"eyemod\0";
-static TITLE: &[u8] = b"Dynamic Eyes & Blush 1.0\0";
+static TITLE: &[u8] = b"Dynamic Eyes & Expressions 1.1\0";
 static DESCRIPTION: &[u8] =
-    b"Procedural animated eyes, blinking, camera look tracking, and rosy blushing for player skins.\0";
+    b"Procedural animated eyes, smooth blinking, look tracking, resizable eye sizes, and shock reaction.\0";
 
 static DESC: ModDesc = ModDesc {
     abi: ABI,
@@ -628,3 +1025,62 @@ pub unsafe extern "C" fn horizon_mod_entry(table: *const HostVTable) -> *const M
     with_state(|s| s.load());
     &DESC
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_eye_size_cycling() {
+        for i in 0..5 {
+            let size = EyeSize::from_index(i);
+            assert_eq!(size.to_index(), i);
+            assert!(!size.name().is_empty());
+        }
+        assert_eq!(EyeSize::from_index(99), EyeSize::Normal);
+    }
+
+    #[test]
+    fn test_expression_mode_cycling() {
+        for i in 0..7 {
+            let expr = ExpressionMode::from_index(i);
+            assert_eq!(expr.to_index(), i);
+            assert!(!expr.name().is_empty());
+        }
+        assert_eq!(ExpressionMode::from_index(99), ExpressionMode::Auto);
+    }
+
+    #[test]
+    fn test_apply_eyelid_dynamic() {
+        let base = 0xFFFFFFFF;
+        let lash = 0xFF000000;
+        let skin = 0xFF808080;
+
+        // Fully open (y_lid = 0.0)
+        assert_eq!(apply_eyelid_dynamic(base, lash, skin, 5, 0.0, 0.0), base);
+        assert_eq!(apply_eyelid_dynamic(base, lash, skin, 6, 0.0, 0.0), base);
+
+        // Row 4 in normal mode (h = 0.0) is always lash
+        assert_eq!(apply_eyelid_dynamic(base, lash, skin, 4, 0.0, 0.0), lash);
+
+        // Row 4 in tall mode (h = 1.0) opens to base
+        assert_eq!(apply_eyelid_dynamic(base, lash, skin, 4, 0.0, 1.0), base);
+
+        // Row 4 closing
+        let half_closed = apply_eyelid_dynamic(base, lash, skin, 4, 0.5, 1.0);
+        assert_ne!(half_closed, base);
+        assert_ne!(half_closed, lash);
+
+        // Fully closed (y_lid = 3.0)
+        assert_eq!(apply_eyelid_dynamic(base, lash, skin, 6, 3.0, 1.0), lash);
+    }
+
+    #[test]
+    fn test_player_eyes_callback() {
+        let mut eyes = PlayerEyes::default();
+        unsafe { player_eyes(0.5, &mut eyes) };
+        assert_eq!(eyes.active, 1);
+        assert_eq!(eyes.has_face_patch, 1);
+    }
+}
+
