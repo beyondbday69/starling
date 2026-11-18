@@ -29,6 +29,7 @@ fn cinematic_touch(
         is_double_tap: bool,
         is_rmb_drag: bool,
         long_press_done: bool,
+        last_swept_slot: Option<usize>,
     }
 
     static CURRENT_TOUCH: Mutex<Option<TouchState>> = Mutex::new(None);
@@ -78,6 +79,7 @@ fn cinematic_touch(
                 is_double_tap,
                 is_rmb_drag: false,
                 long_press_done: false,
+                last_swept_slot: None,
             });
 
             // Ensure vcursor is initialized
@@ -106,6 +108,34 @@ fn cinematic_touch(
             const SENSITIVITY: f32 = 1.15;
             let new_cursor = ci::move_vcursor(dx * SENSITIVITY, dy * SENSITIVITY, bw, bh);
             game.cursor = new_cursor;
+
+            // Option 1: 'Mouse Tweaks' Sweep Drag to collect matching items into player's cursor
+            if game.carried.is_some() && !state.is_rmb_drag {
+                let (slot, outside) = game.inventory_target();
+                if let Some(slot) = slot
+                    && !outside
+                    && slot != 200
+                {
+                    if state.last_swept_slot != Some(slot) {
+                        state.last_swept_slot = Some(slot);
+                        if let Some(held) = game.carried.clone()
+                            && let Some(target) = game.slot_view(slot)
+                            && target.item == held.item
+                            && held.count < 64
+                        {
+                            game.menu_click(Some(slot), 0, horizon_client::menu::Input::PickupAll);
+                            game.audio.play_button_click();
+                            if let Some(key) = game.container {
+                                game.container_changed(key);
+                            }
+                        }
+                    }
+                } else {
+                    state.last_swept_slot = None;
+                }
+            } else {
+                state.last_swept_slot = None;
+            }
 
             // Check Double Tap & Drag transition
             if state.is_double_tap && !state.is_rmb_drag && state.total_motion > 6.0 {

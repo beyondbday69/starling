@@ -1,185 +1,146 @@
-# Starling Project Status & Roadmap
+# Starling Project Status & Complete Context
 
 **Repository:** `beyondbday69/starling`  
 **Current Active Branch:** `feat/shader-fsr-upscaling`  
 **Target Platform:** Android (ARM64 `arm64-v8a`)  
-**Latest Commit:** `58c43de`  
+**Latest Commit:** `34a0af2` (`fix(crash): eliminate recursive state mutex deadlock in vcursor and move pending tap to frame hook`)  
+**Latest Successful CI Run:** `#44355584017` (Artifact: `14452912493`, size: 35.2 MB)  
 **Last Updated:** November 2026  
 
 ---
 
-## 1. Project Overview & Architecture
+## 1. Project Architecture & System Overview
 
-Starling is an optimized Minecraft client written in Rust (based on Horizon), targeted at Android devices. The project focuses on high performance, modern graphics pipeline capabilities, native Android UI/UX, and an extensible native runtime modding ecosystem.
+Starling is an optimized, high-performance Minecraft client built in Rust (based on the Horizon engine) tailored specifically for Android. It features custom graphics pipelines, direct all-in-one native mod compilation into the core Android shared library (`libhorizon_android.so`), seamless touch gestures, virtual trackpad aiming, and cinematic in-world crafting interactions.
 
 ```mermaid
 graph TD
     A["Starling Client (Android / Rust)"] --> B["Horizon Graphics Pipeline"]
-    A --> C["Modern Horizon UI"]
-    A --> D["Native Mod System (ABI v6)"]
-    
-    B --> B1["AMD FSR 1.0 (EASU + RCAS)"]
-    B --> B2["Integer Scaling (fs_integer)"]
-    B --> B3["Shader Packs Pipeline"]
-    
-    C --> C1["Graphics & Performance Tabs"]
-    C --> C2["Horizon-Styled Shaders UI"]
-    C --> C3["Options > Mods Page"]
-    
-    D --> D1["horizon-mod-abi (C-ABI vtable v6)"]
-    D --> D2["horizon-mod-loader (memfd dlopen)"]
-    D --> D3["Sound Physics (libsoundphysics.so)"]
-    D --> D4["Shoulder Surfing (libshouldersurfing.so)"]
-    D --> D5["Dynamic Eyes & Expressions (libeyemod.so)"]
+    A --> C["Modern Horizon UI & Touch Engine"]
+    A --> D["Direct Native Mod Integrations"]
+
+    B --> B1["AMD FSR 1.0 (EASU + RCAS WGSL)"]
+    B --> B2["True Integer Scaling (fs_integer)"]
+    B --> B3["Shader Packs & Post-Processing"]
+
+    C --> C1["Virtual Trackpad Relative Cursor (+)"]
+    C --> C2["1-Finger Gestures (Tap LMB, Dbl-Tap RMB, Drag, Long-Press)"]
+    C --> C3["Sleek HUD Overlay ([ X ] Exit, [ ^ ] Inspect)"]
+
+    D --> D1["Cinematic Interactions (Gliding Camera, Resting Hands)"]
+    D --> D2["Hold My Items 5.2.0 (Spring Inertia & Arms)"]
+    D --> D3["3D Skins & HD Player Models (horizon-3d-skins)"]
+    D --> D4["Gyroscope Aiming Controls (gyro)"]
+    D --> D5["Living Motion, Zoom, ElytraTrails"]
 ```
 
 ---
 
-## 2. Progress: What Has Been Done
+## 2. Full Implementation History & Phases
 
 ### Phase 1: AMD FSR 1.0 & CAS Spatial Upscaling
-- **WGSL Shader Implementation:**
-  - Implemented 12-tap Lanczos-approximated **EASU** in `crates/horizon-client-render/src/gfx/fsr.wgsl`.
-  - Implemented contrast-adaptive **RCAS**.
-  - Resolved Vulkan/Android NDC inversion by binding screen-space `@builtin(position).xy` directly to texel fetch coordinates via `textureLoad`.
-- **Pipeline Integration:**
-  - Integrated `FsrPipeline` into `crates/horizon-client-render/src/gfx/fsr.rs` and `pack_post.rs`.
-  - Added resolution scaling presets (**Performance 50%**, **Balanced 67%**, **Quality 75%**, **Off 100%**) and sharpness controls into Horizon's menus.
-- **CI / CD Android Release:**
-  - Configured GitHub Actions workflow (`android.yml`) to build, sign with release keystore, and publish 64-bit release APKs.
+* **WGSL Shader Implementation:**
+  * Implemented 12-tap Lanczos-approximated **EASU** in `crates/horizon-client-render/src/gfx/fsr.wgsl`.
+  * Implemented contrast-adaptive **RCAS**.
+  * Resolved Vulkan/Android NDC inversion by binding screen-space `@builtin(position).xy` directly to texel fetch coordinates via `textureLoad`.
+* **Pipeline Integration:**
+  * Integrated `FsrPipeline` into `crates/horizon-client-render/src/gfx/fsr.rs` and `pack_post.rs`.
+  * Added resolution scaling presets (**Performance 50%**, **Balanced 67%**, **Quality 75%**, **Off 100%**) and sharpness controls into Horizon's menus.
 
-### Phase 2: Integer Scaling & Horizon Shaders UI
-- **Modernized Shader Pack Menus:**
-  - Redesigned `Page::ShaderPacks`, `Page::ShaderOptions`, and `Page::NativePackOptions` in `crates/horizon-client-render/src/options_ui.rs`.
-  - Brought Horizon's sleek modern UI design tokens to all shader configuration screens.
-- **True Integer Scaling (`ShaderUpscaling::Integer`):**
-  - Added integer multiplier mode `min(dst_w / src_w, dst_h / src_h)` for nearest-neighbor pixel-art rendering.
-  - **180° Screen Flip Fix:** Eliminated fragile UV matrix inversions by routing integer scaling through the upright FSR coordinate space.
+### Phase 2: Integer Scaling & Modern Shaders UI
+* **Modernized Shader Pack Menus:** Redesigned `Page::ShaderPacks`, `Page::ShaderOptions`, and `Page::NativePackOptions` in `crates/horizon-client-render/src/options_ui.rs`.
+* **True Integer Scaling (`ShaderUpscaling::Integer`):** Added integer multiplier mode `min(dst_w / src_w, dst_h / src_h)` for crisp pixel-art rendering. Routed integer scaling through the upright FSR coordinate space to prevent 180° screen flipping.
 
 ### Phase 3: Runtime `.so` Mod Loader Integration
-- **Merged `origin/mod-loader` into `feat/shader-fsr-upscaling`:**
-  - Architecture: loads `lib*.so` on Android using anonymous memory file descriptor (`memfd_create` + `android_dlopen_ext`) to bypass SELinux restrictions without client rebuilds.
+* Dynamic `.so` loader on Android utilizing anonymous memory file descriptors (`memfd_create` + `android_dlopen_ext`) to bypass SELinux restrictions without client rebuilds.
 
 ### Phase 4: Camera ABI v5, Crosshair & Shoulder Surfing Mod
-- **ABI Extension (`horizon-mod-abi` v5):**
-  - Added `CameraOffset` struct (`active`, `crosshair`, `right`, `up`, `forward`, `distance`).
-  - Added `camera_offset` callback to `ModDesc`.
-- **Client & Loader Hook Integration:**
-  - Implemented `loader::camera_offset` in `crates/horizon-mod-loader/src/lib.rs`.
-  - Exposed `mod_loader::camera_offset` in `crates/horizon-client/src/game/mod_loader.rs`.
-  - Wired into third-person camera calculation in `crates/horizon-client/src/game/perspective.rs` with automated block collision detection and distance clamping (`clip_world`).
-- **Aiming Crosshair (+) Support in Third Person:**
-  - Enabled aiming crosshair (`+`) and attack indicators in third person when Shoulder Surfing is active.
-- **`horizon-mod-shouldersurfing` Implementation:**
-  - Full third-person offset controls, camera collision avoidance, and Options > Mods configuration.
-  - Published to GitHub Releases (`mod-loader-shouldersurfing`).
+* Added `CameraOffset` struct and `camera_offset` callback in `horizon-mod-abi` (v5).
+* Wired into third-person camera calculation with block collision detection (`clip_world`).
+* Enabled aiming crosshair (`+`) and attack indicators in third person.
 
-### Phase 5: Dynamic Eyes, Smooth Blinking, Look Tracking & Blushing
-- **ABI v6 Engine Interface (`horizon-mod-abi`):**
-  - Added `PlayerEyes` struct (264 bytes: `active`, `blink`, `look_x`, `look_y`, `blush`, `expression`, `has_face_patch`, `face_pixels: [u32; 64]`).
-  - Added `player_eyes` callback to `ModDesc`.
-- **Client GPU Atlas Real-Time Patching:**
-  - In `crates/horizon-client/src/game/native_hooks.rs`, implemented `update_mod_player_eyes` to upload `face_pixels` directly to `self.map_patches` in the player skin's head front slot on the GPU atlas every frame.
-- **Sub-Pixel Continuous Smoothing:**
-  - **Smooth Blinking:** Replaced discrete 3-stage blink with continuous float coverage $y_{\text{lid}} \in [0.0, 2.0]$ driven by $\sin^2(\pi \cdot \tau)$. Eyelid sweeps across sub-pixel boundaries from iris/sclera through dark lash line into eyelid skin.
-  - **Smooth Look Tracking:** Exponential smoothing filter tracks camera rotation smoothly; continuous sub-pixel color blending (`lerp_u32`) glides pupils across columns.
-  - **Downward Eyelid Droop:** Looking down applies natural organic eyelid droop.
-  - **Smooth Blushing:** Continuous alpha blending fades cheek blush in and out seamlessly.
+### Phase 5: Dynamic Eyes, Smooth Blinking & Look Tracking
+* Added `PlayerEyes` struct in `horizon-mod-abi` (v6) with real-time GPU atlas patching (`update_mod_player_eyes`).
+* Continuous sub-pixel blinking ($\sin^2(\pi \cdot \tau)$), smooth eye tracking with exponential smoothing filter, downward eyelid droop, and continuous blushing.
 
-### Phase 6: Resizable Eye Scales & Reactive Shock Expressions (`libeyemod.so` v1.1)
-- **Eye Resizing System:**
-  - **Normal (2x2)**: Standard 2-row anime eye (rows 5 & 6).
-  - **Tall / Big (2x3)**: 3-row tall expressive anime eyes (rows 4, 5, 6). Eyelash line opens upward and eyebrows arch high on row 3 (forehead).
-  - **Wide (3x2)**: 3-column wide cute eyes expanding into columns 3 & 4.
-  - **Huge Anime (3x3)**: 3-row tall and 3-column wide massive expressive anime eyes.
-  - **Auto Dynamic (Reactive)**: Smoothly resizes eye scale dynamically based on sprinting, speed, camera turn, and active reactions.
-  - **Multi-Row Eyelid Physics:** Generalized `apply_eyelid_dynamic` supporting seamless continuous blinking across 2-row and 3-row heights without artifacts.
-- **Reactive Expressions:**
-  - **Anime Shock Reaction ("Big Eyes"):**
-    - Automatically triggered on damage taken (`health < last_health`) or fast falling (`vy < -0.45`).
-    - Eyes instantly pop open wide into **Big 3-row tall eyes**.
-    - Eyebrows raise high onto forehead.
-    - Startled contracted pupils with rapid micro-tremor jitter ($\sin(35t)$).
-    - Classic anime blue sweat drop on temple (`#48dbfb`).
-    - Surprised open `'o'` mouth on chin (`#380f17`).
-    - Smooth 2.2-second duration with natural ease-out return.
-  - **Squint / Narrowed:** Sleek focused narrow slit gaze when crouching/sneaking (`Shift`).
-  - **Happy (^ ^):** Cheerful upward crescent lashes with extra rosy blush.
-  - **Sparkle (* *):** Golden star catchlights when holding diamonds, emeralds, golden apple, or totem.
-  - **Hurt / Low HP:** Glossy teary half-lidded eyes with heavy blush under 3 hearts.
-- **Options > Mods Configuration:**
-  - 6 configurable options: Blinking, Eye Tracking, Eye Size, Expression (with preview modes), Blushing, Blink Frequency.
-- **Build & CI / CD Fixes:**
-  - Fixed `clippy::inherent_to_string_shadow_display` in `crates/horizon-client-render/src/graphics.rs`.
-  - ARM64 `libeyemod.so` compiled and published to GitHub Release `mod-loader-eyemod`.
+### Phase 6: Resizable Eyes & Reactive Expressions (`libeyemod.so`)
+* Eye scales: Normal (2x2), Tall/Big (2x3), Wide (3x2), Huge Anime (3x3), and Auto Dynamic.
+* Reactive Shock Reaction: Triggers on damage taken or fast fall; eyes pop open, eyebrows arch, pupils jitter with micro-tremor, anime sweat drop on temple, open 'o' mouth.
 
 ### Phase 7: Hold My Items Core Integration (Direct APK Compilation)
-- **Problem Statement:**
-  - In vanilla first-person rendering, Minecraft/Horizon intentionally hid the player's arm whenever any item or block was held (`item.is_some()`), making items appear as floating disjointed models without hands or arms holding them.
-  - Dynamic `.so` mod loading on Android via `memfd_create` / `android_dlopen_ext` can lead to linker namespace errors, SELinux denials, or ABI struct size mismatches across OS versions.
-  - The user requested compiling Hold My Items directly into the core APK (`libhorizon_android.so`) from [`beyondbday69/Horizon-HoldMyItems`](https://github.com/beyondbday69/Horizon-HoldMyItems.git), skipping dynamic `.so` mod loading.
-- **Architecture & Implementation:**
-  - **Direct Core Client Integration (`crates/horizon-client/src/game/holdmyitems/`):**
-    - Ported the full HMI 5.2.0 engine directly into `horizon-client` core:
-      - `runtime.rs`: 12 easing curves, 4x4 matrix transforms (`Mat4f`), spring-damper viewmodel inertia physics (pitch/yaw inertia, fall/jump spring-dampers, walking/sprinting/sneaking sway), alternating 2-hit sword combo slashes, pickaxe/axe/shovel jabs, per-item swing speed tables, and weapon inspection (`C` key 360° spin).
-      - `native.rs`: Complete `impl Game<'_>` adapter interfacing with Horizon's first-person renderer, item meshes, 3D block geometry, map rendering, particles, dynamic colored lighting, and in-game Options menu.
-      - `features.rs`: Sound physics and camera overhaul feature requests.
-    - Embedded bundled resource pack and Lua configs in `native-data/holdmyitems/` compiled in with `native_data!`.
-  - **Hook Injections in `crates/horizon-client`:**
-    - `totem.rs:item_activation_geometry`: HEAD hook replaces vanilla hands with HMI 5.2.0 first-person arms, 3D blocks, per-quad animations, maps, and particles.
-    - `hand.rs:swing_hand`: Notifies HMI of main-hand and off-hand swing starts.
-    - `native_hooks.rs`: Directly wires `native_frame`, `native_tick`, `native_camera_shake`, `native_visuals`, `native_key`, `native_hud`, `native_command`, `native_commands`, `native_mods`, and `native_settings`.
-  - **Native Mods Parity:**
-    - Added `native-mods/holdmyitems` and updated `native-mods/prebuilt.txt`.
-  - **Zero Dynamic Mod Loading Overhead:**
-    - Reverted `crates/horizon-mod-holdmyitems` and restored clean ABI v6 for other mods (`eyemod`, `shouldersurfing`).
-    - No `/memfd:horizon-mod` or dlopen: Hold My Items is compiled directly into `libhorizon_android.so` inside the APK!
+* Direct port of the HMI 5.2.0 engine into `crates/horizon-client/src/game/holdmyitems/`:
+  * 12 easing curves, $4\times4$ matrix transforms, spring-damper inertia physics, alternating sword combo slashes, per-item swing speed tables, and weapon inspection (`C` key 360° spin).
+  * Direct hook injections into `totem.rs`, `hand.rs`, and `native_hooks.rs`.
+  * All bundled assets embedded via `native_data!`, completely eliminating dynamic dlopen issues on Android.
 
-### Phase 8: Core Mods & Cinematic Interactions Integration
-- **Direct Core Client Integration of Official / Native Mods:**
-  - **Zoom (`crates/horizon-client/src/game/zoom.rs`):** Built-in core zoom with wheel scaling, smooth zoom, and sensitivity scaling.
-  - **ElytraTrails (`crates/horizon-client/src/game/elytratrails/`):** Dynamic fading wingtip contrails with LAN/server color sync (`elytratrails:color`).
-  - **Living Motion (`crates/horizon-client/src/game/livingmotion/`, `crates/horizon-client/src/mobs/livingmotion.rs`):** Dynamic procedural animation rig (swings, leaning, jumping, banking, swimming, climbing, inspections).
-- **Cinematic Interactions (`native-mods/cinematic_interactions`):**
-  - Integrated `CinematicInteractionsHorizon` (smooth camera gliding over crafting tables/stations, hands resting on table surfaces, in-world station interaction, recipe book & campfire animations).
-  - Fixed return type in `hands.rs` to match Starling's `hand_geometry` (`ControlFlow<Vec<Vertex>>`).
-  - Patched `packaging/android/native_build.sh` to preserve `native-data/` across mixin staging.
-- **Combined All-In-One APK:**
-  - Compiled and signed via GitHub Actions Run `#44175839634`.
-  - Includes Hold My Items, Zoom, ElytraTrails, Living Motion, and Cinematic Interactions built directly into the client.
+### Phase 8: Core Mods Suite (Zoom, ElytraTrails, Living Motion)
+* **Zoom (`zoom.rs`):** Built-in smooth camera zoom with sensitivity scaling.
+* **ElytraTrails (`elytratrails/`):** Dynamic fading wingtip contrails with LAN color synchronization.
+* **Living Motion (`livingmotion/`):** Dynamic procedural animation rig (swings, leaning, jumping, banking, swimming, climbing).
 
----
+### Phase 9: Horizon 3D Skins & Gyro Native Mods Integration (`03e97f9`, `ff69d2f`)
+* **3D Skins (`umbx-dot/horizon-3d-skins`):** Integrated layered 3D skin geometry, extruded clothing/armor layers, and HD skin rendering. Resolved `studio` field visibility and mutable borrow conflicts.
+* **Gyro Aiming (`CGRLabs/gyro`):** Integrated device gyroscope motion sensing for fine-tuned tilt aiming and camera orientation on Android.
 
-## 3. Current Status & Verification
+### Phase 10: Virtual Trackpad Cursor & 1-Finger Crafting (`25802d5`, `218f825`, `b9cd04b`)
+* **Virtual Trackpad Cursor:**
+  * Replaced jumpy direct-touch input with a smooth relative trackpad cursor. Swiping anywhere on the screen moves the in-world `+` crosshair cursor smoothly across workstation slots.
+* **1-Finger Gesture Engine (`touch_helper.rs`):**
+  * **Single Tap:** Left-Click (`inventory_press(false)`) — picks up or places a stack of items.
+  * **Double Tap:** Right-Click (`inventory_press(true)`) — places 1 single item or splits a stack in half.
+  * **Double-Tap & Drag:** Right-Click Drag — distributes 1 item across each slot dragged over (row crafting).
+  * **Long Press:** Quick-Move (Shift + Left-Click) — transfers stack immediately to/from inventory.
+* **HUD Overlay:**
+  * Sleek `[ X ]` exit button in the top right to close workstation interactions cleanly.
+  * Sleek `[ ^ ]` inspect/toggle button.
+  * Real-time 3D item drag preview floating with the cursor.
 
-| Component | Status | Verification |
-|---|---|---|
-| **Aiming Crosshair (+)** | Complete | Verified in `game.rs` |
-| **Shoulder Surfing Mod** | Complete | `libshouldersurfing.so` published |
-| **Player Eyes ABI v6** | Complete | 12/12 tests passed in abi & loader |
-| **Smooth Sub-pixel Blinking** | Complete | Continuous $\sin^2$ curve verified |
-| **Smooth Look Tracking** | Complete | Continuous lerp & droop verified |
-| **Resizable Eye Sizes** | Complete | 2x2, 2x3, 3x2, 3x3, auto dynamic verified |
-| **Reactive Shock Reaction** | Complete | Damage/fall shock, sweat drop, mouth verified |
-| **Hold My Items Direct Core Integration** | Complete | Integrated into `crates/horizon-client/src/game/holdmyitems/` |
-| **Zoom Mod** | Complete | Integrated into `crates/horizon-client/src/game/zoom.rs` |
-| **ElytraTrails Mod** | Complete | Integrated into `crates/horizon-client/src/game/elytratrails/` |
-| **Living Motion Mod** | Complete | Integrated into `crates/horizon-client/src/game/livingmotion/` |
-| **Cinematic Interactions Mod** | Complete | Applied & compiled into APK via `native_build.sh` |
-| **Direct APK Compilation** | Complete | Run `#44175839634` built and verified |
+### Phase 11: Workstation Crash & Deadlock Fix (`34a0af2`, Run `#44355584017`)
+* **The Problem:** Game froze or crashed instantly upon opening/interacting with a crafting table or workstation.
+* **Root Causes Identified & Fixed:**
+  1. **Recursive Mutex Deadlock:** `ci::vcursor` locked the global `STATE` mutex and invoked `default_aim_point(w, h)`, which internally called `table()`, which attempted to re-lock `STATE` on the same thread. Rust's `std::sync::Mutex` is not re-entrant, causing an immediate deadlock.
+     * *Fix:* Created `aim_point_from_state(&State, w, h)` to project aim points directly from the already-borrowed `State` without re-locking.
+  2. **Render Pass Mutation:** `draw_inventory` GPU render pass was invoking `inventory_press`, mutating game state while wgpu rendering was in flight.
+     * *Fix:* Removed all inventory mutation from rendering code; moved pending tap execution cleanly into the engine frame hook (`Game::frame`).
+  3. **Touch Safety Guard:** Added state validation in `touch_helper.rs`:
+     `if !ci::controls() || game.screen != Screen::Inventory || ci::walking(Instant::now()) { return ControlFlow::Continue(()); }`
+* **Verification:** GitHub Actions Run `#44355584017` completed with status **SUCCESS**.
 
 ---
 
-## 4. Key Artifacts & Download Links
+## 3. Implemented Feature: Option 1 - "Mouse Tweaks" Sweep Drag to Collect Matching Items
 
-- **Android Client APK (Cinematic Interactions + Living Motion + ElytraTrails + Zoom + Hold My Items):**  
-  [Download `starling-apk-arm64-v8a` (Actions Run #44175839634)](https://github.com/beyondbday69/starling/actions/runs/44175839634)  
-  *(Artifact ID: `14371345303`, size: 35.16 MB. All 5 mods are built directly into the APK!)*
+### The User Request:
+> *"Now can I grab all items at one's like sab scattered hai and muje sab ek hand me lena hai same item ? Just answer that"*  
+> *"Toh right click kaise rakhenge just reply"*
 
-- **Latest `libeyemod.so` (Resizable Eyes & Shock Reactions):**  
-  [Download `libeyemod.so`](https://github.com/beyondbday69/starling/releases/download/mod-loader-eyemod/libeyemod.so)  
-  *(Release: [mod-loader-eyemod](https://github.com/beyondbday69/starling/releases/tag/mod-loader-eyemod))*
+### Implementation Details:
+* **Feature:** 'Mouse Tweaks' style sweep drag collection (`Input::PickupAll`).
+* **Behavior:** When the player is holding an item stack (`game.carried.is_some()`) and sweeps the virtual trackpad cursor across the inventory without active RMB crafting drag:
+  * Detects hovered slot via `inventory_target()`.
+  * If the slot contains matching items (`target.item == held.item`) and the cursor stack is not full (`held.count < 64`):
+    * Triggers `game.menu_click(Some(slot), 0, Input::PickupAll)`.
+    * Plays click sound `game.audio.play_button_click()`.
+    * Marks container changed `game.container_changed(key)`.
+  * Tracks `last_swept_slot: Option<usize>` in `TouchState` to prevent repeated rapid clicks on the same cell during cursor movement.
+  * Preserves existing Double-Tap & Drag for RMB crafting and `[ X ]` / `[ ^ ]` HUD buttons.
 
-- **Shoulder Surfing Mod:**  
-  [Download `libshouldersurfing.so`](https://github.com/beyondbday69/starling/releases/download/mod-loader-shouldersurfing/libshouldersurfing.so)  
-  *(Release: [mod-loader-shouldersurfing](https://github.com/beyondbday69/starling/releases/tag/mod-loader-shouldersurfing))*
+---
+
+## 4. Key Artifacts, Releases & Action Runs
+
+| Run ID | Commit | Description | Artifact ID / Download | Status |
+|---|---|---|---|---|
+| **#44355584017** | `34a0af2` | **Latest Working Build:** Fixed deadlock crash, safe frame tap, trackpad cursor | [Artifact 14452912493](https://github.com/beyondbday69/starling/actions/runs/44355584017/artifacts/14452912493) | **PASSED (Green)** |
+| **#44339845300** | `25802d5` | Added virtual trackpad cursor and 1-finger gestures | [Artifact 14449830847](https://github.com/beyondbday69/starling/actions/runs/44339845300) | PASSED |
+| **#44175839634** | `df94b42` | Hold My Items + Zoom + ElytraTrails + Living Motion All-In-One | [Artifact 14371345303](https://github.com/beyondbday69/starling/actions/runs/44175839634) | PASSED |
+| **Release** | `58c43de` | `libeyemod.so` (Eye tracking, blink, shock reaction) | [Release `mod-loader-eyemod`](https://github.com/beyondbday69/starling/releases/tag/mod-loader-eyemod) | Published |
+| **Release** | `58c43de` | `libshouldersurfing.so` (Third person camera & crosshair) | [Release `mod-loader-shouldersurfing`](https://github.com/beyondbday69/starling/releases/tag/mod-loader-shouldersurfing) | Published |
+
+---
+
+## 5. Important Guidelines for Next Session
+1. **Repository Path:** `/root/starling`
+2. **Target Branch:** `feat/shader-fsr-upscaling`
+3. **VPS Memory Limit:** VPS has only 2GB RAM. **Never run `cargo build` locally** on the VPS. Always build via GitHub Actions workflow (`workflow_dispatch` on `android.yml`).
+4. **Git Remote Operations:** Always use `BypassSandbox: true` when running `gh` commands.
