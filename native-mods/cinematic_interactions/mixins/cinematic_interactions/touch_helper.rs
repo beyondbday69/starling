@@ -7,34 +7,33 @@
 // - Long Press (> 350ms): Shift + Click (Quick-Move stack between inventory and table).
 // - Direct or cursor tap on [ X ]: Cleanly exit workstation.
 // - Direct or cursor tap on [ ^ ]: Toggle Shift.
-
-use horizon_client_lib::native_cinematic_interactions_scene as ci;
-use horizon_client::hud::HudBatch;
-use std::sync::Mutex;
-use std::time::Instant;
-use winit::event::{TouchPhase, WindowEvent};
-use winit::keyboard::KeyCode;
-
-#[derive(Clone, Copy, Debug)]
-struct TouchState {
-    id: u64,
-    start_time: Instant,
-    last_move_time: Instant,
-    start_pos: (f32, f32),
-    last_pos: (f32, f32),
-    total_motion: f32,
-    is_double_tap: bool,
-    is_rmb_drag: bool,
-    long_press_done: bool,
-}
-
-static CURRENT_TOUCH: Mutex<Option<TouchState>> = Mutex::new(None);
-static LAST_TAP: Mutex<Option<(Instant, (f32, f32))>> = Mutex::new(None);
-
 fn cinematic_touch(
     game: &mut crate::game::Game<'_>,
     event: &winit::event::WindowEvent,
 ) -> ::core::ops::ControlFlow<()> {
+    use horizon_client_lib::native_cinematic_interactions_scene as ci;
+    use horizon_client::hud::HudBatch;
+    use std::sync::Mutex;
+    use std::time::Instant;
+    use winit::event::{TouchPhase, WindowEvent};
+    use winit::keyboard::KeyCode;
+
+    #[derive(Clone, Copy, Debug)]
+    struct TouchState {
+        id: u64,
+        start_time: Instant,
+        last_move_time: Instant,
+        start_pos: (f32, f32),
+        last_pos: (f32, f32),
+        total_motion: f32,
+        is_double_tap: bool,
+        is_rmb_drag: bool,
+        long_press_done: bool,
+    }
+
+    static CURRENT_TOUCH: Mutex<Option<TouchState>> = Mutex::new(None);
+    static LAST_TAP: Mutex<Option<(Instant, (f32, f32))>> = Mutex::new(None);
+
     if !ci::controls() {
         return ::core::ops::ControlFlow::Continue(());
     }
