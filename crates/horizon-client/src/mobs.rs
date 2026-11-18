@@ -1247,6 +1247,8 @@ pub struct Mob {
     pub profile: Option<horizon_protocol::entity_data::Profile>,
     /// The packs' random texture variants it wears (`random_textures::choose`).
     pub random_textures: random_textures::Choice,
+    /// 3D skin model (outer layer) when `skins_3d` native mod is active.
+    pub skin_3d: Option<Arc<Part>>,
 }
 impl crate::entity_rules::EntityRules for Mob {
     fn is_no_gravity(&self) -> bool {
@@ -2686,6 +2688,7 @@ impl Mob {
             cape: None,
             profile: None,
             random_textures: Default::default(),
+            skin_3d: None,
             attrs: Attrs {
                 speed: kind.speed,
                 attack_damage: kind.attack_damage,

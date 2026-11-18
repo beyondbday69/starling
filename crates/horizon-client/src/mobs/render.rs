@@ -1966,9 +1966,10 @@ fn render_visible(
     let model = match custom_body {
         Some(custom) => custom.model.clone(),
         None => m
-            .kind
-            .layer(&model_key)
+            .skin_3d
+            .as_ref()
             .cloned()
+            .or_else(|| m.kind.layer(&model_key).cloned())
             .unwrap_or_else(|| m.kind.model.clone()),
     };
     let texture = cem_texture(custom_body, &texture, atlas);

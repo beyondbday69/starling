@@ -6,6 +6,9 @@ zoom
 elytratrails
 livingmotion
 cinematic_interactions
+skins_3d
+gyro
 wrench holdmyitems
 wrench holdmyitems zoom elytratrails livingmotion
 wrench holdmyitems zoom elytratrails livingmotion cinematic_interactions
+wrench holdmyitems zoom elytratrails livingmotion cinematic_interactions skins_3d gyro

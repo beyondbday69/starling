@@ -5567,6 +5567,16 @@ impl Game<'_> {
             OwnProfile::Done(_) => {}
         }
     }
+    pub(super) fn skin_3d_model(
+        &self,
+        kind: &std::sync::Arc<horizon_client::mobs::MobType>,
+        skin: &str,
+        slim: bool,
+    ) -> Option<std::sync::Arc<horizon_client::mobs::Part>> {
+        let _ = (kind, skin, slim);
+        None
+    }
+
     /// `PlayerInfo.getSkin` for every player entity, including NPCs that are
     /// never in the tab list: resolve each profile's textures and give the
     /// level's player models their skin.
@@ -5728,6 +5738,7 @@ impl Game<'_> {
             let (skin, is_slim) = self.drawn_skin(uuid, skin_of(&skins, uuid));
             let cape = capes.get(&uuid).filter(|c| self.again_skin(c)).cloned();
             let mob = &mut self.mobs[i];
+            mob.skin_3d = self.skin_3d_model(&mob.kind, &skin, is_slim);
             mob.skin = Some(skin);
             mob.slim = is_slim;
             mob.cape = cape;
@@ -5741,6 +5752,7 @@ impl Game<'_> {
                 .filter(|c| self.again_skin(c))
                 .cloned();
             if let Some(mob) = self.player_model.as_mut() {
+                mob.skin_3d = self.skin_3d_model(&mob.kind, &skin, is_slim);
                 mob.skin = Some(skin);
                 mob.slim = is_slim;
                 mob.cape = cape;
