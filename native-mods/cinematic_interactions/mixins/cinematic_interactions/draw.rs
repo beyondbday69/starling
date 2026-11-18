@@ -666,16 +666,6 @@ fn cinematic_draw(game: &mut crate::game::Game<'_>, batch: &mut HudBatch) -> ::c
     // Synchronize game cursor to virtual trackpad cursor
     game.cursor = ci::vcursor(batch.width, batch.height);
 
-    // Poll and execute pending single tap timeout (LMB click)
-    if let Some(pos) = ci::poll_pending_tap() {
-        game.cursor = pos;
-        game.inventory_press(false);
-        game.inventory_mouse_release(false);
-        game.audio.play_button_click();
-        if let Some(key) = game.container {
-            game.container_changed(key);
-        }
-    }
     let show_mobile = cfg!(target_os = "android") || game.touch_shown();
     if ci::is_furnace(ci::kind()) {
         draw_furnace(game, batch);

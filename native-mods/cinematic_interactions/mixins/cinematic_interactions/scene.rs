@@ -1562,6 +1562,21 @@ pub fn mobile_button_rects(w: f32, h: f32) -> MobileButtons {
     MobileButtons { exit, shift, rmb: [0.0; 4], lmb: [0.0; 4] }
 }
 
+fn aim_point_from_state(s: &State, w: f32, h: f32) -> (f32, f32) {
+    let center = cell_center(s.table, s.yaw, 4);
+    if let Some(pose) = s.last
+        && let Some(n) = project(pose, center, s.lens.0, s.lens.1)
+    {
+        return ((n.0 + 1.0) * 0.5 * w, (1.0 - n.1) * 0.5 * h);
+    }
+    (w * 0.5, h * 0.55)
+}
+
+pub fn default_aim_point(w: f32, h: f32) -> (f32, f32) {
+    let s = state();
+    aim_point_from_state(&s, w, h)
+}
+
 pub fn reset_vcursor() {
     let mut s = state();
     s.vcursor = None;
@@ -1572,7 +1587,7 @@ pub fn vcursor(w: f32, h: f32) -> (f32, f32) {
     match s.vcursor {
         Some(p) => p,
         None => {
-            let def = default_aim_point(w, h);
+            let def = aim_point_from_state(&s, w, h);
             s.vcursor = Some(def);
             def
         }
@@ -1585,7 +1600,14 @@ pub fn set_vcursor(p: (f32, f32)) {
 
 pub fn move_vcursor(dx: f32, dy: f32, w: f32, h: f32) -> (f32, f32) {
     let mut s = state();
-    let cur = s.vcursor.unwrap_or_else(|| default_aim_point(w, h));
+    let cur = match s.vcursor {
+        Some(p) => p,
+        None => {
+            let def = aim_point_from_state(&s, w, h);
+            s.vcursor = Some(def);
+            def
+        }
+    };
     let nx = (cur.0 + dx).clamp(6.0, w - 6.0);
     let ny = (cur.1 + dy).clamp(6.0, h - 6.0);
     s.vcursor = Some((nx, ny));
@@ -1653,15 +1675,6 @@ pub fn last_target() -> Option<(f32, f32)> {
 
 pub fn set_last_target(p: Option<(f32, f32)>) {
     state().last_target = p;
-}
-
-pub fn default_aim_point(w: f32, h: f32) -> (f32, f32) {
-    let (t, yaw) = table();
-    let center = cell_center(t, yaw, 4);
-    if let Some(p) = screen_of(center, w, h) {
-        return p;
-    }
-    (w * 0.5, h * 0.55)
 }
 
 pub fn draw_crosshair_cursor(batch: &mut HudBatch, atlas: &HudAtlas, cx: f32, cy: f32, rmb_active: bool) {

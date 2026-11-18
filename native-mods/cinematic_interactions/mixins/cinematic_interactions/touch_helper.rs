@@ -34,7 +34,7 @@ fn cinematic_touch(
     static CURRENT_TOUCH: Mutex<Option<TouchState>> = Mutex::new(None);
     static LAST_TAP: Mutex<Option<(Instant, (f32, f32))>> = Mutex::new(None);
 
-    if !ci::controls() {
+    if !ci::controls() || game.screen != crate::game::Screen::Inventory || ci::walking(Instant::now()) {
         return ::core::ops::ControlFlow::Continue(());
     }
 
