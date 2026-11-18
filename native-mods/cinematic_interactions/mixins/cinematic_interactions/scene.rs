@@ -301,6 +301,9 @@ struct State {
     mobile_shift: bool,
     mobile_rmb: bool,
     last_target: Option<(f32, f32)>,
+    vcursor: Option<(f32, f32)>,
+    rmb_dragging: bool,
+    pending_tap: Option<(Instant, (f32, f32))>,
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
@@ -355,6 +358,9 @@ static STATE: Mutex<State> = Mutex::new(State {
     mobile_shift: false,
     mobile_rmb: false,
     last_target: None,
+    vcursor: None,
+    rmb_dragging: false,
+    pending_tap: None,
 });
 
 fn state() -> std::sync::MutexGuard<'static, State> {
@@ -1542,15 +1548,75 @@ pub struct MobileButtons {
     pub lmb: [f32; 4],
 }
 
+pub fn exit_button_rect(w: f32, _h: f32) -> [f32; 4] {
+    [w - 28.0, 8.0, 20.0, 20.0]
+}
+
+pub fn shift_button_rect(w: f32, _h: f32) -> [f32; 4] {
+    [w - 52.0, 8.0, 20.0, 20.0]
+}
+
 pub fn mobile_button_rects(w: f32, h: f32) -> MobileButtons {
-    let exit = [w - 38.0, 6.0, 32.0, 22.0];
-    let rw = 52.0;
-    let rx = w - rw - 8.0;
-    let cy = (h * 0.5).clamp(80.0, h - 100.0);
-    let shift = [rx, cy - 42.0, rw, 24.0];
-    let rmb = [rx, cy - 14.0, rw, 26.0];
-    let lmb = [rx - 4.0, cy + 16.0, rw + 4.0, 32.0];
-    MobileButtons { exit, shift, rmb, lmb }
+    let exit = exit_button_rect(w, h);
+    let shift = shift_button_rect(w, h);
+    MobileButtons { exit, shift, rmb: [0.0; 4], lmb: [0.0; 4] }
+}
+
+pub fn reset_vcursor() {
+    let mut s = state();
+    s.vcursor = None;
+}
+
+pub fn vcursor(w: f32, h: f32) -> (f32, f32) {
+    let mut s = state();
+    match s.vcursor {
+        Some(p) => p,
+        None => {
+            let def = default_aim_point(w, h);
+            s.vcursor = Some(def);
+            def
+        }
+    }
+}
+
+pub fn set_vcursor(p: (f32, f32)) {
+    state().vcursor = Some(p);
+}
+
+pub fn move_vcursor(dx: f32, dy: f32, w: f32, h: f32) -> (f32, f32) {
+    let mut s = state();
+    let cur = s.vcursor.unwrap_or_else(|| default_aim_point(w, h));
+    let nx = (cur.0 + dx).clamp(6.0, w - 6.0);
+    let ny = (cur.1 + dy).clamp(6.0, h - 6.0);
+    s.vcursor = Some((nx, ny));
+    (nx, ny)
+}
+
+pub fn is_rmb_dragging() -> bool {
+    state().rmb_dragging
+}
+
+pub fn set_rmb_dragging(on: bool) {
+    state().rmb_dragging = on;
+}
+
+pub fn schedule_pending_tap(time: Instant, pos: (f32, f32)) {
+    state().pending_tap = Some((time, pos));
+}
+
+pub fn cancel_pending_tap() {
+    state().pending_tap = None;
+}
+
+pub fn poll_pending_tap() -> Option<(f32, f32)> {
+    let mut s = state();
+    if let Some((time, pos)) = s.pending_tap {
+        if time.elapsed().as_millis() >= 180 {
+            s.pending_tap = None;
+            return Some(pos);
+        }
+    }
+    None
 }
 
 pub fn shift_active() -> bool {
@@ -1568,7 +1634,7 @@ pub fn set_shift(on: bool) {
 }
 
 pub fn rmb_active() -> bool {
-    state().mobile_rmb
+    state().mobile_rmb || state().rmb_dragging
 }
 
 pub fn toggle_rmb() -> bool {
@@ -1598,76 +1664,60 @@ pub fn default_aim_point(w: f32, h: f32) -> (f32, f32) {
     (w * 0.5, h * 0.55)
 }
 
+pub fn draw_crosshair_cursor(batch: &mut HudBatch, atlas: &HudAtlas, cx: f32, cy: f32, rmb_active: bool) {
+    // Drop shadow (black outline) for high contrast
+    let shadow = rgba(0, 0, 0, 200);
+    batch.fill(atlas, cx - 8.0, cy - 1.0, 17.0, 3.0, shadow);
+    batch.fill(atlas, cx - 1.0, cy - 8.0, 3.0, 17.0, shadow);
+
+    // Crosshair foreground: White normally, Cyan when in RMB mode/drag
+    let fg = if rmb_active {
+        rgba(50, 225, 255, 255)
+    } else {
+        rgba(255, 255, 255, 255)
+    };
+
+    // 4 arms with 1px gap in center
+    batch.fill(atlas, cx - 7.0, cy, 6.0, 1.0, fg);
+    batch.fill(atlas, cx + 2.0, cy, 6.0, 1.0, fg);
+    batch.fill(atlas, cx, cy - 7.0, 1.0, 6.0, fg);
+    batch.fill(atlas, cx, cy + 2.0, 1.0, 6.0, fg);
+
+    let center_dot = if rmb_active { rgba(180, 245, 255, 210) } else { rgba(255, 255, 255, 180) };
+    batch.fill(atlas, cx, cy, 1.0, 1.0, center_dot);
+}
+
 pub fn draw_mobile_controls(batch: &mut HudBatch, atlas: &HudAtlas, cursor: (f32, f32), shift_on: bool) {
     let w = batch.width;
     let h = batch.height;
-    let btns = mobile_button_rects(w, h);
 
-    // 1. [ ✕ Exit ] button
-    let exit_hover = inside(btns.exit, cursor.0, cursor.1);
-    let exit_bg = if exit_hover { rgba(70, 30, 30, 220) } else { rgba(45, 20, 20, 190) };
-    let exit_border = if exit_hover { rgba(255, 90, 90, 255) } else { rgba(210, 60, 60, 210) };
-    rim(batch, atlas, btns.exit, exit_bg, exit_border);
-    let exit_text = "✕";
+    // 1. [ X ] Exit button (top-right corner)
+    let exit_r = exit_button_rect(w, h);
+    let exit_hover = inside(exit_r, cursor.0, cursor.1);
+    let exit_bg = if exit_hover { rgba(80, 28, 28, 220) } else { rgba(50, 20, 20, 190) };
+    let exit_border = if exit_hover { rgba(255, 90, 90, 255) } else { rgba(215, 60, 60, 210) };
+    rim(batch, atlas, exit_r, exit_bg, exit_border);
+    let exit_text = "X";
     let tw = HudBatch::text_width(atlas, exit_text);
-    batch.text(atlas, exit_text, btns.exit[0] + (btns.exit[2] - tw) * 0.5, btns.exit[1] + (btns.exit[3] - 8.0) * 0.5, rgba(255, 230, 230, 255), true);
+    batch.text(atlas, exit_text, exit_r[0] + (exit_r[2] - tw) * 0.5, exit_r[1] + (exit_r[3] - 8.0) * 0.5, rgba(255, 230, 230, 255), true);
 
-    // 2. [ SHIFT ] button
-    let shift_hover = inside(btns.shift, cursor.0, cursor.1);
-    let (shift_bg, shift_border, shift_col, shift_label) = if shift_on {
-        (rgba(180, 140, 20, 220), rgba(255, 235, 120, 255), rgba(20, 20, 20, 255), "SHIFT ON")
+    // 2. [ ^ ] Shift toggle button (next to exit)
+    let shift_r = shift_button_rect(w, h);
+    let shift_hover = inside(shift_r, cursor.0, cursor.1);
+    let (shift_bg, shift_border, shift_col) = if shift_on {
+        (rgba(180, 140, 20, 230), rgba(255, 235, 120, 255), rgba(25, 25, 25, 255))
     } else if shift_hover {
-        (rgba(55, 58, 68, 200), rgba(160, 165, 180, 220), rgba(255, 255, 255, 255), "SHIFT")
+        (rgba(55, 60, 72, 210), rgba(160, 170, 190, 230), rgba(255, 255, 255, 255))
     } else {
-        (rgba(32, 34, 42, 180), rgba(100, 105, 120, 170), rgba(200, 205, 220, 220), "SHIFT")
+        (rgba(34, 38, 48, 180), rgba(105, 115, 130, 180), rgba(210, 215, 230, 230))
     };
-    rim(batch, atlas, btns.shift, shift_bg, shift_border);
-    let tw = HudBatch::text_width(atlas, shift_label);
-    batch.text(atlas, shift_label, btns.shift[0] + (btns.shift[2] - tw) * 0.5, btns.shift[1] + (btns.shift[3] - 8.0) * 0.5, shift_col, !shift_on);
+    rim(batch, atlas, shift_r, shift_bg, shift_border);
+    let shift_text = "^";
+    let tw = HudBatch::text_width(atlas, shift_text);
+    batch.text(atlas, shift_text, shift_r[0] + (shift_r[2] - tw) * 0.5, shift_r[1] + (shift_r[3] - 8.0) * 0.5, shift_col, !shift_on);
 
-    // 3. [ RMB ] button (Right Click: 1 item per slot, split stack, drag 1-each in a line)
-    let rmb_hover = inside(btns.rmb, cursor.0, cursor.1);
-    let rmb_on = rmb_active();
-    let (rmb_bg, rmb_border, rmb_label, rmb_sub) = if rmb_on {
-        (rgba(30, 85, 155, 245), rgba(130, 220, 255, 255), "RMB ON", "drag: 1-ea")
-    } else if rmb_hover {
-        (rgba(45, 60, 85, 220), rgba(110, 180, 255, 255), "RMB", "1/split")
-    } else {
-        (rgba(30, 40, 56, 190), rgba(70, 140, 230, 210), "RMB", "1/split")
-    };
-    rim(batch, atlas, btns.rmb, rmb_bg, rmb_border);
-    let tw = HudBatch::text_width(atlas, rmb_label);
-    batch.text(atlas, rmb_label, btns.rmb[0] + (btns.rmb[2] - tw) * 0.5, btns.rmb[1] + 3.0, rgba(235, 245, 255, 255), true);
-    text_scaled(batch, atlas, rmb_sub, btns.rmb[0] + btns.rmb[2] * 0.5, btns.rmb[1] + 13.0, 0.7, if rmb_on { rgba(200, 235, 255, 255) } else { rgba(150, 190, 245, 220) });
-
-    // 4. [ LMB ] button (Left Click: full stack, even split drag)
-    let lmb_hover = inside(btns.lmb, cursor.0, cursor.1);
-    let lmb_on = !rmb_on;
-    let (lmb_bg, lmb_border, lmb_sub) = if lmb_on {
-        (rgba(55, 75, 110, 235), rgba(140, 205, 255, 255), "take/put")
-    } else if lmb_hover {
-        (rgba(45, 55, 75, 200), rgba(100, 140, 200, 200), "take/put")
-    } else {
-        (rgba(32, 40, 55, 175), rgba(75, 105, 160, 170), "take/put")
-    };
-    rim(batch, atlas, btns.lmb, lmb_bg, lmb_border);
-    let lmb_text = "LMB";
-    let tw = HudBatch::text_width(atlas, lmb_text);
-    batch.text(atlas, lmb_text, btns.lmb[0] + (btns.lmb[2] - tw) * 0.5, btns.lmb[1] + 4.0, rgba(255, 255, 255, 255), true);
-    text_scaled(batch, atlas, lmb_sub, btns.lmb[0] + btns.lmb[2] * 0.5, btns.lmb[1] + 17.0, 0.7, rgba(175, 215, 255, 230));
-
-    // 5. Crosshair dot / indicator on active target
-    let target = last_target();
-    let (cx, cy) = if let Some(t) = target {
-        t
-    } else if cursor.0 > 0.0 && cursor.1 > 0.0 && !inside(btns.lmb, cursor.0, cursor.1) && !inside(btns.rmb, cursor.0, cursor.1) && !inside(btns.shift, cursor.0, cursor.1) && !inside(btns.exit, cursor.0, cursor.1) {
-        cursor
-    } else {
-        (w * 0.5, h * 0.55)
-    };
-    let dot_col = rgba(255, 255, 255, 140);
-    batch.fill(atlas, cx - 2.0, cy - 0.5, 5.0, 1.0, dot_col);
-    batch.fill(atlas, cx - 0.5, cy - 2.0, 1.0, 5.0, dot_col);
+    // 3. Persistent + crosshair cursor
+    draw_crosshair_cursor(batch, atlas, cursor.0, cursor.1, is_rmb_dragging());
 }
 
 /// The panel opens while the cursor is over it.
@@ -2909,6 +2959,9 @@ pub fn stand_up() {
     s.mobile_shift = false;
     s.mobile_rmb = false;
     s.last_target = None;
+    s.vcursor = None;
+    s.rmb_dragging = false;
+    s.pending_tap = None;
 }
 
 /// Put the carried food on the fire (done on the next tick, as the game's own use).

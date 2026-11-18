@@ -12,11 +12,15 @@ fn cinematic_press(game: &mut crate::game::Game<'_>, right: bool) -> ::core::ops
             let batch = HudBatch::new(size);
             let (w, h) = (batch.width, batch.height);
             let (cx, cy) = game.cursor;
-            let btns = ci::mobile_button_rects(w, h);
-            if ci::inside(btns.exit, cx, cy) {
+            let exit_r = ci::exit_button_rect(w, h);
+            let shift_r = ci::shift_button_rect(w, h);
+            if ci::inside(exit_r, cx, cy) {
                 game.audio.play_button_click();
                 ci::stand_up();
+                ci::reset_vcursor();
                 ci::set_rmb(false);
+                ci::set_rmb_dragging(false);
+                ci::cancel_pending_tap();
                 if game.mobile.ui.modifier_latched(winit::keyboard::KeyCode::ShiftLeft) {
                     game.mobile.ui.toggle_modifier(winit::keyboard::KeyCode::ShiftLeft);
                 }
@@ -28,7 +32,7 @@ fn cinematic_press(game: &mut crate::game::Game<'_>, right: bool) -> ::core::ops
                 game.inv_clicks.skip_release();
                 return ::core::ops::ControlFlow::Break(());
             }
-            if ci::inside(btns.shift, cx, cy) {
+            if ci::inside(shift_r, cx, cy) {
                 game.audio.play_button_click();
                 let on = ci::toggle_shift();
                 game.mobile.controls.inventory_shift = on;
@@ -46,44 +50,7 @@ fn cinematic_press(game: &mut crate::game::Game<'_>, right: bool) -> ::core::ops
                 game.inv_clicks.skip_release();
                 return ::core::ops::ControlFlow::Break(());
             }
-            if ci::inside(btns.rmb, cx, cy) {
-                game.audio.play_button_click();
-                let on = ci::toggle_rmb();
-                if on {
-                    let target = ci::last_target().unwrap_or_else(|| ci::default_aim_point(w, h));
-                    let old_cursor = game.cursor;
-                    game.cursor = target;
-                    IN_PRESS.store(true, std::sync::atomic::Ordering::SeqCst);
-                    game.inventory_press(true);
-                    game.inventory_mouse_release(true);
-                    IN_PRESS.store(false, std::sync::atomic::Ordering::SeqCst);
-                    game.cursor = old_cursor;
-                    if let Some(key) = game.container {
-                        game.container_changed(key);
-                    }
-                }
-                game.inv_clicks.skip_release();
-                return ::core::ops::ControlFlow::Break(());
-            }
-            if ci::inside(btns.lmb, cx, cy) {
-                game.audio.play_button_click();
-                ci::set_rmb(false);
-                let target = ci::last_target().unwrap_or_else(|| ci::default_aim_point(w, h));
-                let old_cursor = game.cursor;
-                game.cursor = target;
-                IN_PRESS.store(true, std::sync::atomic::Ordering::SeqCst);
-                game.inventory_press(false);
-                game.inventory_mouse_release(false);
-                IN_PRESS.store(false, std::sync::atomic::Ordering::SeqCst);
-                game.cursor = old_cursor;
-                if let Some(key) = game.container {
-                    game.container_changed(key);
-                }
-                game.inv_clicks.skip_release();
-                return ::core::ops::ControlFlow::Break(());
-            }
 
-            ci::set_last_target(Some((cx, cy)));
             if ci::shift_active() {
                 game.mobile.controls.inventory_shift = true;
                 if !game.mobile.ui.modifier_latched(winit::keyboard::KeyCode::ShiftLeft) {
@@ -96,16 +63,6 @@ fn cinematic_press(game: &mut crate::game::Game<'_>, right: bool) -> ::core::ops
                     game.mobile.ui.toggle_modifier(winit::keyboard::KeyCode::ShiftLeft);
                 }
                 game.keys.remove(&winit::keyboard::KeyCode::ShiftLeft);
-            }
-
-            if ci::rmb_active() && !right {
-                IN_PRESS.store(true, std::sync::atomic::Ordering::SeqCst);
-                game.inventory_press(true);
-                IN_PRESS.store(false, std::sync::atomic::Ordering::SeqCst);
-                if let Some(key) = game.container {
-                    game.container_changed(key);
-                }
-                return ::core::ops::ControlFlow::Break(());
             }
         }
     }

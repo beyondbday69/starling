@@ -114,6 +114,18 @@ bindings = [
   { name = "right", ty = "bool", value = "right" },
 ]
 
+# Touch input on mobile: virtual trackpad cursor and 1-finger gestures.
+[[injection]]
+id = "touch"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::touch::Game<'_>::touch_event"
+helper = "touch_helper.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "event", ty = "&winit::event::WindowEvent", value = "event" },
+]
+
 # The recipe panel of the scene: drawn in the book's place, and its clicks.
 [[injection]]
 id = "book-draw"
