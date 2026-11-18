@@ -3,8 +3,8 @@
 **Repository:** `beyondbday69/starling`  
 **Current Active Branch:** `feat/shader-fsr-upscaling`  
 **Target Platform:** Android (ARM64 `arm64-v8a`)  
-**Latest Commit:** `34a0af2` (`fix(crash): eliminate recursive state mutex deadlock in vcursor and move pending tap to frame hook`)  
-**Latest Successful CI Run:** `#44355584017` (Artifact: `14452912493`, size: 35.2 MB)  
+**Latest Commit:** `e35ea8e` (`feat(touch): implement sweep drag item collection (option 1)`)  
+**Latest Successful CI Run:** `#44389836599` (Artifact: `14469510477`)  
 **Last Updated:** November 2026  
 
 ---
@@ -131,7 +131,8 @@ graph TD
 
 | Run ID | Commit | Description | Artifact ID / Download | Status |
 |---|---|---|---|---|
-| **#44355584017** | `34a0af2` | **Latest Working Build:** Fixed deadlock crash, safe frame tap, trackpad cursor | [Artifact 14452912493](https://github.com/beyondbday69/starling/actions/runs/44355584017/artifacts/14452912493) | **PASSED (Green)** |
+| **#44389836599** | `e35ea8e` | **Latest Working Build:** Option 1 Sweep Drag item collection, trackpad cursor | [Artifact 14469510477](https://github.com/beyondbday69/starling/actions/runs/44389836599/artifacts/14469510477) | **PASSED (Green)** |
+| **#44355584017** | `34a0af2` | Fixed deadlock crash, safe frame tap, trackpad cursor | [Artifact 14452912493](https://github.com/beyondbday69/starling/actions/runs/44355584017/artifacts/14452912493) | PASSED |
 | **#44339845300** | `25802d5` | Added virtual trackpad cursor and 1-finger gestures | [Artifact 14449830847](https://github.com/beyondbday69/starling/actions/runs/44339845300) | PASSED |
 | **#44175839634** | `df94b42` | Hold My Items + Zoom + ElytraTrails + Living Motion All-In-One | [Artifact 14371345303](https://github.com/beyondbday69/starling/actions/runs/44175839634) | PASSED |
 | **Release** | `58c43de` | `libeyemod.so` (Eye tracking, blink, shock reaction) | [Release `mod-loader-eyemod`](https://github.com/beyondbday69/starling/releases/tag/mod-loader-eyemod) | Published |
