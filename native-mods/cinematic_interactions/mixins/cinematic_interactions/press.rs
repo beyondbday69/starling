@@ -16,6 +16,11 @@ fn cinematic_press(game: &mut crate::game::Game<'_>, right: bool) -> ::core::ops
             if ci::inside(btns.exit, cx, cy) {
                 game.audio.play_button_click();
                 ci::stand_up();
+                if game.mobile.ui.modifier_latched(winit::keyboard::KeyCode::ShiftLeft) {
+                    game.mobile.ui.toggle_modifier(winit::keyboard::KeyCode::ShiftLeft);
+                }
+                game.mobile.controls.inventory_shift = false;
+                game.keys.remove(&winit::keyboard::KeyCode::ShiftLeft);
                 game.close_container();
                 game.screen = crate::game::Screen::Playing;
                 game.capture(true);
@@ -27,8 +32,14 @@ fn cinematic_press(game: &mut crate::game::Game<'_>, right: bool) -> ::core::ops
                 let on = ci::toggle_shift();
                 game.mobile.controls.inventory_shift = on;
                 if on {
+                    if !game.mobile.ui.modifier_latched(winit::keyboard::KeyCode::ShiftLeft) {
+                        game.mobile.ui.toggle_modifier(winit::keyboard::KeyCode::ShiftLeft);
+                    }
                     game.keys.insert(winit::keyboard::KeyCode::ShiftLeft);
                 } else {
+                    if game.mobile.ui.modifier_latched(winit::keyboard::KeyCode::ShiftLeft) {
+                        game.mobile.ui.toggle_modifier(winit::keyboard::KeyCode::ShiftLeft);
+                    }
                     game.keys.remove(&winit::keyboard::KeyCode::ShiftLeft);
                 }
                 game.inv_clicks.skip_release();
@@ -37,11 +48,13 @@ fn cinematic_press(game: &mut crate::game::Game<'_>, right: bool) -> ::core::ops
             if ci::inside(btns.rmb, cx, cy) {
                 game.audio.play_button_click();
                 let target = ci::last_target().unwrap_or_else(|| ci::default_aim_point(w, h));
+                let old_cursor = game.cursor;
                 game.cursor = target;
                 IN_PRESS.store(true, std::sync::atomic::Ordering::SeqCst);
                 game.inventory_press(true);
                 game.inventory_mouse_release(true);
                 IN_PRESS.store(false, std::sync::atomic::Ordering::SeqCst);
+                game.cursor = old_cursor;
                 if let Some(key) = game.container {
                     game.container_changed(key);
                 }
@@ -51,11 +64,13 @@ fn cinematic_press(game: &mut crate::game::Game<'_>, right: bool) -> ::core::ops
             if ci::inside(btns.lmb, cx, cy) {
                 game.audio.play_button_click();
                 let target = ci::last_target().unwrap_or_else(|| ci::default_aim_point(w, h));
+                let old_cursor = game.cursor;
                 game.cursor = target;
                 IN_PRESS.store(true, std::sync::atomic::Ordering::SeqCst);
                 game.inventory_press(false);
                 game.inventory_mouse_release(false);
                 IN_PRESS.store(false, std::sync::atomic::Ordering::SeqCst);
+                game.cursor = old_cursor;
                 if let Some(key) = game.container {
                     game.container_changed(key);
                 }
@@ -66,7 +81,16 @@ fn cinematic_press(game: &mut crate::game::Game<'_>, right: bool) -> ::core::ops
             ci::set_last_target(Some((cx, cy)));
             if ci::shift_active() {
                 game.mobile.controls.inventory_shift = true;
+                if !game.mobile.ui.modifier_latched(winit::keyboard::KeyCode::ShiftLeft) {
+                    game.mobile.ui.toggle_modifier(winit::keyboard::KeyCode::ShiftLeft);
+                }
                 game.keys.insert(winit::keyboard::KeyCode::ShiftLeft);
+            } else {
+                game.mobile.controls.inventory_shift = false;
+                if game.mobile.ui.modifier_latched(winit::keyboard::KeyCode::ShiftLeft) {
+                    game.mobile.ui.toggle_modifier(winit::keyboard::KeyCode::ShiftLeft);
+                }
+                game.keys.remove(&winit::keyboard::KeyCode::ShiftLeft);
             }
         }
     }

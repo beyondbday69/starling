@@ -1574,12 +1574,10 @@ pub fn set_last_target(p: Option<(f32, f32)>) {
 }
 
 pub fn default_aim_point(w: f32, h: f32) -> (f32, f32) {
-    let s = state();
-    if let Some(_pose) = s.last {
-        let center = cell_center(s.table, s.yaw, 4);
-        if let Some(p) = screen_of(center, w, h) {
-            return p;
-        }
+    let (t, yaw) = table();
+    let center = cell_center(t, yaw, 4);
+    if let Some(p) = screen_of(center, w, h) {
+        return p;
     }
     (w * 0.5, h * 0.55)
 }
