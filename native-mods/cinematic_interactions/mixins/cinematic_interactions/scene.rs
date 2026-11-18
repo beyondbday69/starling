@@ -304,6 +304,7 @@ struct State {
     vcursor: Option<(f32, f32)>,
     rmb_dragging: bool,
     pending_tap: Option<(Instant, (f32, f32))>,
+    indicator: Option<(String, [u8; 4], Instant)>,
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
@@ -361,6 +362,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     vcursor: None,
     rmb_dragging: false,
     pending_tap: None,
+    indicator: None,
 });
 
 fn state() -> std::sync::MutexGuard<'static, State> {
@@ -1677,6 +1679,18 @@ pub fn set_last_target(p: Option<(f32, f32)>) {
     state().last_target = p;
 }
 
+pub fn set_indicator(text: &str, color: [u8; 4]) {
+    state().indicator = Some((text.to_string(), color, Instant::now()));
+}
+
+pub fn indicator() -> Option<(String, [u8; 4], Instant)> {
+    state().indicator.clone()
+}
+
+pub fn clear_indicator() {
+    state().indicator = None;
+}
+
 pub fn draw_crosshair_cursor(batch: &mut HudBatch, atlas: &HudAtlas, cx: f32, cy: f32, rmb_active: bool) {
     // Drop shadow (black outline) for high contrast
     let shadow = rgba(0, 0, 0, 200);
@@ -1731,6 +1745,26 @@ pub fn draw_mobile_controls(batch: &mut HudBatch, atlas: &HudAtlas, cursor: (f32
 
     // 3. Persistent + crosshair cursor
     draw_crosshair_cursor(batch, atlas, cursor.0, cursor.1, is_rmb_dragging());
+
+    // 4. Action text indicator badge (top-center pill, visible for 2.0s with smooth fadeout)
+    let ind = state().indicator.clone();
+    if let Some((text, color, time)) = ind {
+        let elapsed = time.elapsed().as_secs_f32();
+        if elapsed < 2.0 {
+            let alpha = if elapsed < 1.5 {
+                1.0
+            } else {
+                ((2.0 - elapsed) / 0.5).clamp(0.0, 1.0)
+            };
+            let cx = w * 0.5;
+            let tw = HudBatch::text_width(atlas, &text);
+            let bg = rgba(16, 20, 28, (200.0 * alpha) as u8);
+            let border = rgba(color[0], color[1], color[2], (220.0 * alpha) as u8);
+            let text_color = rgba(color[0], color[1], color[2], (color[3] as f32 * alpha) as u8);
+            rim(batch, atlas, [cx - tw * 0.5 - 6.0, 18.0, tw + 12.0, 16.0], bg, border);
+            batch.text(atlas, &text, cx - tw * 0.5, 22.0, text_color, true);
+        }
+    }
 }
 
 /// The panel opens while the cursor is over it.
@@ -2975,6 +3009,7 @@ pub fn stand_up() {
     s.vcursor = None;
     s.rmb_dragging = false;
     s.pending_tap = None;
+    s.indicator = None;
 }
 
 /// Put the carried food on the fire (done on the next tick, as the game's own use).
