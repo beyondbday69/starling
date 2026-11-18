@@ -663,16 +663,26 @@ fn cinematic_draw(game: &mut crate::game::Game<'_>, batch: &mut HudBatch) -> ::c
     if ci::walking(std::time::Instant::now()) {
         return ::core::ops::ControlFlow::Break(());
     }
+    let show_mobile = cfg!(target_os = "android") || game.touch_shown();
     if ci::is_furnace(ci::kind()) {
         draw_furnace(game, batch);
+        if show_mobile {
+            ci::draw_mobile_controls(batch, &game.gui.atlas, game.cursor, ci::shift_active());
+        }
         return ::core::ops::ControlFlow::Break(());
     }
     if ci::is_surface(ci::kind()) {
         draw_surface(game, batch);
+        if show_mobile {
+            ci::draw_mobile_controls(batch, &game.gui.atlas, game.cursor, ci::shift_active());
+        }
         return ::core::ops::ControlFlow::Break(());
     }
     if ci::is_crafter() {
         draw_crafter(game, batch);
+        if show_mobile {
+            ci::draw_mobile_controls(batch, &game.gui.atlas, game.cursor, ci::shift_active());
+        }
         return ::core::ops::ControlFlow::Break(());
     }
     let (x, y) = game.cursor;
@@ -740,6 +750,9 @@ fn cinematic_draw(game: &mut crate::game::Game<'_>, batch: &mut HudBatch) -> ::c
             }
         }
         _ => game.draw_slot_tooltip(batch),
+    }
+    if show_mobile {
+        ci::draw_mobile_controls(batch, &game.gui.atlas, game.cursor, ci::shift_active());
     }
     ::core::ops::ControlFlow::Break(())
 }

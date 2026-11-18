@@ -1,6 +1,75 @@
 // A click on the book button or in the recipe panel goes to the panel, not to the table behind it.
 fn cinematic_press(game: &mut crate::game::Game<'_>, right: bool) -> ::core::ops::ControlFlow<()> {
+    static IN_PRESS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if IN_PRESS.load(std::sync::atomic::Ordering::SeqCst) {
+        return ::core::ops::ControlFlow::Continue(());
+    }
+
     use horizon_client_lib::native_cinematic_interactions_scene as ci;
+    if ci::controls() {
+        let is_mobile = cfg!(target_os = "android") || game.touch_shown();
+        if is_mobile && let Some(size) = game.renderer.as_ref().map(|r| [r.config.width, r.config.height]) {
+            let batch = HudBatch::new(size);
+            let (w, h) = (batch.width, batch.height);
+            let (cx, cy) = game.cursor;
+            let btns = ci::mobile_button_rects(w, h);
+            if ci::inside(btns.exit, cx, cy) {
+                game.audio.play_button_click();
+                ci::stand_up();
+                game.close_container();
+                game.screen = crate::game::Screen::Playing;
+                game.capture(true);
+                game.inv_clicks.skip_release();
+                return ::core::ops::ControlFlow::Break(());
+            }
+            if ci::inside(btns.shift, cx, cy) {
+                game.audio.play_button_click();
+                let on = ci::toggle_shift();
+                game.mobile.controls.inventory_shift = on;
+                if on {
+                    game.keys.insert(winit::keyboard::KeyCode::ShiftLeft);
+                } else {
+                    game.keys.remove(&winit::keyboard::KeyCode::ShiftLeft);
+                }
+                game.inv_clicks.skip_release();
+                return ::core::ops::ControlFlow::Break(());
+            }
+            if ci::inside(btns.rmb, cx, cy) {
+                game.audio.play_button_click();
+                let target = ci::last_target().unwrap_or_else(|| ci::default_aim_point(w, h));
+                game.cursor = target;
+                IN_PRESS.store(true, std::sync::atomic::Ordering::SeqCst);
+                game.inventory_press(true);
+                game.inventory_mouse_release(true);
+                IN_PRESS.store(false, std::sync::atomic::Ordering::SeqCst);
+                if let Some(key) = game.container {
+                    game.container_changed(key);
+                }
+                game.inv_clicks.skip_release();
+                return ::core::ops::ControlFlow::Break(());
+            }
+            if ci::inside(btns.lmb, cx, cy) {
+                game.audio.play_button_click();
+                let target = ci::last_target().unwrap_or_else(|| ci::default_aim_point(w, h));
+                game.cursor = target;
+                IN_PRESS.store(true, std::sync::atomic::Ordering::SeqCst);
+                game.inventory_press(false);
+                game.inventory_mouse_release(false);
+                IN_PRESS.store(false, std::sync::atomic::Ordering::SeqCst);
+                if let Some(key) = game.container {
+                    game.container_changed(key);
+                }
+                game.inv_clicks.skip_release();
+                return ::core::ops::ControlFlow::Break(());
+            }
+
+            ci::set_last_target(Some((cx, cy)));
+            if ci::shift_active() {
+                game.mobile.controls.inventory_shift = true;
+                game.keys.insert(winit::keyboard::KeyCode::ShiftLeft);
+            }
+        }
+    }
     let kind = ci::kind();
     // RMB on the station beside this one: the scene moves over to it (the jar's "move over"): this
     // one closes and the other is used as a click on it would.

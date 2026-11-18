@@ -298,6 +298,8 @@ struct State {
     name_rect: Option<[f32; 4]>,
     /// The stonecutter's first shape shown (the wheel pages through them).
     stone_page: usize,
+    mobile_shift: bool,
+    last_target: Option<(f32, f32)>,
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
@@ -349,6 +351,8 @@ static STATE: Mutex<State> = Mutex::new(State {
     renaming: false,
     name_rect: None,
     stone_page: 0,
+    mobile_shift: false,
+    last_target: None,
 });
 
 fn state() -> std::sync::MutexGuard<'static, State> {
@@ -1524,8 +1528,121 @@ pub fn slot_pos(w: f32, i: usize) -> (f32, f32) {
     }
 }
 
-fn inside(r: [f32; 4], x: f32, y: f32) -> bool {
+pub fn inside(r: [f32; 4], x: f32, y: f32) -> bool {
     x >= r[0] && x < r[0] + r[2] && y >= r[1] && y < r[1] + r[3]
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct MobileButtons {
+    pub exit: [f32; 4],
+    pub shift: [f32; 4],
+    pub rmb: [f32; 4],
+    pub lmb: [f32; 4],
+}
+
+pub fn mobile_button_rects(w: f32, h: f32) -> MobileButtons {
+    let exit = [w - 38.0, 6.0, 32.0, 22.0];
+    let rw = 52.0;
+    let rx = w - rw - 8.0;
+    let cy = (h * 0.5).clamp(80.0, h - 100.0);
+    let shift = [rx, cy - 42.0, rw, 24.0];
+    let rmb = [rx, cy - 14.0, rw, 26.0];
+    let lmb = [rx - 4.0, cy + 16.0, rw + 4.0, 32.0];
+    MobileButtons { exit, shift, rmb, lmb }
+}
+
+pub fn shift_active() -> bool {
+    state().mobile_shift
+}
+
+pub fn toggle_shift() -> bool {
+    let mut s = state();
+    s.mobile_shift = !s.mobile_shift;
+    s.mobile_shift
+}
+
+pub fn set_shift(on: bool) {
+    state().mobile_shift = on;
+}
+
+pub fn last_target() -> Option<(f32, f32)> {
+    state().last_target
+}
+
+pub fn set_last_target(p: Option<(f32, f32)>) {
+    state().last_target = p;
+}
+
+pub fn default_aim_point(w: f32, h: f32) -> (f32, f32) {
+    let s = state();
+    if let Some(_pose) = s.last {
+        let center = cell_center(s.table, s.yaw, 4);
+        if let Some(p) = screen_of(center, w, h) {
+            return p;
+        }
+    }
+    (w * 0.5, h * 0.55)
+}
+
+pub fn draw_mobile_controls(batch: &mut HudBatch, atlas: &HudAtlas, cursor: (f32, f32), shift_on: bool) {
+    let w = batch.width;
+    let h = batch.height;
+    let btns = mobile_button_rects(w, h);
+
+    // 1. [ ✕ Exit ] button
+    let exit_hover = inside(btns.exit, cursor.0, cursor.1);
+    let exit_bg = if exit_hover { rgba(70, 30, 30, 220) } else { rgba(45, 20, 20, 190) };
+    let exit_border = if exit_hover { rgba(255, 90, 90, 255) } else { rgba(210, 60, 60, 210) };
+    rim(batch, atlas, btns.exit, exit_bg, exit_border);
+    let exit_text = "✕";
+    let tw = HudBatch::text_width(atlas, exit_text);
+    batch.text(atlas, exit_text, btns.exit[0] + (btns.exit[2] - tw) * 0.5, btns.exit[1] + (btns.exit[3] - 8.0) * 0.5, rgba(255, 230, 230, 255), true);
+
+    // 2. [ SHIFT ] button
+    let shift_hover = inside(btns.shift, cursor.0, cursor.1);
+    let (shift_bg, shift_border, shift_col, shift_label) = if shift_on {
+        (rgba(180, 140, 20, 220), rgba(255, 235, 120, 255), rgba(20, 20, 20, 255), "SHIFT ON")
+    } else if shift_hover {
+        (rgba(55, 58, 68, 200), rgba(160, 165, 180, 220), rgba(255, 255, 255, 255), "SHIFT")
+    } else {
+        (rgba(32, 34, 42, 180), rgba(100, 105, 120, 170), rgba(200, 205, 220, 220), "SHIFT")
+    };
+    rim(batch, atlas, btns.shift, shift_bg, shift_border);
+    let tw = HudBatch::text_width(atlas, shift_label);
+    batch.text(atlas, shift_label, btns.shift[0] + (btns.shift[2] - tw) * 0.5, btns.shift[1] + (btns.shift[3] - 8.0) * 0.5, shift_col, !shift_on);
+
+    // 3. [ RMB ] button
+    let rmb_hover = inside(btns.rmb, cursor.0, cursor.1);
+    let rmb_bg = if rmb_hover { rgba(45, 60, 85, 220) } else { rgba(30, 40, 56, 190) };
+    let rmb_border = if rmb_hover { rgba(110, 180, 255, 255) } else { rgba(70, 140, 230, 210) };
+    rim(batch, atlas, btns.rmb, rmb_bg, rmb_border);
+    let rmb_text = "RMB";
+    let tw = HudBatch::text_width(atlas, rmb_text);
+    batch.text(atlas, rmb_text, btns.rmb[0] + (btns.rmb[2] - tw) * 0.5, btns.rmb[1] + 3.0, rgba(235, 245, 255, 255), true);
+    text_scaled(batch, atlas, "1/split", btns.rmb[0] + btns.rmb[2] * 0.5, btns.rmb[1] + 13.0, 0.7, rgba(150, 190, 245, 220));
+
+    // 4. [ LMB ] button
+    let lmb_hover = inside(btns.lmb, cursor.0, cursor.1);
+    let lmb_bg = if lmb_hover { rgba(55, 68, 96, 230) } else { rgba(40, 50, 72, 205) };
+    let lmb_border = if lmb_hover { rgba(160, 210, 255, 255) } else { rgba(120, 180, 255, 230) };
+    rim(batch, atlas, btns.lmb, lmb_bg, lmb_border);
+    let lmb_text = "LMB";
+    let tw = HudBatch::text_width(atlas, lmb_text);
+    batch.text(atlas, lmb_text, btns.lmb[0] + (btns.lmb[2] - tw) * 0.5, btns.lmb[1] + 4.0, rgba(255, 255, 255, 255), true);
+    text_scaled(batch, atlas, "take/put", btns.lmb[0] + btns.lmb[2] * 0.5, btns.lmb[1] + 17.0, 0.7, rgba(175, 215, 255, 230));
+
+    // 5. Crosshair dot / indicator on active target
+    let target = last_target();
+    let (cx, cy) = if let Some(t) = target {
+        t
+    } else if cursor.0 > 0.0 && cursor.1 > 0.0 && !inside(btns.lmb, cursor.0, cursor.1) && !inside(btns.rmb, cursor.0, cursor.1) && !inside(btns.shift, cursor.0, cursor.1) && !inside(btns.exit, cursor.0, cursor.1) {
+        cursor
+    } else {
+        (w * 0.5, h * 0.55)
+    };
+    let dot_col = rgba(255, 255, 255, 140);
+    batch.fill(atlas, cx - 2.0, cy - 0.5, 5.0, 1.0, dot_col);
+    batch.fill(atlas, cx - 0.5, cy - 2.0, 1.0, 5.0, dot_col);
 }
 
 /// The panel opens while the cursor is over it.
@@ -1638,6 +1755,11 @@ pub const RESULT_HINT: &str = "Click to craft \u{b7} Shift-click to craft all";
 
 /// A line of hint at the bottom, in the hints' style.
 pub fn draw_hint_line(batch: &mut HudBatch, atlas: &HudAtlas, text: &str) {
+    let text = if cfg!(target_os = "android") && text == HINTS {
+        "Tap to aim \u{b7} [LMB] put/take \u{b7} [RMB] split \u{b7} [SHIFT] quick \u{b7} [✕] exit"
+    } else {
+        text
+    };
     let wide = HudBatch::text_width(atlas, text).max(1.0);
     let scale = 0.8f32.min((batch.width - 20.0) / wide);
     let w = wide * scale + 14.0;
@@ -2757,7 +2879,10 @@ pub fn sitting() -> bool {
 
 /// The inventory closed: up again.
 pub fn stand_up() {
-    state().sitting = false;
+    let mut s = state();
+    s.sitting = false;
+    s.mobile_shift = false;
+    s.last_target = None;
 }
 
 /// Put the carried food on the fire (done on the next tick, as the game's own use).
