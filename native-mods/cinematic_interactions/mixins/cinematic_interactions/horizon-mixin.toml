@@ -119,11 +119,11 @@ bindings = [
 id = "touch"
 kind = "HEAD"
 cancellable = true
-target = "horizon_client::game::touch::Game<'_>::touch_event"
+target = "horizon_client::game::Game<'_>::handle_window_event"
 helper = "touch_helper.rs"
 bindings = [
   { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
-  { name = "event", ty = "&winit::event::WindowEvent", value = "event" },
+  { name = "event", ty = "&winit::event::WindowEvent", value = "&event" },
 ]
 
 # The recipe panel of the scene: drawn in the book's place, and its clicks.

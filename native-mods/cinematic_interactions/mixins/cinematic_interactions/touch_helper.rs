@@ -34,7 +34,7 @@ static LAST_TAP: Mutex<Option<(Instant, (f32, f32))>> = Mutex::new(None);
 fn cinematic_touch(
     game: &mut crate::game::Game<'_>,
     event: &winit::event::WindowEvent,
-) -> ::core::ops::ControlFlow<bool> {
+) -> ::core::ops::ControlFlow<()> {
     if !ci::controls() {
         return ::core::ops::ControlFlow::Continue(());
     }
@@ -84,16 +84,16 @@ fn cinematic_touch(
             // Ensure vcursor is initialized
             let cur_vpos = ci::vcursor(bw, bh);
             game.cursor = cur_vpos;
-            ::core::ops::ControlFlow::Break(true)
+            ::core::ops::ControlFlow::Break(())
         }
 
         TouchPhase::Moved => {
             let mut cur = CURRENT_TOUCH.lock().unwrap();
             let Some(mut state) = *cur else {
-                return ::core::ops::ControlFlow::Break(true);
+                return ::core::ops::ControlFlow::Break(());
             };
             if state.id != t.id {
-                return ::core::ops::ControlFlow::Break(true);
+                return ::core::ops::ControlFlow::Break(());
             }
 
             let dx = gui_pos.0 - state.last_pos.0;
@@ -138,16 +138,16 @@ fn cinematic_touch(
             }
 
             *cur = Some(state);
-            ::core::ops::ControlFlow::Break(true)
+            ::core::ops::ControlFlow::Break(())
         }
 
         TouchPhase::Ended => {
             let mut cur = CURRENT_TOUCH.lock().unwrap();
             let Some(state) = cur.take() else {
-                return ::core::ops::ControlFlow::Break(true);
+                return ::core::ops::ControlFlow::Break(());
             };
             if state.id != t.id {
-                return ::core::ops::ControlFlow::Break(true);
+                return ::core::ops::ControlFlow::Break(());
             }
 
             // 1. Finish active RMB drag
@@ -157,12 +157,12 @@ fn cinematic_touch(
                 if let Some(key) = game.container {
                     game.container_changed(key);
                 }
-                return ::core::ops::ControlFlow::Break(true);
+                return ::core::ops::ControlFlow::Break(());
             }
 
             // 2. If long press already executed, finish
             if state.long_press_done {
-                return ::core::ops::ControlFlow::Break(true);
+                return ::core::ops::ControlFlow::Break(());
             }
 
             let duration_ms = now.duration_since(state.start_time).as_millis();
@@ -191,7 +191,7 @@ fn cinematic_touch(
                     game.screen = crate::game::Screen::Playing;
                     game.capture(true);
                     game.inv_clicks.skip_release();
-                    return ::core::ops::ControlFlow::Break(true);
+                    return ::core::ops::ControlFlow::Break(());
                 }
 
                 // Shift button tapped directly or with cursor
@@ -210,7 +210,7 @@ fn cinematic_touch(
                         }
                         game.keys.remove(&KeyCode::ShiftLeft);
                     }
-                    return ::core::ops::ControlFlow::Break(true);
+                    return ::core::ops::ControlFlow::Break(());
                 }
 
                 if state.is_double_tap {
@@ -231,7 +231,7 @@ fn cinematic_touch(
                 }
             }
 
-            ::core::ops::ControlFlow::Break(true)
+            ::core::ops::ControlFlow::Break(())
         }
 
         TouchPhase::Cancelled => {
@@ -242,7 +242,7 @@ fn cinematic_touch(
                     game.inventory_mouse_release(true);
                 }
             }
-            ::core::ops::ControlFlow::Break(true)
+            ::core::ops::ControlFlow::Break(())
         }
     }
 }
