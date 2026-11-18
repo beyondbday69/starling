@@ -299,6 +299,7 @@ struct State {
     /// The stonecutter's first shape shown (the wheel pages through them).
     stone_page: usize,
     mobile_shift: bool,
+    mobile_rmb: bool,
     last_target: Option<(f32, f32)>,
 }
 
@@ -352,6 +353,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     name_rect: None,
     stone_page: 0,
     mobile_shift: false,
+    mobile_rmb: false,
     last_target: None,
 });
 
@@ -1565,6 +1567,20 @@ pub fn set_shift(on: bool) {
     state().mobile_shift = on;
 }
 
+pub fn rmb_active() -> bool {
+    state().mobile_rmb
+}
+
+pub fn toggle_rmb() -> bool {
+    let mut s = state();
+    s.mobile_rmb = !s.mobile_rmb;
+    s.mobile_rmb
+}
+
+pub fn set_rmb(on: bool) {
+    state().mobile_rmb = on;
+}
+
 pub fn last_target() -> Option<(f32, f32)> {
     state().last_target
 }
@@ -1609,25 +1625,36 @@ pub fn draw_mobile_controls(batch: &mut HudBatch, atlas: &HudAtlas, cursor: (f32
     let tw = HudBatch::text_width(atlas, shift_label);
     batch.text(atlas, shift_label, btns.shift[0] + (btns.shift[2] - tw) * 0.5, btns.shift[1] + (btns.shift[3] - 8.0) * 0.5, shift_col, !shift_on);
 
-    // 3. [ RMB ] button
+    // 3. [ RMB ] button (Right Click: 1 item per slot, split stack, drag 1-each in a line)
     let rmb_hover = inside(btns.rmb, cursor.0, cursor.1);
-    let rmb_bg = if rmb_hover { rgba(45, 60, 85, 220) } else { rgba(30, 40, 56, 190) };
-    let rmb_border = if rmb_hover { rgba(110, 180, 255, 255) } else { rgba(70, 140, 230, 210) };
+    let rmb_on = rmb_active();
+    let (rmb_bg, rmb_border, rmb_label, rmb_sub) = if rmb_on {
+        (rgba(30, 85, 155, 245), rgba(130, 220, 255, 255), "RMB ON", "drag: 1-ea")
+    } else if rmb_hover {
+        (rgba(45, 60, 85, 220), rgba(110, 180, 255, 255), "RMB", "1/split")
+    } else {
+        (rgba(30, 40, 56, 190), rgba(70, 140, 230, 210), "RMB", "1/split")
+    };
     rim(batch, atlas, btns.rmb, rmb_bg, rmb_border);
-    let rmb_text = "RMB";
-    let tw = HudBatch::text_width(atlas, rmb_text);
-    batch.text(atlas, rmb_text, btns.rmb[0] + (btns.rmb[2] - tw) * 0.5, btns.rmb[1] + 3.0, rgba(235, 245, 255, 255), true);
-    text_scaled(batch, atlas, "1/split", btns.rmb[0] + btns.rmb[2] * 0.5, btns.rmb[1] + 13.0, 0.7, rgba(150, 190, 245, 220));
+    let tw = HudBatch::text_width(atlas, rmb_label);
+    batch.text(atlas, rmb_label, btns.rmb[0] + (btns.rmb[2] - tw) * 0.5, btns.rmb[1] + 3.0, rgba(235, 245, 255, 255), true);
+    text_scaled(batch, atlas, rmb_sub, btns.rmb[0] + btns.rmb[2] * 0.5, btns.rmb[1] + 13.0, 0.7, if rmb_on { rgba(200, 235, 255, 255) } else { rgba(150, 190, 245, 220) });
 
-    // 4. [ LMB ] button
+    // 4. [ LMB ] button (Left Click: full stack, even split drag)
     let lmb_hover = inside(btns.lmb, cursor.0, cursor.1);
-    let lmb_bg = if lmb_hover { rgba(55, 68, 96, 230) } else { rgba(40, 50, 72, 205) };
-    let lmb_border = if lmb_hover { rgba(160, 210, 255, 255) } else { rgba(120, 180, 255, 230) };
+    let lmb_on = !rmb_on;
+    let (lmb_bg, lmb_border, lmb_sub) = if lmb_on {
+        (rgba(55, 75, 110, 235), rgba(140, 205, 255, 255), "take/put")
+    } else if lmb_hover {
+        (rgba(45, 55, 75, 200), rgba(100, 140, 200, 200), "take/put")
+    } else {
+        (rgba(32, 40, 55, 175), rgba(75, 105, 160, 170), "take/put")
+    };
     rim(batch, atlas, btns.lmb, lmb_bg, lmb_border);
     let lmb_text = "LMB";
     let tw = HudBatch::text_width(atlas, lmb_text);
     batch.text(atlas, lmb_text, btns.lmb[0] + (btns.lmb[2] - tw) * 0.5, btns.lmb[1] + 4.0, rgba(255, 255, 255, 255), true);
-    text_scaled(batch, atlas, "take/put", btns.lmb[0] + btns.lmb[2] * 0.5, btns.lmb[1] + 17.0, 0.7, rgba(175, 215, 255, 230));
+    text_scaled(batch, atlas, lmb_sub, btns.lmb[0] + btns.lmb[2] * 0.5, btns.lmb[1] + 17.0, 0.7, rgba(175, 215, 255, 230));
 
     // 5. Crosshair dot / indicator on active target
     let target = last_target();
@@ -2880,6 +2907,7 @@ pub fn stand_up() {
     let mut s = state();
     s.sitting = false;
     s.mobile_shift = false;
+    s.mobile_rmb = false;
     s.last_target = None;
 }
 

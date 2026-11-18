@@ -102,6 +102,18 @@ bindings = [
   { name = "right", ty = "bool", value = "right" },
 ]
 
+# Inventory mouse release: completes RMB drags on mobile where touch sends button: Left.
+[[injection]]
+id = "release"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::Game<'_>::inventory_mouse_release"
+helper = "release.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "right", ty = "bool", value = "right" },
+]
+
 # The recipe panel of the scene: drawn in the book's place, and its clicks.
 [[injection]]
 id = "book-draw"

@@ -203,12 +203,49 @@ fn cinematic_hands(game: &mut crate::game::Game<'_>, alpha: f64) -> ::core::ops:
             Some(horizon_client::containers::BlockEntity::Crafter(c)) => c.disabled,
             _ => [false; 9],
         };
+        let crafter_drag = game.inv_drag.as_ref().and_then(|(ty, slots)| {
+            let carried = game.carried.as_ref()?;
+            let dragged_cells: Vec<usize> = slots.iter()
+                .filter(|&&s| (300..309).contains(&s))
+                .map(|&s| s - 300)
+                .collect();
+            if dragged_cells.is_empty() {
+                return None;
+            }
+            let count_per_cell = if *ty == 1 {
+                1
+            } else {
+                (carried.count as usize / slots.len().max(1)).max(1) as u32
+            };
+            let mut stack = carried.clone();
+            stack.count = count_per_cell;
+            Some((dragged_cells, stack))
+        });
         for i in 0..9 {
             if disabled[i] {
                 quads.extend(ci::lid_quads(table, yaw, i));
                 continue;
             }
-            let Some(stack) = game.slot_view(300 + i) else {
+            let existing = game.slot_view(300 + i);
+            let stack = if let Some((ref dragged_cells, ref preview)) = crafter_drag {
+                if dragged_cells.contains(&i) {
+                    if let Some(mut s) = existing {
+                        if s.item == preview.item {
+                            s.count += preview.count;
+                            Some(s)
+                        } else {
+                            Some(s)
+                        }
+                    } else {
+                        Some(preview.clone())
+                    }
+                } else {
+                    existing
+                }
+            } else {
+                existing
+            };
+            let Some(stack) = stack else {
                 continue;
             };
             let block = game.items().get(&stack.item).is_some_and(|info| info.block.is_some());
@@ -227,15 +264,61 @@ fn cinematic_hands(game: &mut crate::game::Game<'_>, alpha: f64) -> ::core::ops:
                 * glam::Mat4::from_scale(glam::Vec3::splat(if block { 0.4 } else { 0.45 }));
             game.submit_item_world(&state, m, item_light, &mut out);
         }
+        if let Some((ref dragged_cells, _)) = crafter_drag {
+            for &i in dragged_cells {
+                for q in ci::frame_quads(ci::cell_center(table, yaw, i), yaw) {
+                    quads.push((q, u32::from_le_bytes([110, 200, 255, 255])));
+                }
+            }
+        }
         if let Some(ci::Hover::Cell(i)) = hover {
             for q in ci::frame_quads(ci::cell_center(table, yaw, i), yaw) {
                 quads.push((q, u32::from_le_bytes([236, 226, 196, 255])));
             }
         }
     } else {
+        // When a drag is in progress, compute the preview stack for each cell in the drag.
+        let drag_preview = game.inv_drag.as_ref().and_then(|(ty, slots)| {
+            let carried = game.carried.as_ref()?;
+            let dragged_cells: Vec<usize> = slots.iter()
+                .filter(|&&s| (100..109).contains(&s))
+                .map(|&s| s - 100)
+                .collect();
+            if dragged_cells.is_empty() {
+                return None;
+            }
+            let count_per_cell = if *ty == 1 {
+                1
+            } else {
+                (carried.count as usize / slots.len().max(1)).max(1) as u32
+            };
+            let mut stack = carried.clone();
+            stack.count = count_per_cell;
+            Some((dragged_cells, stack))
+        });
+
         // The grid's items on the table top.
         for i in 0..9 {
-            let Some(stack) = game.craft_grid.get(i).cloned().flatten() else {
+            let existing = game.craft_grid.get(i).cloned().flatten();
+            let stack = if let Some((ref dragged_cells, ref preview)) = drag_preview {
+                if dragged_cells.contains(&i) {
+                    if let Some(mut s) = existing {
+                        if s.item == preview.item {
+                            s.count += preview.count;
+                            Some(s)
+                        } else {
+                            Some(s)
+                        }
+                    } else {
+                        Some(preview.clone())
+                    }
+                } else {
+                    existing
+                }
+            } else {
+                existing
+            };
+            let Some(stack) = stack else {
                 continue;
             };
             let block = game.items().get(&stack.item).is_some_and(|info| info.block.is_some());
@@ -249,7 +332,9 @@ fn cinematic_hands(game: &mut crate::game::Game<'_>, alpha: f64) -> ::core::ops:
         let mut faint = Vec::new();
         let mut faint_frames: Vec<(usize, bool)> = Vec::new();
         for i in 0..9 {
-            if game.craft_grid.get(i).is_some_and(|c| c.is_some()) {
+            if game.craft_grid.get(i).is_some_and(|c| c.is_some())
+                || drag_preview.as_ref().is_some_and(|(dc, _)| dc.contains(&i))
+            {
                 continue;
             }
             let Some(stack) = game.ghost_stack(100 + i) else {
@@ -287,6 +372,11 @@ fn cinematic_hands(game: &mut crate::game::Game<'_>, alpha: f64) -> ::core::ops:
             .iter()
             .map(|&(i, have)| (i, if have { u32::from_le_bytes([236, 226, 196, 255]) } else { u32::from_le_bytes([226, 70, 60, 255]) }))
             .collect();
+        if let Some((ref dragged_cells, _)) = drag_preview {
+            for &i in dragged_cells {
+                frames.push((i, u32::from_le_bytes([110, 200, 255, 255])));
+            }
+        }
         if let Some(ci::Hover::Cell(i)) = hover {
             frames.push((i, u32::from_le_bytes([236, 226, 196, 255])));
         }
