@@ -3,8 +3,8 @@
 **Repository:** `beyondbday69/starling`  
 **Current Active Branch:** `feat/shader-fsr-upscaling`  
 **Target Platform:** Android (ARM64 `arm64-v8a`)  
-**Latest Commit:** `e35ea8e` (`feat(touch): implement sweep drag item collection (option 1)`)  
-**Latest Successful CI Run:** `#44395053407` (Artifact: `14472020982`, size: 35.2 MB)  
+**Latest Commit:** `0faef7a` (`feat(touch): screen-split LMB/RMB controls and on-screen action indicator`)  
+**Latest Successful CI Run:** `#44408523280` (Artifact: `14475234256`, size: 35.2 MB)  
 **Last Updated:** November 2026  
 
 ---
@@ -131,7 +131,8 @@ graph TD
 
 | Run ID | Commit | Description | Artifact ID / Download | Status |
 |---|---|---|---|---|
-| **#44395053407** | `e35ea8e` | **Latest Working Build:** Sweep Drag + Cinematic Interactions + 3D Skins + Gyro | [Artifact 14472020982](https://github.com/beyondbday69/starling/actions/runs/44395053407/artifacts/14472020982) | **PASSED (Green)** |
+| **#44408523280** | `0faef7a` | **Latest Working Build:** Screen-Split LMB/RMB Controls + Action Text Indicator + Cinematic Interactions + 3D Skins + Gyro | [Artifact 14475234256](https://github.com/beyondbday69/starling/actions/runs/44408523280/artifacts/14475234256) | **PASSED (Green)** |
+| **#44395053407** | `e35ea8e` | Sweep Drag + Cinematic Interactions + 3D Skins + Gyro | [Artifact 14472020982](https://github.com/beyondbday69/starling/actions/runs/44395053407/artifacts/14472020982) | PASSED |
 | **#44389836599** | `e35ea8e` | Option 1 Sweep Drag item collection (plain build) | [Artifact 14469510477](https://github.com/beyondbday69/starling/actions/runs/44389836599/artifacts/14469510477) | PASSED |
 | **#44355584017** | `34a0af2` | Fixed deadlock crash, safe frame tap, trackpad cursor | [Artifact 14452912493](https://github.com/beyondbday69/starling/actions/runs/44355584017/artifacts/14452912493) | PASSED |
 | **#44339845300** | `25802d5` | Added virtual trackpad cursor and 1-finger gestures | [Artifact 14449830847](https://github.com/beyondbday69/starling/actions/runs/44339845300) | PASSED |
