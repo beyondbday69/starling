@@ -504,6 +504,7 @@ impl Game<'_> {
             || self.sleeping.is_some()
             || !self.camera_type.first_person()
             || self.scoping()
+            || self.screen != Screen::Playing
             || self
                 .player
                 .as_ref()
