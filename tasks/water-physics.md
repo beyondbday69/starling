@@ -236,5 +236,13 @@ The v2.x heightfield grid architecture approximated continuous circular ripples 
 - **Buttery Smooth Live Framerate:**
   - Simulation steps with continuous delta time ($\Delta t$), delivering 60/90/120 FPS fluid motion.
 
+### 9.3. Build Verification
+- **Run ID:** `#44543723733`
+- **Commit:** `5a2db4a` (type-safe velocity vector fix in `glue.rs`)
+- **Status:** PASSED (Green)
+- **Artifact:** `starling-apk-arm64-v8a` (ID: `14540746729`)
+- **APK Name:** `starling-preview-0.8.0-arm64-v8a-cinematic_interactions-skins_3d-gyro-water_physics.apk`
+- **Applied Mods:** `cinematic_interactions v0.12.2`, `skins_3d v1.1.1`, `gyro v1.6.0`, `water_physics v3.0.0`
+
 
 
