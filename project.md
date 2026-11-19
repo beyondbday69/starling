@@ -139,6 +139,18 @@ graph TD
 
 ---
 
+## 3.2. Water Physics Native Mod (`water_physics`)
+* **Goal:** Realistic fluid wakes and surface waves on water.
+* **Features:**
+  * 2D heightfield leapfrog PDE wave simulation with dispersion term and boundary damping.
+  * Boat Kelvin wakes (19.47° envelope), bow spray foam trails, stern depression, and oar ripples.
+  * Player walking/wading ring ripples, swimming V wake, and fall splashes scaling with impact velocity.
+  * Dynamic active tile management with energy-based sleeping and configurable resolution for mobile.
+  * Translucent mesh overlay with specular highlights and fast-fading foam.
+  * Toggleable and configurable in Options > Mods (default on).
+
+---
+
 ## 4. Key Artifacts, Releases & Action Runs
 
 | Run ID | Commit | Description | Artifact ID / Download | Status |
