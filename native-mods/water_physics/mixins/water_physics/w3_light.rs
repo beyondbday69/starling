@@ -1,22 +1,22 @@
-//! Vertex-light helpers for 3D water overlays.
-//!
-//! Packs shaded water colours into the `ABGR` `u32` layout expected by
-//! `horizon_client::mesher::Vertex::color`. The module is pure math: no crates,
-//! no allocations, no globals, no unsafe, safe to call per vertex.
-//!
-//! Light sources are combined as follows:
-//! * block light and sky light are unpacked from the `u32` produced by
-//!   `horizon_client::block_entity_render::vertex_light(packed_byte)`;
-//! * sky light is boosted by Schlick Fresnel at grazing view angles;
-//! * wave-normal diffuse uses the Minecraft-style `0.4 + 0.6 * ndl` curve;
-//! * [`shade`] turns the combined ambient factor plus diffuse into a packed colour.
-//!
-//! Typical use from a renderer:
-//! ```ignore
-//! let ambient = ambient_light(vertex_light_u32, 0.85, view_dot);
-//! let color = shade(base_rgb, normal_dot_sun, ambient, alpha);
-//! ```
-//! Or in one call: [`shade_light`].
+// Vertex-light helpers for 3D water overlays.
+//
+// Packs shaded water colours into the `ABGR` `u32` layout expected by
+// `horizon_client::mesher::Vertex::color`. The module is pure math: no crates,
+// no allocations, no globals, no unsafe, safe to call per vertex.
+//
+// Light sources are combined as follows:
+// * block light and sky light are unpacked from the `u32` produced by
+//   `horizon_client::block_entity_render::vertex_light(packed_byte)`;
+// * sky light is boosted by Schlick Fresnel at grazing view angles;
+// * wave-normal diffuse uses the Minecraft-style `0.4 + 0.6 * ndl` curve;
+// * [`shade`] turns the combined ambient factor plus diffuse into a packed colour.
+//
+// Typical use from a renderer:
+// ```ignore
+// let ambient = ambient_light(vertex_light_u32, 0.85, view_dot);
+// let color = shade(base_rgb, normal_dot_sun, ambient, alpha);
+// ```
+// Or in one call: [`shade_light`].
 
 /// Minimum diffuse contribution on an unlit facing, matching vanilla water.
 const DIFFUSE_MIN: f32 = 0.4;

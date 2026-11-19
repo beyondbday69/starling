@@ -1,23 +1,23 @@
-//! Large-scale, slow swell modulation for water v4.
-//!
-//! This module supplies a pair of pure, allocation-free helpers that add a
-//! gentle, long-wavelength rise and fall on top of the finer ripples generated
-//! elsewhere. It is render-agnostic: callers add [`swell_height`] to the local
-//! water level (which lives at `water_y + 8.0/9.0`) before shading or displacement.
-//!
-//! Design:
-//! * Two directional plane waves with wavelengths of roughly 30-72 blocks,
-//!   i.e. much longer than normal ripples, so the result reads as swell.
-//! * Directions, wavelengths, speeds and phases are derived deterministically
-//!   from a `u64` seed via a splitmix64-style finalizer. No globals, no RNG
-//!   state to pass around.
-//! * [`swell_amplitude`] is a slow "breathing" envelope (two incommensurate
-//!   periods) that stays positive and bounded, periodically making the swell
-//!   more or less pronounced.
-//!
-//! Public API:
-//! * [`swell_height`] - signed Y offset in blocks for a world X/Z position at time `t`.
-//! * [`swell_amplitude`] - positive breathing multiplier, approximately `[0.77, 1.23]`.
+// Large-scale, slow swell modulation for water v4.
+//
+// This module supplies a pair of pure, allocation-free helpers that add a
+// gentle, long-wavelength rise and fall on top of the finer ripples generated
+// elsewhere. It is render-agnostic: callers add [`swell_height`] to the local
+// water level (which lives at `water_y + 8.0/9.0`) before shading or displacement.
+//
+// Design:
+// * Two directional plane waves with wavelengths of roughly 30-72 blocks,
+//   i.e. much longer than normal ripples, so the result reads as swell.
+// * Directions, wavelengths, speeds and phases are derived deterministically
+//   from a `u64` seed via a splitmix64-style finalizer. No globals, no RNG
+//   state to pass around.
+// * [`swell_amplitude`] is a slow "breathing" envelope (two incommensurate
+//   periods) that stays positive and bounded, periodically making the swell
+//   more or less pronounced.
+//
+// Public API:
+// * [`swell_height`] - signed Y offset in blocks for a world X/Z position at time `t`.
+// * [`swell_amplitude`] - positive breathing multiplier, approximately `[0.77, 1.23]`.
 
 /// 2*PI as f32.
 const TAU: f32 = std::f32::consts::TAU;

@@ -1,29 +1,29 @@
-//! Zero-allocation rolling performance counters for water v4 stages.
-//!
-//! The profiler is owned entirely by the caller: it contains no globals, no
-//! `Mutex`, no `unsafe`, and never allocates. A `Counter` records timing marks
-//! (`begin` / `end`, nanoseconds relative to its own origin) plus a rolling
-//! average and rolling maximum duration in milliseconds.
-//!
-//! `Profiler` groups the three hot stages (sim, render, particle). Both types
-//! can render a short textual `report()` into a fixed inline byte buffer; the
-//! returned `&str` borrows that buffer and stays valid until the next call.
-//!
-//! Usage:
-//! ```ignore
-//! let mut p = Profiler::new();
-//! p.sim.begin_at(t0_ns);
-//! p.sim.end_at(t1_ns);
-//! // or, with the built-in clock:
-//! p.render.start();
-//! // ... render work ...
-//! p.render.stop();
-//! let text = p.report(); // borrows p.report_buf
-//! ```
-//!
-//! For maximum control, `push_ns` / `push_ms` record a sample that the caller
-//! measured itself, which is handy in tests and in code that already owns a
-//! clock.
+// Zero-allocation rolling performance counters for water v4 stages.
+//
+// The profiler is owned entirely by the caller: it contains no globals, no
+// `Mutex`, no `unsafe`, and never allocates. A `Counter` records timing marks
+// (`begin` / `end`, nanoseconds relative to its own origin) plus a rolling
+// average and rolling maximum duration in milliseconds.
+//
+// `Profiler` groups the three hot stages (sim, render, particle). Both types
+// can render a short textual `report()` into a fixed inline byte buffer; the
+// returned `&str` borrows that buffer and stays valid until the next call.
+//
+// Usage:
+// ```ignore
+// let mut p = Profiler::new();
+// p.sim.begin_at(t0_ns);
+// p.sim.end_at(t1_ns);
+// // or, with the built-in clock:
+// p.render.start();
+// // ... render work ...
+// p.render.stop();
+// let text = p.report(); // borrows p.report_buf
+// ```
+//
+// For maximum control, `push_ns` / `push_ms` record a sample that the caller
+// measured itself, which is handy in tests and in code that already owns a
+// clock.
 
 use std::fmt;
 use std::fmt::Write as _;

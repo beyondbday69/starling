@@ -1,17 +1,17 @@
-//! Centralized level-of-detail presets for water v4 (w3).
-//!
-//! The v3 glue code hard-codes a few quality values (16/24/32 segments and 12/18/24
-//! rings) while the v4 modules need additional budgets: ambient wave count,
-//! particle caps, simulation/update rate and a caustics toggle. This module is the
-//! single source of truth for those values so the root integration can wire every
-//! renderer against one consistent preset.
-//!
-//! Design notes:
-//! * Pure data, no globals and no allocations.
-//! * All fields are public so callers can read or clone/modify a preset directly.
-//! * [`QualitySettings::from_name`] is case-insensitive and accepts the v3 aliases
-//!   (`Low`, `Smooth`/`Balanced`, `Ultra`) as well as `Default`/`Medium`/`High`.
-//! * Unknown names fall back to [`QualitySettings::BALANCED`] rather than panicking.
+// Centralized level-of-detail presets for water v4 (w3).
+//
+// The v3 glue code hard-codes a few quality values (16/24/32 segments and 12/18/24
+// rings) while the v4 modules need additional budgets: ambient wave count,
+// particle caps, simulation/update rate and a caustics toggle. This module is the
+// single source of truth for those values so the root integration can wire every
+// renderer against one consistent preset.
+//
+// Design notes:
+// * Pure data, no globals and no allocations.
+// * All fields are public so callers can read or clone/modify a preset directly.
+// * [`QualitySettings::from_name`] is case-insensitive and accepts the v3 aliases
+//   (`Low`, `Smooth`/`Balanced`, `Ultra`) as well as `Default`/`Medium`/`High`.
+// * Unknown names fall back to [`QualitySettings::BALANCED`] rather than panicking.
 
 /// Runtime LOD budgets for one water-quality preset.
 ///

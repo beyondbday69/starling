@@ -1,13 +1,13 @@
-//! Adaptive surface-grid tessellation for water v4 (X/Z plane, Y up).
-//!
-//! Chooses a subdivision count from camera distance, maps normalized grid
-//! coordinates to world X/Z, and derives an axis-aligned visible patch.
-//! Pure f32 math, no allocation, no globals, no unsafe.
-//!
-//! Public API:
-//! * [`cells_for_distance`] - cell count from camera distance + quality.
-//! * [`grid_vertex`] - normalized grid vertex to world `(x, z)`.
-//! * [`visible_patch`] - visible X/Z bounds as `[min_x, min_z, max_x, max_z]`.
+// Adaptive surface-grid tessellation for water v4 (X/Z plane, Y up).
+//
+// Chooses a subdivision count from camera distance, maps normalized grid
+// coordinates to world X/Z, and derives an axis-aligned visible patch.
+// Pure f32 math, no allocation, no globals, no unsafe.
+//
+// Public API:
+// * [`cells_for_distance`] - cell count from camera distance + quality.
+// * [`grid_vertex`] - normalized grid vertex to world `(x, z)`.
+// * [`visible_patch`] - visible X/Z bounds as `[min_x, min_z, max_x, max_z]`.
 
 /// Minimum subdivision count (used for distant / low-quality water).
 pub const MIN_CELLS: usize = 8;

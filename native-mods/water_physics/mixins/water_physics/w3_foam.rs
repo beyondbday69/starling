@@ -1,16 +1,16 @@
-//! Procedural foam mask generation for water v4.
-//!
-//! Foam is derived from four caller-supplied, normalized factors:
-//! * `steepness`  - wave steepness; high values indicate breaking crests.
-//! * `shore`      - shoreline factor (`0` in deep water, `1` at the shore).
-//! * `turbulence` - local churn from currents, wakes or collisions.
-//! * `noise`      - spatial noise used to break up flat foam edges.
-//!
-//! The factors are combined with smooth thresholds and a soft union so that
-//! overlapping foam sources saturate gracefully instead of producing hard
-//! seams. Every function is pure, deterministic, allocation-free and safe to
-//! call per vertex. Coordinates are world-space X/Z with Y up; all inputs are
-//! expected in `0..=1` but are clamped (non-finite values become `0`).
+// Procedural foam mask generation for water v4.
+//
+// Foam is derived from four caller-supplied, normalized factors:
+// * `steepness`  - wave steepness; high values indicate breaking crests.
+// * `shore`      - shoreline factor (`0` in deep water, `1` at the shore).
+// * `turbulence` - local churn from currents, wakes or collisions.
+// * `noise`      - spatial noise used to break up flat foam edges.
+//
+// The factors are combined with smooth thresholds and a soft union so that
+// overlapping foam sources saturate gracefully instead of producing hard
+// seams. Every function is pure, deterministic, allocation-free and safe to
+// call per vertex. Coordinates are world-space X/Z with Y up; all inputs are
+// expected in `0..=1` but are clamped (non-finite values become `0`).
 
 /// Wave steepness where breaking foam starts to appear.
 const STEEP_START: f32 = 0.42;

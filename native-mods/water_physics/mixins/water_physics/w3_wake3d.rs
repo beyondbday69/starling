@@ -1,28 +1,28 @@
-//! Continuous 3D wake-field height and normal evaluation for water v4.
-//!
-//! This module turns a single wake node (see `sim::WakeNode`) into an analytic
-//! height field over the X/Z plane. It is pure math: no crates, no globals, no
-//! allocation, and no dependency on `crate::game::Game` or on `sim.rs` itself.
-//!
-//! The local frame of a node is
-//!   * `s` = longitudinal offset (positive = forward, wake trails at `s < 0`),
-//!   * `w` = lateral offset (positive = left, using the node's left vector).
-//!
-//! The field is a smooth sum of
-//!   * two outer Kelvin V-arm crests at `w = +/- half_width`,
-//!   * a central stern-wash / keel ridge (stronger for boats),
-//!   * two narrower transverse wavelets bridging keel and arms (boats only),
-//! all windowed in `s` and `w` with C1-continuous falloff so neither the
-//! height nor its slope jumps at the edges of a node's influence.
-//!
-//! Public API:
-//! * [`WakeLike`] - accessor trait implemented by `sim::WakeNode`.
-//! * [`wake_height_and_slope`] - height plus world-space slopes in one pass.
-//! * [`wake_height`] - height only.
-//! * [`wake_normal`] - unit surface normal `[-dh/dx, 1, -dh/dz]`.
-//!
-//! Heights are relative to the water surface, in Minecraft blocks (meters),
-//! matching the crest displacement used by the v3.5 renderer (~0.04-0.06 m).
+// Continuous 3D wake-field height and normal evaluation for water v4.
+//
+// This module turns a single wake node (see `sim::WakeNode`) into an analytic
+// height field over the X/Z plane. It is pure math: no crates, no globals, no
+// allocation, and no dependency on `crate::game::Game` or on `sim.rs` itself.
+//
+// The local frame of a node is
+//   * `s` = longitudinal offset (positive = forward, wake trails at `s < 0`),
+//   * `w` = lateral offset (positive = left, using the node's left vector).
+//
+// The field is a smooth sum of
+//   * two outer Kelvin V-arm crests at `w = +/- half_width`,
+//   * a central stern-wash / keel ridge (stronger for boats),
+//   * two narrower transverse wavelets bridging keel and arms (boats only),
+// all windowed in `s` and `w` with C1-continuous falloff so neither the
+// height nor its slope jumps at the edges of a node's influence.
+//
+// Public API:
+// * [`WakeLike`] - accessor trait implemented by `sim::WakeNode`.
+// * [`wake_height_and_slope`] - height plus world-space slopes in one pass.
+// * [`wake_height`] - height only.
+// * [`wake_normal`] - unit surface normal `[-dh/dx, 1, -dh/dz]`.
+//
+// Heights are relative to the water surface, in Minecraft blocks (meters),
+// matching the crest displacement used by the v3.5 renderer (~0.04-0.06 m).
 
 /// Read-only view of a wake node. Implement this for `sim::WakeNode` by
 /// forwarding each accessor to the identically named field.

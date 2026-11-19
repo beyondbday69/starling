@@ -1,28 +1,28 @@
-//! Phillips-like directional wave spectrum for water v4.
-//!
-//! `WaveSpectrum::from_wind` turns a wind speed/direction plus a `u64` seed
-//! into a fixed set of eight Gerstner components. Each component is packed as
-//! `[amplitude, wavelength, dir_x, dir_z, phase_speed, phase]` so callers can
-//! feed it straight into a Gerstner wave evaluator:
-//!
-//! ```ignore
-//! let spectrum = WaveSpectrum::from_wind(9.0, [1.0, 0.3], 42);
-//! for &(amp, wavelength, dx, dz, speed, phase) in spectrum.components() {
-//!     let k = TAU / wavelength;
-//!     let f = k * (dx * x + dz * z - speed * t) + phase;
-//!     height += amp * f.sin();
-//! }
-//! ```
-//!
-//! Design:
-//! * Wavelengths are log-spaced around the Phillips dominant wavelength
-//!   `L = U^2 / g`, so higher wind produces longer, faster waves.
-//! * Directional energy follows the Phillips `cos^2(theta)` lobe around the
-//!   wind direction, with deterministic jitter so the field is not symmetric.
-//! * Amplitudes are normalized to a wind-dependent budget to stay bounded.
-//! * All randomness comes from a splitmix64-style hash of `(seed, salt)`, so
-//!   the output is deterministic on every platform. No globals, no crates, no
-//!   allocation in hot paths. Units are Minecraft blocks (1 block = 1 m).
+// Phillips-like directional wave spectrum for water v4.
+//
+// `WaveSpectrum::from_wind` turns a wind speed/direction plus a `u64` seed
+// into a fixed set of eight Gerstner components. Each component is packed as
+// `[amplitude, wavelength, dir_x, dir_z, phase_speed, phase]` so callers can
+// feed it straight into a Gerstner wave evaluator:
+//
+// ```ignore
+// let spectrum = WaveSpectrum::from_wind(9.0, [1.0, 0.3], 42);
+// for &(amp, wavelength, dx, dz, speed, phase) in spectrum.components() {
+//     let k = TAU / wavelength;
+//     let f = k * (dx * x + dz * z - speed * t) + phase;
+//     height += amp * f.sin();
+// }
+// ```
+//
+// Design:
+// * Wavelengths are log-spaced around the Phillips dominant wavelength
+//   `L = U^2 / g`, so higher wind produces longer, faster waves.
+// * Directional energy follows the Phillips `cos^2(theta)` lobe around the
+//   wind direction, with deterministic jitter so the field is not symmetric.
+// * Amplitudes are normalized to a wind-dependent budget to stay bounded.
+// * All randomness comes from a splitmix64-style hash of `(seed, salt)`, so
+//   the output is deterministic on every platform. No globals, no crates, no
+//   allocation in hot paths. Units are Minecraft blocks (1 block = 1 m).
 
 /// Number of Gerstner components produced by the spectrum.
 pub const COMPONENT_COUNT: usize = 8;

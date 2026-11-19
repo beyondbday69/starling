@@ -1,12 +1,12 @@
-//! Packed-color utilities and water palette blending for 3D water overlays.
-//!
-//! Biome water tints arrive as `0x00RRGGBB` (e.g. `0x3F76E4`) from
-//! `BiomeInfo::water`. This module unpacks them into linear-ish `[f32; 3]`
-//! floats, blends a small physically-motivated palette (deep, shallow, foam,
-//! crest), and repacks the result into the `ABGR` u32 layout expected by
-//! `horizon_client::mesher::Vertex::color`.
-//!
-//! Pure math, no allocations, no globals, no unsafe. Safe to call per vertex.
+// Packed-color utilities and water palette blending for 3D water overlays.
+//
+// Biome water tints arrive as `0x00RRGGBB` (e.g. `0x3F76E4`) from
+// `BiomeInfo::water`. This module unpacks them into linear-ish `[f32; 3]`
+// floats, blends a small physically-motivated palette (deep, shallow, foam,
+// crest), and repacks the result into the `ABGR` u32 layout expected by
+// `horizon_client::mesher::Vertex::color`.
+//
+// Pure math, no allocations, no globals, no unsafe. Safe to call per vertex.
 
 /// Unpack a `0x00RRGGBB` packed tint into normalized `[r, g, b]` floats in
 /// `0.0..=1.0`. Higher bytes beyond 24 bits are ignored.

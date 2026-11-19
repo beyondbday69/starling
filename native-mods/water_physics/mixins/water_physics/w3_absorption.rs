@@ -1,21 +1,21 @@
-//! Beer-Lambert depth absorption for water overlays (water v4).
-//!
-//! Light travelling through water is attenuated exponentially with path length:
-//!
-//! ```text
-//! T(channel) = exp(-sigma(channel) * depth)
-//! ```
-//!
-//! Water absorbs long wavelengths (red) fastest and blue slowest. The biome
-//! water tint additionally biases attenuation per channel, so tropical water
-//! keeps more green/cyan while swamp water shifts toward dark olive-green.
-//!
-//! The base RGB is treated as linear reflectance/light arriving at the water
-//! surface. `absorb` returns the light that survives to the visible surface or
-//! seabed as linear RGB in `0.0..=1.0`. `depth_fog` returns the matching
-//! exponential fog factor for blending toward an underwater fog colour.
-//!
-//! Pure math, no allocation, no globals, no unsafe. Safe to call per vertex.
+// Beer-Lambert depth absorption for water overlays (water v4).
+//
+// Light travelling through water is attenuated exponentially with path length:
+//
+// ```text
+// T(channel) = exp(-sigma(channel) * depth)
+// ```
+//
+// Water absorbs long wavelengths (red) fastest and blue slowest. The biome
+// water tint additionally biases attenuation per channel, so tropical water
+// keeps more green/cyan while swamp water shifts toward dark olive-green.
+//
+// The base RGB is treated as linear reflectance/light arriving at the water
+// surface. `absorb` returns the light that survives to the visible surface or
+// seabed as linear RGB in `0.0..=1.0`. `depth_fog` returns the matching
+// exponential fog factor for blending toward an underwater fog colour.
+//
+// Pure math, no allocation, no globals, no unsafe. Safe to call per vertex.
 
 /// Absorption coefficient baseline for red light (per metre).
 const SIGMA_R: f32 = 0.46;

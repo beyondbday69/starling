@@ -1,17 +1,17 @@
-//! Deterministic, dependency-free noise primitives for water v4.
-//!
-//! All functions are pure: the same `(x, z, seed)` always produces the same
-//! value on every platform. No crates, no globals, no heap allocation.
-//! Coordinates are world-space X/Z (Y up); `seed` decorrelates independent
-//! fields (waves, foam, caustics, particles, ...).
-//!
-//! Public API:
-//! * [`hash2`] / [`hash3`] - seeded lattice hashes in `[0, 1)`.
-//! * [`smoothstep`] - Hermite interpolation factor, clamped to `[0, 1]`.
-//! * [`value2`] / [`value3`] - seeded value noise in `[0, 1]`.
-//! * [`fbm2`] / [`fbm3`] - normalized fractal noise in `[0, 1]`.
-//! * [`fbm2_4`] / [`fbm3_4`] - common four-octave convenience wrappers.
-//! * [`cellular2`] / [`cellular3`] - worley-ish nearest-feature distance in `[0, 1]`.
+// Deterministic, dependency-free noise primitives for water v4.
+//
+// All functions are pure: the same `(x, z, seed)` always produces the same
+// value on every platform. No crates, no globals, no heap allocation.
+// Coordinates are world-space X/Z (Y up); `seed` decorrelates independent
+// fields (waves, foam, caustics, particles, ...).
+//
+// Public API:
+// * [`hash2`] / [`hash3`] - seeded lattice hashes in `[0, 1)`.
+// * [`smoothstep`] - Hermite interpolation factor, clamped to `[0, 1]`.
+// * [`value2`] / [`value3`] - seeded value noise in `[0, 1]`.
+// * [`fbm2`] / [`fbm3`] - normalized fractal noise in `[0, 1]`.
+// * [`fbm2_4`] / [`fbm3_4`] - common four-octave convenience wrappers.
+// * [`cellular2`] / [`cellular3`] - worley-ish nearest-feature distance in `[0, 1]`.
 
 /// Mix a 32-bit integer deterministically (splitmix-style finalizer).
 #[inline]
