@@ -18,7 +18,7 @@ use horizon_client::particles::{ParticleOptions, ParticleType};
 
 pub const ID: &str = "water_physics";
 pub const NAME: &str = "Water Physics";
-pub const VERSION: &str = "3.3.0";
+pub const VERSION: &str = "3.4.0";
 pub const DESCRIPTION: &str = "Smooth 3D ripple rings, Kelvin V-wakes, splash droplets, and boat hydrodynamics.";
 
 struct WaterPhysicsState {
@@ -135,7 +135,31 @@ impl Game<'_> {
             let pz = player.position.z as f64;
             let p_vy = player.velocity.y as f64;
 
-            if let Some(water_y) = self.wp_water_surface_at(px, py, pz) {
+            let is_in_boat = self.riding.is_some()
+                || player.is_passenger
+                || player.fluids.boat.is_some()
+                || self.boats.iter().any(|b| {
+                    let dx = b.position.x as f64 - px;
+                    let dz = b.position.z as f64 - pz;
+                    let dy = (b.position.y as f64 - py).abs();
+                    (dx * dx + dz * dz) < 2.5 && dy < 1.6
+                });
+
+            if is_in_boat {
+                // When riding in a boat or vehicle, suppress all footstep rings,
+                // splash impacts, transverse ripple rings, and player wake ribbons!
+                // Keep tracking state synchronized with the player's position so
+                // that dismounting doesn't create a giant sudden delta jump.
+                let mut track = TRACKING.lock().unwrap();
+                track.last_pos_x = px;
+                track.last_pos_y = py;
+                track.last_pos_z = pz;
+                track.last_vel_y = p_vy;
+                track.last_time = Some(now);
+                track.step_accum = 0.0;
+                track.wake_accum = 0.0;
+                track.initialized = true;
+            } else if let Some(water_y) = self.wp_water_surface_at(px, py, pz) {
                 let mut track = TRACKING.lock().unwrap();
                 if !track.initialized {
                     track.last_pos_x = px;
@@ -259,6 +283,14 @@ impl Game<'_> {
             if d2 > 12.0 * 12.0 {
                 continue;
             }
+            // Skip mobs riding a boat
+            if self.boats.iter().any(|b| {
+                let dx = b.position.x as f64 - mx;
+                let dz = b.position.z as f64 - mz;
+                (dx * dx + dz * dz) < 2.0
+            }) {
+                continue;
+            }
             let mvx = m.velocity.x as f64;
             let mvz = m.velocity.z as f64;
             if (mvx * mvx + mvz * mvz).sqrt() > 0.06 {
@@ -340,7 +372,7 @@ impl Game<'_> {
             // Logcat profiling output every 2 seconds
             if now.duration_since(state.last_log_time) >= std::time::Duration::from_secs(2) {
                 log::info!(
-                    "water_physics v3.3: rings={}, player_wakes={}, boat_wakes={}",
+                    "water_physics v3.4: rings={}, player_wakes={}, boat_wakes={}",
                     state.sim.rings.len(),
                     state.sim.player_wakes.len(),
                     state.sim.boat_wakes.len()

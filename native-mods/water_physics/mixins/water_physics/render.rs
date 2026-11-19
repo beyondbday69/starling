@@ -1,11 +1,13 @@
-// Geometric water wave and wake renderer (v3.3).
+// Geometric water wave and wake renderer (v3.4).
 //
 // Key features:
-// - Circular ripple rings: Smooth 24-gon expanding torus quads with raised 3D crests (+0.045m to +0.065m).
+// - Native Minecraft Biome Water Color: Uses the exact biome water color (sampled from chunk biomes)
+//   for seamless matching across all biomes (swamp, ocean, river, warm ocean, shaders). ZERO artificial cyan paint.
+// - Circular ripple rings: Smooth 24-gon expanding torus quads with raised 3D crests (+0.045m to +0.060m).
 //   Zero-pop envelope ensures perfectly smooth attack and cubic decay to zero alpha and zero height.
 // - V-Wake ribbons: Sleek, hydrodynamic single-ridge 3D Kelvin V-wake arms (Left and Right) with raised crests
 //   (+0.04m to +0.06m) and slender ~25-40cm width, eliminating multi-ribbon striping and thick bands.
-// - Soft glass water reflection with zero-alpha edges for 100% seamless blending. ZERO white foam quads.
+// - Soft crystal water reflection with zero-alpha edges for 100% seamless blending. ZERO white foam quads.
 
 use crate::game::Game;
 use super::native_water_physics_sim as sim;
@@ -46,6 +48,25 @@ pub fn render_wave_overlays(
 }
 
 impl Game<'_> {
+    pub(super) fn wp_water_tint(&self, bx: i32, by: i32, bz: i32) -> (u32, u32, u32) {
+        let chunk_x = bx >> 4;
+        let chunk_z = bz >> 4;
+        let water_color = if let Some(chunk) = self.world.chunks.get(&(chunk_x, chunk_z)) {
+            let biome_id = chunk.biome(bx & 15, by, bz & 15);
+            let biomes = match &self.world_biomes {
+                Some(b) => b.as_ref(),
+                None => self.res.biomes().as_ref(),
+            };
+            biomes.get(biome_id).water
+        } else {
+            0x3F76E4
+        };
+        let r = (water_color >> 16) & 0xFF;
+        let g = (water_color >> 8) & 0xFF;
+        let b = water_color & 0xFF;
+        (r, g, b)
+    }
+
     pub(super) fn render_wave_overlays(
         &self,
         sim: &sim::WaterSimulation,
@@ -94,22 +115,26 @@ impl Game<'_> {
             let light_packed = self.world.light(bx, by + 1, bz);
             let light = horizon_client::block_entity_render::vertex_light(light_packed);
 
+            let (r_base, g_base, b_base) = self.wp_water_tint(bx, by, bz);
+
             // Ring geometry parameters: expands smoothly with radius
             let r_crest = ring.radius;
-            let width = (0.14 + 0.16 * ring.radius).clamp(0.18, 0.50);
+            let width = (0.14 + 0.16 * ring.radius).clamp(0.18, 0.48);
             let r_inner = (r_crest - width * 0.5).max(0.02);
             let r_outer = r_crest + width * 0.5;
 
-            // Physical 3D crest displacement: elevates smoothly up to +0.065m
-            let crest_h = (0.045 * amp).min(0.065);
+            // Physical 3D crest displacement: elevates smoothly up to +0.060m
+            let crest_h = (0.045 * amp).min(0.060);
             let y_base = ring.water_y as f32 + 0.002 + cam_y;
             let y_crest = ring.water_y as f32 + 0.003 + crest_h + cam_y;
 
             let base_cam_x = (ring.center_x - camera.x) as f32;
             let base_cam_z = (ring.center_z - camera.z) as f32;
 
-            let alpha_crest = (0.38 * amp).clamp(0.0, 0.45);
+            let alpha_crest = (0.24 * amp).clamp(0.0, 0.28);
             let a_crest_u32 = (alpha_crest * 255.0) as u32;
+
+            let color_edge = (b_base << 16) | (g_base << 8) | r_base; // alpha = 0 for seamless blend
 
             for k in 0..segments {
                 let th0 = (k as f32) * step_rad;
@@ -122,15 +147,14 @@ impl Game<'_> {
 
                 // Surface normal lighting on wave crest
                 let norm_dot = (c0 * sun_x + 0.92 * sun_y + s0 * sun_z).clamp(0.0, 1.0);
-                let lit = 0.70 + 0.30 * norm_dot;
+                let lit = 1.0 + 0.20 * norm_dot;
 
-                // Crisp transparent water glint reflection
-                let r_col = ((220.0 * lit).min(255.0)) as u32;
-                let g_col = ((240.0 * lit).min(255.0)) as u32;
-                let b_col = 255u32;
+                // Natural water reflection glint over native Minecraft water color
+                let r_col = ((r_base as f32 * lit).min(255.0)) as u32;
+                let g_col = ((g_base as f32 * lit).min(255.0)) as u32;
+                let b_col = ((b_base as f32 * lit).min(255.0)) as u32;
 
                 let color_crest = (a_crest_u32 << 24) | (b_col << 16) | (g_col << 8) | r_col;
-                let color_edge = (b_col << 16) | (g_col << 8) | r_col; // alpha = 0 for seamless blend
 
                 // Positions:
                 // Inner rim (y_base, alpha=0)
@@ -217,6 +241,12 @@ impl Game<'_> {
             let bz0 = n0.pos_z.floor() as i32;
             let light = horizon_client::block_entity_render::vertex_light(self.world.light(bx0, by0 + 1, bz0));
 
+            let (r0, g0, b0) = self.wp_water_tint(bx0, by0, bz0);
+            let bx1 = n1.pos_x.floor() as i32;
+            let by1 = n1.water_y.floor() as i32;
+            let bz1 = n1.pos_z.floor() as i32;
+            let (r1, g1, b1) = self.wp_water_tint(bx1, by1, bz1);
+
             let base_x0 = (n0.pos_x - camera.x) as f32;
             let base_z0 = (n0.pos_z - camera.z) as f32;
             let base_x1 = (n1.pos_x - camera.x) as f32;
@@ -249,20 +279,31 @@ impl Game<'_> {
             let half_w0 = arm_w0 * 0.5;
             let half_w1 = arm_w1 * 0.5;
 
-            // Shading & Alpha: Pure crystal water reflection glint, NO foam
-            let alpha_cr0 = (0.32 * amp0).clamp(0.0, 0.38);
-            let alpha_cr1 = (0.32 * amp1).clamp(0.0, 0.38);
+            // Shading & Alpha: Pure water reflection glint over native Minecraft water color
+            let alpha_cr0 = (0.22 * amp0).clamp(0.0, 0.26);
+            let alpha_cr1 = (0.22 * amp1).clamp(0.0, 0.26);
             let a_cr0_u32 = (alpha_cr0 * 255.0) as u32;
             let a_cr1_u32 = (alpha_cr1 * 255.0) as u32;
 
-            let (r0, g0, b0) = (215u32, 235u32, 255u32);
-            let (r1, g1, b1) = (215u32, 235u32, 255u32);
+            let sun_x = 0.28f32;
+            let sun_y = 0.88f32;
+            let sun_z = -0.38f32;
+            let lit0 = 1.0 + 0.20 * (n0.dir_x * sun_x + 0.92 * sun_y + n0.dir_z * sun_z).clamp(0.0, 1.0);
+            let lit1 = 1.0 + 0.20 * (n1.dir_x * sun_x + 0.92 * sun_y + n1.dir_z * sun_z).clamp(0.0, 1.0);
+
+            let r_cr0 = ((r0 as f32 * lit0).min(255.0)) as u32;
+            let g_cr0 = ((g0 as f32 * lit0).min(255.0)) as u32;
+            let b_cr0 = ((b0 as f32 * lit0).min(255.0)) as u32;
+
+            let r_cr1 = ((r1 as f32 * lit1).min(255.0)) as u32;
+            let g_cr1 = ((g1 as f32 * lit1).min(255.0)) as u32;
+            let b_cr1 = ((b1 as f32 * lit1).min(255.0)) as u32;
 
             let col_edge0 = (b0 << 16) | (g0 << 8) | r0; // alpha = 0 for seamless baseline
             let col_edge1 = (b1 << 16) | (g1 << 8) | r1;
 
-            let col_crest0 = (a_cr0_u32 << 24) | (b0 << 16) | (g0 << 8) | r0;
-            let col_crest1 = (a_cr1_u32 << 24) | (b1 << 16) | (g1 << 8) | r1;
+            let col_crest0 = (a_cr0_u32 << 24) | (b_cr0 << 16) | (g_cr0 << 8) | r_cr0;
+            let col_crest1 = (a_cr1_u32 << 24) | (b_cr1 << 16) | (g_cr1 << 8) | r_cr1;
 
             // Transverse wave sample widths along single Kelvin arm:
             let w_in0 = (hw0 - half_w0).max(0.03);
