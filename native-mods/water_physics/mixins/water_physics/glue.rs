@@ -1,4 +1,4 @@
-//! Main lifecycle, disturbance scanning, and hooks for the Water Physics native mod.
+// Main lifecycle, disturbance scanning, and hooks for the Water Physics native mod.
 
 use std::sync::Mutex;
 use crate::game::Game;

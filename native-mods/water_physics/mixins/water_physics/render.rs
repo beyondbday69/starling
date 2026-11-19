@@ -1,7 +1,7 @@
-//! Water wave overlay renderer.
-//!
-//! Generates translucent mesh quads at the water surface for active wave tiles,
-//! shaded using heightfield surface normals, specular highlights, and foam blending.
+// Water wave overlay renderer.
+//
+// Generates translucent mesh quads at the water surface for active wave tiles,
+// shaded using heightfield surface normals, specular highlights, and foam blending.
 
 use crate::game::Game;
 use super::native_water_physics_sim as sim;

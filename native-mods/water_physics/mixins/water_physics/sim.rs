@@ -1,8 +1,8 @@
-//! 2D Heightfield water wave simulation with leapfrog PDE and dispersion.
-//!
-//! Simulation PDE:
-//!   h_new = 2h - h_prev + C^2 * laplacian + dispersion - damping * (h - h_prev)
-//! Plus local foam decay and energy-based idle tile suspension.
+// 2D Heightfield water wave simulation with leapfrog PDE and dispersion.
+//
+// Simulation PDE:
+//   h_new = 2h - h_prev + C^2 * laplacian + dispersion - damping * (h - h_prev)
+// Plus local foam decay and energy-based idle tile suspension.
 
 pub const DEFAULT_RES: usize = 24;
 pub const DEFAULT_MAX_TILES: usize = 4;
