@@ -247,11 +247,11 @@ impl Game<'_> {
         if let Some((sx, sy, sz, impact)) = splash_impact {
             let droplet_count = ((impact * 10.0) as usize).clamp(6, 20);
             for i in 0..droplet_count {
-                let angle = (i as f32 / droplet_count as f32) * std::f32::consts::PI * 2.0;
-                let spd = 0.07 + 0.06 * ((i % 3) as f32);
-                let vx = (angle.cos() * spd) as f64;
-                let vz = (angle.sin() * spd) as f64;
-                let vy = 0.14 + 0.08 * ((i % 2) as f32) * (impact as f64);
+                let angle = (i as f64 / droplet_count as f64) * std::f64::consts::PI * 2.0;
+                let spd = 0.07 + 0.06 * ((i % 3) as f64);
+                let vx = angle.cos() * spd;
+                let vz = angle.sin() * spd;
+                let vy = 0.14 + 0.08 * ((i % 2) as f64) * (impact as f64);
                 self.particles.add(
                     &ParticleOptions::simple(ParticleType::Splash),
                     [sx + vx * 0.4, sy + 0.04, sz + vz * 0.4],
