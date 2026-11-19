@@ -1,10 +1,10 @@
 # Starling Project Status & Complete Context
 
 **Repository:** `beyondbday69/starling`  
-**Current Active Branch:** `feat/shader-fsr-upscaling`  
+**Current Active Branch:** `feat/water-physics`  
 **Target Platform:** Android (ARM64 `arm64-v8a`)  
-**Latest Commit:** `dcf4245` (`fix(skins_3d): resolve skin pixels from atlas and own_skin and prevent CEM override`)  
-**Latest Successful CI Run:** `#44464049499` (Artifact: `14501069325`, size: 35.2 MB)  
+**Latest Commit:** `1f03664` (`fix(water_physics): resolve type conversions and render_wave_overlays delegation`)  
+**Latest Successful CI Run:** `#44498811898` (Artifact: `14516308815`, size: 35.2 MB)  
 **Last Updated:** November 2026  
 
 ---
@@ -155,7 +155,8 @@ graph TD
 
 | Run ID | Commit | Description | Artifact ID / Download | Status |
 |---|---|---|---|---|
-| **#44464049499** | `dcf4245` | **Latest Working Build:** 3D Skins Real Voxels Fix (Atlas Extraction + In-Memory Own Skin + CEM Override Prevention) + Screen-Split Touch Controls + Cinematic Interactions + Gyro | [Artifact 14501069325](https://github.com/beyondbday69/starling/actions/runs/44464049499/artifacts/14501069325) | **PASSED (Green)** |
+| **#44498811898** | `1f03664` | **Water Physics Native Mod (`water_physics`):** 2D Heightfield Leapfrog Wave Simulation + Kelvin Wake + Splash + Specular Mesh Overlay | [Artifact 14516308815](https://github.com/beyondbday69/starling/actions/runs/44498811898/artifacts/14516308815) | **PASSED (Green)** |
+| **#44464049499** | `dcf4245` | **3D Skins Real Voxels Fix:** Atlas Extraction + In-Memory Own Skin + CEM Override Prevention + Screen-Split Controls | [Artifact 14501069325](https://github.com/beyondbday69/starling/actions/runs/44464049499/artifacts/14501069325) | **PASSED (Green)** |
 | **#44408523280** | `0faef7a` | Screen-Split LMB/RMB Controls + Action Text Indicator + Cinematic Interactions + 3D Skins + Gyro | [Artifact 14475234256](https://github.com/beyondbday69/starling/actions/runs/44408523280/artifacts/14475234256) | PASSED |
 | **#44395053407** | `e35ea8e` | Sweep Drag + Cinematic Interactions + 3D Skins + Gyro | [Artifact 14472020982](https://github.com/beyondbday69/starling/actions/runs/44395053407/artifacts/14472020982) | PASSED |
 | **#44389836599** | `e35ea8e` | Option 1 Sweep Drag item collection (plain build) | [Artifact 14469510477](https://github.com/beyondbday69/starling/actions/runs/44389836599/artifacts/14469510477) | PASSED |
