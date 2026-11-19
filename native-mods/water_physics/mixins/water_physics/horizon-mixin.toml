@@ -1,6 +1,6 @@
 [mod]
 id = "water_physics"
-version = "3.6.0"
+version = "4.0.0"
 priority = 100
 
 [compatibility]
@@ -25,6 +25,231 @@ id = "glue"
 file = "crates/horizon-client/src/game.rs"
 name = "native_water_physics_glue"
 source = "glue.rs"
+visibility = "pub"
+
+# --- Water Physics v4 (w3_*) modules ---
+[[module]]
+id = "quality"
+file = "crates/horizon-client/src/game.rs"
+name = "native_water_physics_quality"
+source = "w3_quality.rs"
+visibility = "pub"
+
+[[module]]
+id = "noise"
+file = "crates/horizon-client/src/game.rs"
+name = "native_water_physics_noise"
+source = "w3_noise.rs"
+visibility = "pub"
+
+[[module]]
+id = "gerstner"
+file = "crates/horizon-client/src/game.rs"
+name = "native_water_physics_gerstner"
+source = "w3_gerstner.rs"
+visibility = "pub"
+
+[[module]]
+id = "normals"
+file = "crates/horizon-client/src/game.rs"
+name = "native_water_physics_normals"
+source = "w3_normals.rs"
+visibility = "pub"
+
+[[module]]
+id = "shore"
+file = "crates/horizon-client/src/game.rs"
+name = "native_water_physics_shore"
+source = "w3_shore.rs"
+visibility = "pub"
+
+[[module]]
+id = "foam"
+file = "crates/horizon-client/src/game.rs"
+name = "native_water_physics_foam"
+source = "w3_foam.rs"
+visibility = "pub"
+
+[[module]]
+id = "flow"
+file = "crates/horizon-client/src/game.rs"
+name = "native_water_physics_flow"
+source = "w3_flow.rs"
+visibility = "pub"
+
+[[module]]
+id = "waterfall"
+file = "crates/horizon-client/src/game.rs"
+name = "native_water_physics_waterfall"
+source = "w3_waterfall.rs"
+visibility = "pub"
+
+[[module]]
+id = "droplets"
+file = "crates/horizon-client/src/game.rs"
+name = "native_water_physics_droplets"
+source = "w3_droplets.rs"
+visibility = "pub"
+
+[[module]]
+id = "spray"
+file = "crates/horizon-client/src/game.rs"
+name = "native_water_physics_spray"
+source = "w3_spray.rs"
+visibility = "pub"
+
+[[module]]
+id = "mist"
+file = "crates/horizon-client/src/game.rs"
+name = "native_water_physics_mist"
+source = "w3_mist.rs"
+visibility = "pub"
+
+[[module]]
+id = "bubbles"
+file = "crates/horizon-client/src/game.rs"
+name = "native_water_physics_bubbles"
+source = "w3_bubbles.rs"
+visibility = "pub"
+
+[[module]]
+id = "foamflecks"
+file = "crates/horizon-client/src/game.rs"
+name = "native_water_physics_foamflecks"
+source = "w3_foamflecks.rs"
+visibility = "pub"
+
+[[module]]
+id = "fresnel"
+file = "crates/horizon-client/src/game.rs"
+name = "native_water_physics_fresnel"
+source = "w3_fresnel.rs"
+visibility = "pub"
+
+[[module]]
+id = "refraction"
+file = "crates/horizon-client/src/game.rs"
+name = "native_water_physics_refraction"
+source = "w3_refraction.rs"
+visibility = "pub"
+
+[[module]]
+id = "absorption"
+file = "crates/horizon-client/src/game.rs"
+name = "native_water_physics_absorption"
+source = "w3_absorption.rs"
+visibility = "pub"
+
+[[module]]
+id = "caustics"
+file = "crates/horizon-client/src/game.rs"
+name = "native_water_physics_caustics"
+source = "w3_caustics.rs"
+visibility = "pub"
+
+[[module]]
+id = "sky"
+file = "crates/horizon-client/src/game.rs"
+name = "native_water_physics_sky"
+source = "w3_sky.rs"
+visibility = "pub"
+
+[[module]]
+id = "sun"
+file = "crates/horizon-client/src/game.rs"
+name = "native_water_physics_sun"
+source = "w3_sun.rs"
+visibility = "pub"
+
+[[module]]
+id = "light"
+file = "crates/horizon-client/src/game.rs"
+name = "native_water_physics_light"
+source = "w3_light.rs"
+visibility = "pub"
+
+[[module]]
+id = "tessellation"
+file = "crates/horizon-client/src/game.rs"
+name = "native_water_physics_tessellation"
+source = "w3_tessellation.rs"
+visibility = "pub"
+
+[[module]]
+id = "patch"
+file = "crates/horizon-client/src/game.rs"
+name = "native_water_physics_patch"
+source = "w3_patch.rs"
+visibility = "pub"
+
+[[module]]
+id = "ripple3d"
+file = "crates/horizon-client/src/game.rs"
+name = "native_water_physics_ripple3d"
+source = "w3_ripple3d.rs"
+visibility = "pub"
+
+[[module]]
+id = "wake3d"
+file = "crates/horizon-client/src/game.rs"
+name = "native_water_physics_wake3d"
+source = "w3_wake3d.rs"
+visibility = "pub"
+
+[[module]]
+id = "spectrum"
+file = "crates/horizon-client/src/game.rs"
+name = "native_water_physics_spectrum"
+source = "w3_spectrum.rs"
+visibility = "pub"
+
+[[module]]
+id = "buoyancy"
+file = "crates/horizon-client/src/game.rs"
+name = "native_water_physics_buoyancy"
+source = "w3_buoyancy.rs"
+visibility = "pub"
+
+[[module]]
+id = "viscosity"
+file = "crates/horizon-client/src/game.rs"
+name = "native_water_physics_viscosity"
+source = "w3_viscosity.rs"
+visibility = "pub"
+
+[[module]]
+id = "splashes"
+file = "crates/horizon-client/src/game.rs"
+name = "native_water_physics_splashes"
+source = "w3_splashes.rs"
+visibility = "pub"
+
+[[module]]
+id = "swell"
+file = "crates/horizon-client/src/game.rs"
+name = "native_water_physics_swell"
+source = "w3_swell.rs"
+visibility = "pub"
+
+[[module]]
+id = "color"
+file = "crates/horizon-client/src/game.rs"
+name = "native_water_physics_color"
+source = "w3_color.rs"
+visibility = "pub"
+
+[[module]]
+id = "profiler"
+file = "crates/horizon-client/src/game.rs"
+name = "native_water_physics_profiler"
+source = "w3_profiler.rs"
+visibility = "pub"
+
+[[module]]
+id = "api"
+file = "crates/horizon-client/src/game.rs"
+name = "native_water_physics_api"
+source = "w3_api.rs"
 visibility = "pub"
 
 [[injection]]

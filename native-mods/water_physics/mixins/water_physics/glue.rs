@@ -13,21 +13,22 @@ use std::time::Instant;
 use crate::game::Game;
 use super::native_water_physics_render as render;
 use super::native_water_physics_sim as sim;
+use super::native_water_physics_api as api;
+use super::native_water_physics_quality as quality;
 use horizon_client::mesher::Vertex;
 use horizon_client::particles::{ParticleOptions, ParticleType};
 
 pub const ID: &str = "water_physics";
 pub const NAME: &str = "Water Physics";
-pub const VERSION: &str = "3.6.0";
-pub const DESCRIPTION: &str = "Dynamic 3D waves, living Kelvin wake fields with hull wash, boat bow spray & bubble churn, and shader-preserving water optics.";
+pub const VERSION: &str = "4.0.0";
+pub const DESCRIPTION: &str = "Real 3D displaced water with ambient Gerstner waves, per-vertex normals, shoreline shoaling, boat wakes, depth absorption, caustics and volumetric droplet/spray/mist particles.";
 
 struct WaterPhysicsState {
     sim: sim::WaterSimulation,
+    v4: api::WaterV4,
     cache: render::RenderCache,
     last_tick: Instant,
     last_log_time: Instant,
-    boat_spray_timer: f32,
-    ambient_wavelet_timer: f32,
 }
 
 static STATE: Mutex<Option<WaterPhysicsState>> = Mutex::new(None);
@@ -64,11 +65,10 @@ where
         let now = Instant::now();
         *guard = Some(WaterPhysicsState {
             sim: sim::WaterSimulation::new(),
+            v4: api::WaterV4::new(quality::QualitySettings::BALANCED),
             cache: render::RenderCache::new(),
             last_tick: now,
             last_log_time: now,
-            boat_spray_timer: 0.0,
-            ambient_wavelet_timer: 0.0,
         });
     }
     f(guard.as_mut().unwrap())
@@ -126,12 +126,13 @@ impl Game<'_> {
         let now = Instant::now();
 
         // 1. Collect disturbances outside the mutex to allow mutable particle spawning
+        let player_x = self.player.as_ref().map(|p| p.position.x as f64).unwrap_or(0.0);
+        let player_y = self.player.as_ref().map(|p| p.position.y as f64).unwrap_or(0.0);
+        let player_z = self.player.as_ref().map(|p| p.position.z as f64).unwrap_or(0.0);
         let mut splash_impact: Option<(f64, f64, f64, f32)> = None;
         let mut wake_sample: Option<(f64, f64, f64, f32, f32, f32, bool)> = None;
         let mut player_rings: Vec<(f64, f64, f64, f32)> = Vec::new();
-        let mut ambient_rings: Vec<(f64, f64, f64, f32)> = Vec::new();
         let mut boat_samples: Vec<(f64, f64, f64, f32, f32, f32)> = Vec::new();
-        let mut boat_spray_emitters: Vec<(f64, f64, f64, f32, f32, f32)> = Vec::new();
         let mut mob_rings: Vec<(f64, f64, f64)> = Vec::new();
 
         // Player disturbance evaluation
@@ -253,7 +254,7 @@ impl Game<'_> {
             }
         }
 
-        // Boat disturbance & particle evaluation
+        // Boat disturbance evaluation
         for b in &self.boats {
             let bx = b.position.x as f64;
             let by = b.position.y as f64;
@@ -262,21 +263,16 @@ impl Game<'_> {
                 let bvx = b.velocity.x as f64;
                 let bvz = b.velocity.z as f64;
                 let b_speed = (((bvx * bvx + bvz * bvz).sqrt() * 20.0) as f32).clamp(0.0, 10.0);
-                let rad = (b.yaw as f32).to_radians();
-                let fwd_x = -rad.sin();
-                let fwd_z = rad.cos();
-
                 if b_speed > 0.25 {
+                    let rad = (b.yaw as f32).to_radians();
+                    let fwd_x = -rad.sin();
+                    let fwd_z = rad.cos();
+
                     // Offset slightly toward the boat stern where the wake originates
                     let stern_x = bx - (fwd_x as f64) * 0.35;
                     let stern_z = bz - (fwd_z as f64) * 0.35;
 
                     boat_samples.push((stern_x, stern_z, water_y, fwd_x, fwd_z, b_speed));
-                }
-
-                // Boat water particles when cruising through water
-                if b_speed > 1.4 {
-                    boat_spray_emitters.push((bx, bz, water_y, fwd_x, fwd_z, b_speed));
                 }
             }
         }
@@ -316,29 +312,7 @@ impl Game<'_> {
             }
         }
 
-        // 2. Check timers for boat spray & ambient wavelets
-        let (emit_boat_spray, emit_ambient) = with_state(|state| {
-            let dt = now.duration_since(state.last_tick).as_secs_f32().min(0.10);
-            state.boat_spray_timer += dt;
-            let spray = if state.boat_spray_timer >= 0.08 {
-                state.boat_spray_timer = 0.0;
-                true
-            } else {
-                false
-            };
-
-            state.ambient_wavelet_timer += dt;
-            let ambient = if state.ambient_wavelet_timer >= 2.2 {
-                state.ambient_wavelet_timer = 0.0;
-                true
-            } else {
-                false
-            };
-
-            (spray, ambient)
-        });
-
-        // 3. Spawn real water splash droplet particles when entering water
+        // 2. Spawn real water splash droplet particles when entering water
         if let Some((sx, sy, sz, impact)) = splash_impact {
             let droplet_count = ((impact * 10.0) as usize).clamp(6, 20);
             for i in 0..droplet_count {
@@ -355,95 +329,7 @@ impl Game<'_> {
             }
         }
 
-        // 4. Spawn boat water particles (bow spray & stern bubble churn)
-        if emit_boat_spray {
-            for (bx, bz, water_y, fwd_x, fwd_z, b_speed) in boat_spray_emitters {
-                let left_x = -fwd_z;
-                let left_z = fwd_x;
-
-                // Bow cutting spray (front of the boat cutting laterally through water)
-                let bow_x = bx + (fwd_x as f64) * 0.95;
-                let bow_z = bz + (fwd_z as f64) * 0.95;
-                let bow_y = water_y + 0.05;
-
-                let spd_factor = (b_speed * 0.035).clamp(0.06, 0.20) as f64;
-                let vy = (0.07 + (b_speed * 0.015).clamp(0.02, 0.10)) as f64;
-
-                // Left spray droplet
-                let vx_l = (fwd_x as f64) * 0.05 + (left_x as f64) * spd_factor;
-                let vz_l = (fwd_z as f64) * 0.05 + (left_z as f64) * spd_factor;
-                self.particles.add(
-                    &ParticleOptions::simple(ParticleType::Splash),
-                    [bow_x + (left_x as f64) * 0.32, bow_y, bow_z + (left_z as f64) * 0.32],
-                    [vx_l, vy, vz_l],
-                );
-
-                // Right spray droplet
-                let vx_r = (fwd_x as f64) * 0.05 - (left_x as f64) * spd_factor;
-                let vz_r = (fwd_z as f64) * 0.05 - (left_z as f64) * spd_factor;
-                self.particles.add(
-                    &ParticleOptions::simple(ParticleType::Splash),
-                    [bow_x - (left_x as f64) * 0.32, bow_y, bow_z - (left_z as f64) * 0.32],
-                    [vx_r, vy, vz_r],
-                );
-
-                // Stern wash churn (bubbles & foaming wake droplets)
-                let stern_x = bx - (fwd_x as f64) * 0.90;
-                let stern_z = bz - (fwd_z as f64) * 0.90;
-                let stern_y = water_y - 0.02;
-
-                let churn_vx = -(fwd_x as f64) * 0.06;
-                let churn_vz = -(fwd_z as f64) * 0.06;
-                self.particles.add(
-                    &ParticleOptions::simple(ParticleType::Bubble),
-                    [stern_x, stern_y, stern_z],
-                    [churn_vx, 0.06, churn_vz],
-                );
-
-                if b_speed > 2.8 {
-                    self.particles.add(
-                        &ParticleOptions::simple(ParticleType::Splash),
-                        [stern_x, water_y + 0.03, stern_z],
-                        [churn_vx * 0.8, 0.08, churn_vz * 0.8],
-                    );
-                }
-            }
-        }
-
-        // 5. Ambient 3D surface wavelets (gentle water breathing when idling)
-        if emit_ambient {
-            for b in &self.boats {
-                let bx = b.position.x as f64;
-                let by = b.position.y as f64;
-                let bz = b.position.z as f64;
-                if let Some(water_y) = self.wp_water_surface_at(bx, by, bz) {
-                    let bvx = b.velocity.x as f64;
-                    let bvz = b.velocity.z as f64;
-                    let b_speed = (((bvx * bvx + bvz * bvz).sqrt() * 20.0) as f32).clamp(0.0, 10.0);
-                    if b_speed < 0.40 {
-                        ambient_rings.push((bx, bz, water_y, 0.22));
-                    }
-                }
-            }
-
-            if let Some(player) = self.player.as_ref() {
-                let px = player.position.x as f64;
-                let py = player.position.y as f64;
-                let pz = player.position.z as f64;
-                if let Some(water_y) = self.wp_water_surface_at(px, py, pz) {
-                    let in_water = player.fluids.was_touching_water || player.swimming;
-                    let is_at_surface = (py <= water_y + 0.40 && py + 2.50 >= water_y) || (in_water && py <= water_y + 0.25);
-                    let p_vx = player.velocity.x as f64;
-                    let p_vz = player.velocity.z as f64;
-                    let vel_h = (p_vx * p_vx + p_vz * p_vz).sqrt() * 20.0;
-                    if is_at_surface && vel_h < 0.25 {
-                        ambient_rings.push((px, pz, water_y, 0.18));
-                    }
-                }
-            }
-        }
-
-        // 6. Inject geometric waves and step simulation
+        // 3. Inject geometric waves and step simulation
         with_state(|state| {
             let dt = now.duration_since(state.last_tick).as_secs_f32().min(0.10);
             state.last_tick = now;
@@ -477,32 +363,52 @@ impl Game<'_> {
             if let Some((wx, wz, wy, dx, dz, spd, _is_swim)) = wake_sample {
                 state.sim.add_wake_node(wx, wz, wy, dx, dz, spd, false);
             }
-            for (rx, rz, ry, r_amp) in player_rings {
+            for &(rx, rz, ry, r_amp) in &player_rings {
                 state.sim.spawn_ring(rx, rz, ry, 0.08, 2.6, 1.25, r_amp, 2.2, false);
             }
 
-            // Ambient 3D surface wavelets
-            for (rx, rz, ry, r_amp) in ambient_rings {
-                state.sim.spawn_ring(rx, rz, ry, 0.35, 2.5, 0.45, r_amp, 3.2, false);
-            }
-
             // Boat wakes
-            for (bx, bz, by, fwd_x, fwd_z, b_speed) in boat_samples {
+            for &(bx, bz, by, fwd_x, fwd_z, b_speed) in &boat_samples {
                 state.sim.add_wake_node(bx, bz, by, fwd_x, fwd_z, b_speed, true);
             }
 
             // Mobs
-            for (mx, mz, my) in mob_rings {
+            for &(mx, mz, my) in &mob_rings {
                 state.sim.spawn_ring(mx, mz, my, 0.05, 1.5, 0.95, 0.35, 1.8, false);
             }
 
             // Step fluid physics at live frame rate
             state.sim.step(dt);
 
+            // --- Water Physics v4 facade: feed the same disturbances into the
+            //     3D ambient surface (height/normal) engine, then advance it.
+            // Camera position approximated by the player eye for LOD/ambient phase.
+            let cam = [
+                player_x as f32,
+                player_y as f32,
+                player_z as f32,
+            ];
+            if let Some((sx, _sy, sz, impact)) = splash_impact {
+                state.v4.push_ripple(sx as f32, sz as f32, impact);
+            }
+            if let Some((wx, wz, _wy, dx, dz, spd, _swim)) = wake_sample {
+                state.v4.push_wake(wx as f32, wz as f32, dx, dz, spd, false);
+            }
+            for (rx, rz, _ry, r_amp) in &player_rings {
+                state.v4.push_ripple(*rx as f32, *rz as f32, *r_amp);
+            }
+            for (bx, bz, _by, fdx, fdz, bspd) in &boat_samples {
+                state.v4.push_wake(*bx as f32, *bz as f32, *fdx, *fdz, *bspd, true);
+            }
+            for (mx, mz, _my) in &mob_rings {
+                state.v4.push_ripple(*mx as f32, *mz as f32, 0.35);
+            }
+            state.v4.step(dt, cam);
+
             // Logcat profiling output every 2 seconds
             if now.duration_since(state.last_log_time) >= std::time::Duration::from_secs(2) {
                 log::info!(
-                    "water_physics v3.6: rings={}, player_wakes={}, boat_wakes={}",
+                    "water_physics v4: rings={}, player_wakes={}, boat_wakes={}",
                     state.sim.rings.len(),
                     state.sim.player_wakes.len(),
                     state.sim.boat_wakes.len()
@@ -558,7 +464,10 @@ pub fn click(game: &mut Game<'_>, mod_id: &str, button: usize) {
                 _ => ("Smooth", 24),
             };
             game.native_set_setting(ID, "quality", next_str);
-            with_state(|s| s.sim.set_segments(seg));
+            with_state(|s| {
+                s.sim.set_segments(seg);
+                s.v4 = api::WaterV4::new(quality::QualitySettings::from_name(next_str));
+            });
             log::info!("water_physics: quality changed to {next_str} ({seg} segments)");
         }
         1 => {
@@ -603,6 +512,6 @@ pub fn draw(game: &Game<'_>, camera: glam::DVec3, out: &mut Vec<Vertex>) {
 
     let mut guard = STATE.lock().unwrap();
     if let Some(state) = guard.as_mut() {
-        game.render_wave_overlays(&state.sim, &mut state.cache, camera, out);
+        game.render_wave_overlays(&state.sim, &state.v4, &mut state.cache, camera, out);
     }
 }
