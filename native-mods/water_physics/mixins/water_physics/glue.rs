@@ -317,9 +317,10 @@ impl Game<'_> {
             // Logcat profiling output every 2 seconds
             if now.duration_since(state.last_log_time) >= std::time::Duration::from_secs(2) {
                 log::info!(
-                    "water_physics v3: rings={}, wake_nodes={}",
+                    "water_physics v3.1: rings={}, player_wakes={}, boat_wakes={}",
                     state.sim.rings.len(),
-                    state.sim.wake_nodes.len()
+                    state.sim.player_wakes.len(),
+                    state.sim.boat_wakes.len()
                 );
                 state.last_log_time = now;
             }
