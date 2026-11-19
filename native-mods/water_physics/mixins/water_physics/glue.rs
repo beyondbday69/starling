@@ -84,10 +84,13 @@ impl Game<'_> {
                 let px = pos.x as f64;
                 let py = pos.y as f64;
                 let pz = pos.z as f64;
+                let p_vy = vel.y as f64;
 
                 if let Some(water_y) = self.wp_water_surface_at(px, py, pz) {
                     let dy = py - water_y;
-                    let speed = (vel.x * vel.x + vel.z * vel.z).sqrt() as f32;
+                    let vx = vel.x as f64;
+                    let vz = vel.z as f64;
+                    let speed = (vx * vx + vz * vz).sqrt();
 
                     let mut track = TRACKING.lock().unwrap();
 
@@ -101,24 +104,24 @@ impl Game<'_> {
                         sim.inject_splash(px, pz, water_y, 1.2 * intensity, 0.45 * intensity, 0.85 * intensity);
                     } else if player.swimming || (dy < -0.2 && speed > 0.08) {
                         // Swimming V wake: body impulse slightly trailing motion
-                        let dir_x = vel.x / speed.max(0.001);
-                        let dir_z = vel.z / speed.max(0.001);
-                        let wake_x = px - (dir_x * 0.4) as f64;
-                        let wake_z = pz - (dir_z * 0.4) as f64;
-                        let amp = 0.16 * (speed / 0.15).min(1.2);
+                        let dir_x = vx / speed.max(0.001);
+                        let dir_z = vz / speed.max(0.001);
+                        let wake_x = px - dir_x * 0.4;
+                        let wake_z = pz - dir_z * 0.4;
+                        let amp = (0.16 * (speed / 0.15).min(1.2)) as f32;
                         sim.inject_impulse(wake_x, wake_z, water_y, 0.55, amp, 0.35);
                     } else if dy >= -0.85 && dy <= 0.30 && speed > 0.04 {
                         // Walking in shallow water: periodic footstep ring ripples
                         track.step_timer += 1;
                         if track.step_timer >= 4 {
                             track.step_timer = 0;
-                            let amp = 0.14 * (speed / 0.15).min(1.0);
+                            let amp = (0.14 * (speed / 0.15).min(1.0)) as f32;
                             sim.inject_impulse(px, pz, water_y, 0.45, amp, 0.25);
                         }
                     }
 
                     track.last_pos_y = py;
-                    track.last_vel_y = vel.y as f64;
+                    track.last_vel_y = p_vy;
                 }
             }
 
@@ -129,7 +132,9 @@ impl Game<'_> {
                 let bz = b.position.z as f64;
 
                 if let Some(water_y) = self.wp_water_surface_at(bx, by, bz) {
-                    let speed = (b.velocity.x * b.velocity.x + b.velocity.z * b.velocity.z).sqrt() as f32;
+                    let bvx = b.velocity.x as f64;
+                    let bvz = b.velocity.z as f64;
+                    let speed = (bvx * bvx + bvz * bvz).sqrt();
                     if speed > 0.02 {
                         let rad = (b.yaw as f32).to_radians();
                         let forward_x = -rad.sin();
@@ -140,8 +145,8 @@ impl Game<'_> {
                         // Bow spray and forward wave impulse
                         let bow_x = bx + (forward_x * 0.85) as f64;
                         let bow_z = bz + (forward_z * 0.85) as f64;
-                        let bow_amp = (speed * 1.3).min(0.55);
-                        let bow_foam = (speed * 1.8).min(0.9);
+                        let bow_amp = ((speed * 1.3).min(0.55)) as f32;
+                        let bow_foam = ((speed * 1.8).min(0.9)) as f32;
                         sim.inject_impulse(bow_x, bow_z, water_y, 0.65, bow_amp, bow_foam);
 
                         // Stern depression trough
@@ -179,10 +184,12 @@ impl Game<'_> {
                         continue;
                     }
                     if m.fluids.in_water {
-                        let mspeed = (m.velocity.x * m.velocity.x + m.velocity.z * m.velocity.z).sqrt() as f32;
+                        let mvx = m.velocity.x as f64;
+                        let mvz = m.velocity.z as f64;
+                        let mspeed = (mvx * mvx + mvz * mvz).sqrt();
                         if mspeed > 0.04 {
                             if let Some(water_y) = self.wp_water_surface_at(mx, m.position.y as f64, mz) {
-                                let amp = 0.10 * (mspeed / 0.15).min(1.0);
+                                let amp = (0.10 * (mspeed / 0.15).min(1.0)) as f32;
                                 sim.inject_impulse(mx, mz, water_y, 0.40, amp, 0.15);
                             }
                         }
@@ -288,6 +295,6 @@ pub fn draw(game: &Game<'_>, camera: glam::DVec3, out: &mut Vec<Vertex>) {
 
     let guard = SIM.lock().unwrap();
     if let Some(sim) = guard.as_ref() {
-        render::render_wave_overlays(sim, game, camera, out);
+        game.render_wave_overlays(sim, camera, out);
     }
 }

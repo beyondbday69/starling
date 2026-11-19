@@ -7,6 +7,15 @@ use crate::game::Game;
 use super::native_water_physics_sim as sim;
 use horizon_client::mesher::Vertex;
 
+pub fn render_wave_overlays(
+    sim: &sim::WaterSimulation,
+    game: &Game<'_>,
+    camera: glam::DVec3,
+    out: &mut Vec<Vertex>,
+) {
+    game.render_wave_overlays(sim, camera, out);
+}
+
 impl Game<'_> {
     pub(super) fn render_wave_overlays(
         &self,
