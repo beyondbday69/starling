@@ -3,8 +3,8 @@
 **Repository:** `beyondbday69/starling`  
 **Current Active Branch:** `feat/water-physics-v2`  
 **Target Platform:** Android (ARM64 `arm64-v8a`)  
-**Latest Commit:** `feat/water-physics-v2` (in progress)  
-**Latest Successful CI Run:** `#44498811898` (Artifact: `14516308815`, size: 35.2 MB)  
+**Latest Commit:** `5199ea1` (`feat(water_physics): v2 real 3D ripples, concentric rings, and 30Hz zero-allocation engine`)  
+**Latest Successful CI Run:** `#44502832147` (Artifact: `14518980841`, size: 35.0 MB)  
 **Last Updated:** November 2026  
 
 ---
@@ -167,6 +167,7 @@ graph TD
 
 | Run ID | Commit | Description | Artifact ID / Download | Status |
 |---|---|---|---|---|
+| **#44502832147** | `5199ea1` | **Water Physics v2:** Real 3D Displaced Mesh + Baseline Lift + Small High-Res Tiles + 30Hz Zero-Alloc Engine | [Artifact 14518980841](https://github.com/beyondbday69/starling/actions/runs/44502832147/artifacts/14518980841) | **PASSED (Green)** |
 | **#44498811898** | `1f03664` | **Water Physics Native Mod (`water_physics`):** 2D Heightfield Leapfrog Wave Simulation + Kelvin Wake + Splash + Specular Mesh Overlay | [Artifact 14516308815](https://github.com/beyondbday69/starling/actions/runs/44498811898/artifacts/14516308815) | **PASSED (Green)** |
 | **#44464049499** | `dcf4245` | **3D Skins Real Voxels Fix:** Atlas Extraction + In-Memory Own Skin + CEM Override Prevention + Screen-Split Controls | [Artifact 14501069325](https://github.com/beyondbday69/starling/actions/runs/44464049499/artifacts/14501069325) | **PASSED (Green)** |
 | **#44408523280** | `0faef7a` | Screen-Split LMB/RMB Controls + Action Text Indicator + Cinematic Interactions + 3D Skins + Gyro | [Artifact 14475234256](https://github.com/beyondbday69/starling/actions/runs/44408523280/artifacts/14475234256) | PASSED |
