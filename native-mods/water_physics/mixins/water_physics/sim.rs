@@ -1,20 +1,22 @@
-// 2D Heightfield water wave simulation with leapfrog PDE and dispersion.
+// 2D Heightfield water wave simulation with leapfrog PDE and dispersion (v2).
 //
-// Simulation PDE:
-//   h_new = 2h - h_prev + C^2 * laplacian + dispersion - damping * (h - h_prev)
-// Plus local foam decay and energy-based idle tile suspension.
+// Optimized for mobile:
+// - Small tiles (~4.5 blocks) at high resolution (32x32 cells = ~7.1 cells/block)
+// - Preallocated h_next buffer to eliminate per-step heap allocations
+// - Higher energy threshold for rapid idle sleeping
+// - Smooth Gaussian / Ricker splash kernels for clean concentric ring generation
 
-pub const DEFAULT_RES: usize = 24;
-pub const DEFAULT_MAX_TILES: usize = 4;
-pub const TILE_SIZE: f32 = 12.0;
+pub const DEFAULT_RES: usize = 32;
+pub const DEFAULT_MAX_TILES: usize = 2;
+pub const TILE_SIZE: f32 = 4.5;
 
-// Tuned for Kelvin wake half-angle (~19.47°) when source moves at boat speed ~0.35 blocks/tick.
-const WAVE_SPEED_SQ: f32 = 0.28;
-const DAMPING: f32 = 0.025;
-const DISPERSION: f32 = 0.04;
-const FOAM_DECAY: f32 = 0.94;
-const ENERGY_IDLE_THRESHOLD: f32 = 0.0003;
-const IDLE_TICKS_LIMIT: u32 = 35;
+// Wave physics constants tuned for 30Hz update rate and 3-5 ring expansion
+const WAVE_SPEED_SQ: f32 = 0.24;
+const DAMPING: f32 = 0.038;
+const DISPERSION: f32 = 0.030;
+const FOAM_DECAY: f32 = 0.92;
+const ENERGY_IDLE_THRESHOLD: f32 = 0.002;
+const IDLE_TICKS_LIMIT: u32 = 15;
 
 #[derive(Clone, Debug)]
 pub struct WaveTile {
@@ -24,6 +26,7 @@ pub struct WaveTile {
     pub res: usize,
     pub h: Vec<f32>,
     pub h_prev: Vec<f32>,
+    pub h_next: Vec<f32>,
     pub foam: Vec<f32>,
     pub active: bool,
     pub energy: f32,
@@ -40,6 +43,7 @@ impl WaveTile {
             res,
             h: vec![0.0; size],
             h_prev: vec![0.0; size],
+            h_next: vec![0.0; size],
             foam: vec![0.0; size],
             active: false,
             energy: 0.0,
@@ -53,6 +57,7 @@ impl WaveTile {
         self.water_y = water_y;
         self.h.fill(0.0);
         self.h_prev.fill(0.0);
+        self.h_next.fill(0.0);
         self.foam.fill(0.0);
         self.active = true;
         self.energy = 0.0;
@@ -61,7 +66,7 @@ impl WaveTile {
 
     #[inline]
     pub fn covers(&self, x: f64, z: f64) -> bool {
-        let half = (TILE_SIZE * 0.5 - 0.5) as f64;
+        let half = (TILE_SIZE * 0.5 - 0.2) as f64;
         (x - self.center_x).abs() <= half && (z - self.center_z).abs() <= half
     }
 
@@ -71,7 +76,6 @@ impl WaveTile {
         }
 
         let res = self.res;
-        let mut h_next = vec![0.0f32; res * res];
         let mut total_energy = 0.0f32;
 
         for j in 1..res - 1 {
@@ -94,26 +98,28 @@ impl WaveTile {
                     + self.h[row_next + i + 1]
                     - 4.0 * c;
 
-                // Combined isotropic laplacian
+                // Isotropic laplacian
                 let lap_iso = 0.5 * lap + 0.25 * diag;
 
-                // Dispersion term creates feathery transverse wavelets behind moving disturbance
+                // Frequency dispersion creates trailing concentric wavelets
                 let disp = DISPERSION * (diag - lap);
 
                 // Leapfrog integration step with damping
                 let mut val = 2.0 * c - p + WAVE_SPEED_SQ * lap_iso + disp - DAMPING * (c - p);
 
-                // Boundary absorption ramp
+                // Boundary absorption ramp on perimeter
                 if i <= 2 || i >= res - 3 || j <= 2 || j >= res - 3 {
-                    val *= 0.80;
+                    val *= 0.75;
                 }
 
-                h_next[idx] = val;
+                self.h_next[idx] = val;
                 total_energy += val.abs() + (val - c).abs();
             }
         }
 
-        self.h_prev = std::mem::replace(&mut self.h, h_next);
+        // Swap buffers without heap allocations: h_prev becomes h, h becomes h_next
+        std::mem::swap(&mut self.h_prev, &mut self.h);
+        std::mem::swap(&mut self.h, &mut self.h_next);
 
         // Decay foam mask
         for f in &mut self.foam {
@@ -143,13 +149,13 @@ impl WaveTile {
         let gx = ((wx - origin_x) as f32) / dx;
         let gz = ((wz - origin_z) as f32) / dx;
 
-        let r_cells = (radius / dx).max(1.0);
+        let r_cells = (radius / dx).max(1.5);
         let r_sq = r_cells * r_cells;
 
-        let min_i = (gx - r_cells * 2.0).floor().max(1.0) as usize;
-        let max_i = (gx + r_cells * 2.0).ceil().min((res - 2) as f32) as usize;
-        let min_j = (gz - r_cells * 2.0).floor().max(1.0) as usize;
-        let max_j = (gz + r_cells * 2.0).ceil().min((res - 2) as f32) as usize;
+        let min_i = (gx - r_cells * 2.2).floor().max(1.0) as usize;
+        let max_i = (gx + r_cells * 2.2).ceil().min((res - 2) as f32) as usize;
+        let min_j = (gz - r_cells * 2.2).floor().max(1.0) as usize;
+        let max_j = (gz + r_cells * 2.2).ceil().min((res - 2) as f32) as usize;
 
         if min_i > max_i || min_j > max_j {
             return;
@@ -185,7 +191,7 @@ impl WaveTile {
         let gx = ((wx - origin_x) as f32) / dx;
         let gz = ((wz - origin_z) as f32) / dx;
 
-        let r_cells = (radius / dx).max(1.2);
+        let r_cells = (radius / dx).max(1.8);
         let r_sq = r_cells * r_cells;
 
         let min_i = (gx - r_cells * 2.5).floor().max(1.0) as usize;
@@ -206,9 +212,9 @@ impl WaveTile {
             for i in min_i..=max_i {
                 let di = (i as f32) - gx;
                 let d2 = di * di + dj * dj;
-                if d2 <= r_sq * 6.0 {
+                if d2 <= r_sq * 5.0 {
                     let d_norm = (d2 / r_sq).sqrt();
-                    // Splash depression in center with raised shockwave rim
+                    // Clean Mexican-hat splash: center depression with surrounding raised ring
                     let wave = (1.0 - d_norm * d_norm) * (-d2 / (2.0 * r_sq)).exp();
                     let idx = row + i;
                     self.h[idx] += amplitude * wave;
@@ -281,7 +287,7 @@ impl WaterSimulation {
             return self.tiles.last_mut().unwrap();
         }
 
-        // 4. Overwrite the tile with lowest energy or furthest from disturbance
+        // 4. Overwrite tile with lowest energy
         let mut victim_idx = 0;
         let mut min_energy = f32::MAX;
         for (idx, tile) in self.tiles.iter().enumerate() {
@@ -307,11 +313,18 @@ impl WaterSimulation {
         tile.inject_splash(wx, wz, radius, amp, foam_amount);
     }
 
-    pub fn step(&mut self) {
+    pub fn step(&mut self) -> bool {
+        let mut any_active = false;
         for tile in &mut self.tiles {
             if tile.active {
                 tile.step();
+                any_active = true;
             }
         }
+        any_active
+    }
+
+    pub fn any_active(&self) -> bool {
+        self.tiles.iter().any(|t| t.active)
     }
 }

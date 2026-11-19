@@ -1,9 +1,9 @@
 # Starling Project Status & Complete Context
 
 **Repository:** `beyondbday69/starling`  
-**Current Active Branch:** `feat/water-physics`  
+**Current Active Branch:** `feat/water-physics-v2`  
 **Target Platform:** Android (ARM64 `arm64-v8a`)  
-**Latest Commit:** `1f03664` (`fix(water_physics): resolve type conversions and render_wave_overlays delegation`)  
+**Latest Commit:** `feat/water-physics-v2` (in progress)  
 **Latest Successful CI Run:** `#44498811898` (Artifact: `14516308815`, size: 35.2 MB)  
 **Last Updated:** November 2026  
 
@@ -139,7 +139,7 @@ graph TD
 
 ---
 
-## 3.2. Water Physics Native Mod (`water_physics`)
+## 3.2. Water Physics Native Mod v1 (`water_physics`)
 * **Goal:** Realistic fluid wakes and surface waves on water.
 * **Features:**
   * 2D heightfield leapfrog PDE wave simulation with dispersion term and boundary damping.
@@ -148,6 +148,18 @@ graph TD
   * Dynamic active tile management with energy-based sleeping and configurable resolution for mobile.
   * Translucent mesh overlay with specular highlights and fast-fading foam.
   * Toggleable and configurable in Options > Mods (default on).
+
+---
+
+## 3.3. Water Physics Native Mod v2 (Real 3D Ripples & High-Performance Mobile Optimization)
+* **Diagnosis of v1:** Flat quads at +0.003 lacked 3D depth; 12m tiles at 24x24 were coarse (2 cells/block); per-frame full rebuild, heap allocations, and CPU specular loops caused mobile lag.
+* **v2 Features & Architectural Improvements:**
+  * **Real 3D Displaced Mesh:** Vertices displaced vertically ($Y = y_{water} + 0.002 + W \cdot (\text{base\_lift} + h \cdot \text{ripple\_scale})$) with 0.04 - 0.12m visible amplitude.
+  * **Vanilla Flat Water Pitfall Solved:** Baseline elevated by +0.05m so troughs ($h < 0$) remain above vanilla water and are never clipped by the depth buffer. Fades to 0 at edges and shoreline.
+  * **Smooth Small High-Res Tiles:** 4.5m tiles at 32x32 cells (~7.1 cells/block) with Gaussian & Mexican-hat kernels for clean, smooth concentric ripple rings.
+  * **Zero-Allocation 30Hz Fixed Engine:** Preallocated `h_next` and mesh scratch buffers; simulation and mesh generation run strictly at 30Hz; frame draw does only a fast camera translation.
+  * **Mobile Optimizations:** Single-dot diffuse lighting, instant early-out when player is away from water, mob scanning capped to 12m and 2 mobs, fast idle sleeping.
+  * **Logcat Profiling:** Logs `sim_ms`, `mesh_ms`, `active_tiles`, and `verts` every second.
 
 ---
 
