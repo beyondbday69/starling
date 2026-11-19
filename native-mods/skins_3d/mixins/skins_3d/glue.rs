@@ -18,6 +18,7 @@ const SKIN_EDGE: usize = 64;
 const MAX_MISSING: usize = 512;
 
 const OFFLINE_SKIN: &str = "horizon/offline_skin";
+const OWN_SKIN: &str = "horizon/own_skin";
 const ELYTRA: &str = "minecraft:elytra";
 
 static ACTIVE: AtomicBool = AtomicBool::new(false);
@@ -56,6 +57,102 @@ fn bundled(game: &Game<'_>, location: &str) -> Option<(usize, usize, Vec<u8>)> {
     Some((width as usize, height as usize, rgba))
 }
 
+fn from_atlas(game: &Game<'_>, location: &str) -> Option<(usize, usize, Vec<u8>)> {
+    let loc = location
+        .strip_prefix("minecraft:")
+        .unwrap_or(location)
+        .strip_suffix(".png")
+        .unwrap_or(location);
+    let loc = loc.strip_prefix("textures/").unwrap_or(loc);
+    let rect = game
+        .gui
+        .atlas
+        .sprites
+        .get(loc)
+        .or_else(|| game.gui.atlas.sprites.get(location))?;
+    let aw = game.gui.atlas.width as usize;
+    let ah = game.gui.atlas.height as usize;
+    if aw == 0 || ah == 0 {
+        return None;
+    }
+    let (mut tw, mut th) = rect.texels((aw as u32, ah as u32));
+    if size((tw * th * 4) as usize).is_none() && size((rect.w * rect.h * 4) as usize).is_some() {
+        tw = rect.w;
+        th = rect.h;
+    }
+    let (w, h) = size((tw * th * 4) as usize)?;
+    let u0 = (rect.u0 * aw as f32).round() as usize;
+    let v0 = (rect.v0 * ah as f32).round() as usize;
+    if u0 >= aw || v0 >= ah {
+        return None;
+    }
+    let pixels = game.gui.atlas.pixels();
+    if pixels.len() < aw * ah * 4 {
+        return None;
+    }
+    let mut rgba = vec![0u8; w * h * 4];
+    for y in 0..h {
+        let src_y = (v0 + y).min(ah - 1);
+        let src_start = (src_y * aw + u0) * 4;
+        let dst_start = (y * w) * 4;
+        let row_len = (w * 4).min(aw.saturating_sub(u0) * 4);
+        rgba[dst_start..dst_start + row_len].copy_from_slice(&pixels[src_start..src_start + row_len]);
+    }
+    Some((w, h, rgba))
+}
+
+fn ensure_skin(game: &Game<'_>, location: &str) {
+    let mut missing = MISSING.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    if missing.contains(location) {
+        return;
+    }
+    let downloads = game.skin_downloads.borrow();
+    if let Some(rgba) = downloads.image(location)
+        && let Some((width, height)) = size(rgba.len())
+    {
+        voxels::offer(location, width, height, rgba);
+        return;
+    }
+    if (location == OWN_SKIN || location == OFFLINE_SKIN)
+        && let Some(rgba) = game.own_skin.image.as_ref()
+        && let Some((width, height)) = size(rgba.len())
+    {
+        voxels::offer(location, width, height, rgba);
+        return;
+    }
+    if location == OFFLINE_SKIN
+        && let Some((rgba, _)) = horizon_client::skins::offline_skin()
+        && let Some((width, height)) = size(rgba.len())
+    {
+        voxels::offer(location, width, height, rgba);
+        return;
+    }
+    if let Some((width, height, rgba)) = from_atlas(game, location) {
+        voxels::offer(location, width, height, &rgba);
+        return;
+    }
+    if let Some((width, height, rgba)) = bundled(game, location)
+        && size(rgba.len()) == Some((width, height))
+    {
+        voxels::offer(location, width, height, &rgba);
+        return;
+    }
+    if location.starts_with("skins/") {
+        let mut logged = LOGGED.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        if logged.len() < MAX_MISSING && logged.insert(location.to_owned()) {
+            log::info!("3D Skins: waiting for the pixels of downloaded skin {location}");
+        }
+        return;
+    }
+    if location == OWN_SKIN || location == OFFLINE_SKIN {
+        return;
+    }
+    log::info!("3D Skins: no pixels for skin {location}; it keeps its flat layer");
+    if missing.len() < MAX_MISSING {
+        missing.insert(location.to_owned());
+    }
+}
+
 fn shown(head: bool, chest: Option<&str>, legs: bool) -> u8 {
     let mut shown = voxels::ALL;
     if head {
@@ -71,7 +168,7 @@ fn shown(head: bool, chest: Option<&str>, legs: bool) -> u8 {
 }
 
 fn swap(m: &mut Mob, near: bool, shown: u8) {
-    let Some(location) = m.skin.as_deref() else { return };
+    let location = m.skin.as_deref().unwrap_or(&m.kind.texture);
     let model = voxels::model(&m.kind, location, m.slim, if near { shown } else { 0 });
     let same = match (&model, &m.skin_3d) {
         (Some(a), Some(b)) => Arc::ptr_eq(a, b),
@@ -96,7 +193,20 @@ pub(super) fn model(game: &Game<'_>, kind: &Arc<MobType>, skin: &str, slim: bool
     if !game.native_on(ID) {
         return ControlFlow::Continue(());
     }
+    ensure_skin(game, skin);
     ControlFlow::Break(voxels::model(kind, skin, slim, voxels::ALL))
+}
+
+fn find_part<'a>(part: &'a Part, name: &str) -> Option<&'a Part> {
+    if part.name == name {
+        return Some(part);
+    }
+    for child in &part.children {
+        if let Some(found) = find_part(child, name) {
+            return Some(found);
+        }
+    }
+    None
 }
 
 pub(super) fn arm(game: &Game<'_>, left: bool, matrix: glam::Mat4, light: u32, out: &mut Vec<Vertex>) -> ControlFlow<()> {
@@ -105,8 +215,25 @@ pub(super) fn arm(game: &Game<'_>, left: bool, matrix: glam::Mat4, light: u32, o
     }
     let player = game.player_model.as_ref();
     let name = if left { "left_arm" } else { "right_arm" };
-    let part = player.and_then(|m| m.skin_3d.as_ref()).and_then(|model| model.children.iter().find(|c| c.name == name));
-    let sprite = player.and_then(|m| m.skin.as_deref()).and_then(|skin| game.gui.atlas.sprites.get(skin));
+    let skin_name = player
+        .and_then(|m| m.skin.as_deref())
+        .unwrap_or("entity/player/wide/steve");
+    ensure_skin(game, skin_name);
+    let model = player
+        .and_then(|m| m.skin_3d.as_ref())
+        .cloned()
+        .or_else(|| {
+            let m = player?;
+            voxels::model(&m.kind, skin_name, m.slim, voxels::ALL)
+        });
+    let part = model.as_ref().and_then(|m| find_part(m, name));
+    let sprite = game
+        .gui
+        .atlas
+        .sprites
+        .get(skin_name)
+        .or_else(|| game.gui.atlas.sprites.get("entity/player/wide/steve"))
+        .copied();
     let (Some(part), Some(sprite)) = (part, sprite) else {
         return ControlFlow::Continue(());
     };
@@ -148,41 +275,17 @@ pub(super) fn frame(game: &mut Game<'_>) {
     if wanted.is_empty() {
         return;
     }
-    let mut missing = MISSING.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let mut logged = LOGGED.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let downloads = game.skin_downloads.borrow();
-    for location in wanted {
-        if let Some(rgba) = downloads.image(&location)
-            && let Some((width, height)) = size(rgba.len())
-        {
-            voxels::offer(&location, width, height, rgba);
-            continue;
-        }
-        if missing.contains(&location) {
-            continue;
-        }
-        if location == OFFLINE_SKIN
-            && let Some((rgba, _)) = horizon_client::skins::offline_skin()
-            && let Some((width, height)) = size(rgba.len())
-        {
-            voxels::offer(&location, width, height, rgba);
-            continue;
-        }
-        if location.starts_with("skins/") {
-            if logged.len() < MAX_MISSING && logged.insert(location.clone()) {
-                log::info!("3D Skins: waiting for the pixels of downloaded skin {location}");
-            }
-            continue;
-        }
-        match bundled(game, &location) {
-            Some((width, height, rgba)) if size(rgba.len()) == Some((width, height)) => voxels::offer(&location, width, height, &rgba),
-            _ => {
-                log::info!("3D Skins: no pixels for skin {location}; it keeps its flat layer");
-                if missing.len() < MAX_MISSING {
-                    missing.insert(location);
-                }
-            }
-        }
+    for location in &wanted {
+        ensure_skin(game, location);
+    }
+    if let Some(m) = game.player_model.as_mut() {
+        let close = near(m.position.x, m.position.y, m.position.z);
+        swap(m, close, own);
+    }
+    for m in game.mobs.iter_mut().filter(|m| &*m.kind.id == voxels::PLAYER) {
+        let worn = shown(m.extra.head.is_some(), m.extra.chest.as_deref(), m.extra.legs.is_some());
+        let close = near(m.position.x, m.position.y, m.position.z);
+        swap(m, close, worn);
     }
 }
 

@@ -40,7 +40,13 @@ pub fn offer(location: &str, width: usize, height: usize, rgba: &[u8]) {
         return;
     }
     let mut cache = cache();
-    if cache.skins.contains_key(location) {
+    if let Some(skin) = cache.skins.get_mut(location) {
+        if skin.width != width || skin.height != height || skin.rgba != rgba {
+            skin.width = width;
+            skin.height = height;
+            skin.rgba = rgba.to_vec();
+            skin.models.clear();
+        }
         return;
     }
     while cache.order.len() >= MAX_SKINS {
