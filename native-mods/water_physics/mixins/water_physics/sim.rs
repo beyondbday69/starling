@@ -1,262 +1,151 @@
-// 2D Heightfield water wave simulation with leapfrog PDE and dispersion (v2.2).
+// Geometric water wave and wake simulation engine (v3.0).
 //
-// Optimized for mobile:
-// - Wide 8.0-meter tiles at high resolution (32x32 cells = 4 cells/block)
-// - Preallocated h_next buffer to eliminate per-step heap allocations
-// - Multi-tile coverage (up to 3-4 active tiles) preventing premature tile resets
-// - Low damping (0.016) so waves expand 3-5 visible concentric rings and wakes stay alive ~3 seconds
-// - Multi-tile injection so disturbances crossing tile borders inject seamlessly
+// Replaces the coarse 32x32 heightfield grid with smooth analytical fluid geometry:
+// 1. Concentric Ripple Rings: Smooth circular expanding torus waves for footsteps, drops, splashes, and oars.
+// 2. Continuous Kelvin V-Wakes: Trailing hydrodynamic wake ribbons flaring at 19.47 degrees with foam.
+// 3. Zero-grid architecture: Eliminates low-poly triangulated origami artifacts, square boundary popping,
+//    and untextured Gouraud shading creases.
 
-pub const DEFAULT_RES: usize = 32;
-pub const DEFAULT_MAX_TILES: usize = 3;
-pub const TILE_SIZE: f32 = 8.0;
-
-// Wave physics constants tuned for 30Hz update rate and natural fluid propagation
-const WAVE_SPEED_SQ: f32 = 0.26;
-const DAMPING: f32 = 0.016;
-const DISPERSION: f32 = 0.025;
-const FOAM_DECAY: f32 = 0.94;
-const ENERGY_IDLE_THRESHOLD: f32 = 0.0003;
-const IDLE_TICKS_LIMIT: u32 = 90; // 3 full seconds at 30Hz
+pub const DEFAULT_MAX_RINGS: usize = 18;
+pub const DEFAULT_MAX_WAKE_NODES: usize = 32;
 
 #[derive(Clone, Debug)]
-pub struct WaveTile {
+pub struct RippleRing {
     pub center_x: f64,
     pub center_z: f64,
     pub water_y: f64,
-    pub res: usize,
-    pub h: Vec<f32>,
-    pub h_prev: Vec<f32>,
-    pub h_next: Vec<f32>,
-    pub foam: Vec<f32>,
-    pub active: bool,
-    pub energy: f32,
-    pub idle_ticks: u32,
+    pub radius: f32,
+    pub max_radius: f32,
+    pub speed: f32,
+    pub amplitude: f32,
+    pub age: f32,
+    pub max_age: f32,
+    pub has_foam: bool,
 }
 
-impl WaveTile {
-    pub fn new(center_x: f64, center_z: f64, water_y: f64, res: usize) -> Self {
-        let size = res * res;
+impl RippleRing {
+    pub fn new(
+        center_x: f64,
+        center_z: f64,
+        water_y: f64,
+        radius: f32,
+        max_radius: f32,
+        speed: f32,
+        amplitude: f32,
+        max_age: f32,
+        has_foam: bool,
+    ) -> Self {
         Self {
             center_x,
             center_z,
             water_y,
-            res,
-            h: vec![0.0; size],
-            h_prev: vec![0.0; size],
-            h_next: vec![0.0; size],
-            foam: vec![0.0; size],
-            active: false,
-            energy: 0.0,
-            idle_ticks: 0,
+            radius,
+            max_radius,
+            speed,
+            amplitude,
+            age: 0.0,
+            max_age,
+            has_foam,
         }
-    }
-
-    pub fn reset(&mut self, center_x: f64, center_z: f64, water_y: f64) {
-        self.center_x = center_x;
-        self.center_z = center_z;
-        self.water_y = water_y;
-        self.h.fill(0.0);
-        self.h_prev.fill(0.0);
-        self.h_next.fill(0.0);
-        self.foam.fill(0.0);
-        self.active = true;
-        self.energy = 0.0;
-        self.idle_ticks = 0;
     }
 
     #[inline]
-    pub fn covers(&self, x: f64, z: f64) -> bool {
-        let half = (TILE_SIZE * 0.5 - 0.25) as f64;
-        (x - self.center_x).abs() <= half && (z - self.center_z).abs() <= half
+    pub fn is_alive(&self) -> bool {
+        self.age < self.max_age && self.radius < self.max_radius
     }
 
-    pub fn step(&mut self) {
-        if !self.active {
-            return;
-        }
+    #[inline]
+    pub fn step(&mut self, dt: f32) {
+        self.age += dt;
+        self.radius += self.speed * dt;
+    }
+}
 
-        let res = self.res;
-        let mut total_energy = 0.0f32;
+#[derive(Clone, Debug)]
+pub struct WakeNode {
+    pub pos_x: f64,
+    pub pos_z: f64,
+    pub water_y: f64,
+    pub dir_x: f32,
+    pub dir_z: f32,
+    pub left_x: f32,
+    pub left_z: f32,
+    pub half_width: f32,
+    pub spread_speed: f32,
+    pub amplitude: f32,
+    pub age: f32,
+    pub max_age: f32,
+    pub is_boat: bool,
+}
 
-        for j in 1..res - 1 {
-            let row = j * res;
-            let row_prev = (j - 1) * res;
-            let row_next = (j + 1) * res;
+impl WakeNode {
+    pub fn new(
+        pos_x: f64,
+        pos_z: f64,
+        water_y: f64,
+        dir_x: f32,
+        dir_z: f32,
+        speed: f32,
+        is_boat: bool,
+    ) -> Self {
+        let left_x = -dir_z;
+        let left_z = dir_x;
 
-            for i in 1..res - 1 {
-                let idx = row + i;
-                let c = self.h[idx];
-                let p = self.h_prev[idx];
-
-                // 4-neighbor cardinal laplacian
-                let lap = self.h[idx - 1] + self.h[idx + 1] + self.h[row_prev + i] + self.h[row_next + i] - 4.0 * c;
-
-                // 4-neighbor diagonal laplacian
-                let diag = self.h[row_prev + i - 1]
-                    + self.h[row_prev + i + 1]
-                    + self.h[row_next + i - 1]
-                    + self.h[row_next + i + 1]
-                    - 4.0 * c;
-
-                // Isotropic laplacian
-                let lap_iso = 0.5 * lap + 0.25 * diag;
-
-                // Frequency dispersion creates trailing concentric wavelets
-                let disp = DISPERSION * (diag - lap);
-
-                // Leapfrog integration step with low natural fluid damping
-                let mut val = 2.0 * c - p + WAVE_SPEED_SQ * lap_iso + disp - DAMPING * (c - p);
-
-                // Boundary absorption ramp on perimeter to prevent artificial hard wall reflections
-                if i <= 2 || i >= res - 3 || j <= 2 || j >= res - 3 {
-                    val *= 0.78;
-                }
-
-                self.h_next[idx] = val;
-                total_energy += val.abs() + (val - c).abs();
-            }
-        }
-
-        // Swap buffers without heap allocations: h_prev becomes h, h becomes h_next
-        std::mem::swap(&mut self.h_prev, &mut self.h);
-        std::mem::swap(&mut self.h, &mut self.h_next);
-
-        // Decay foam mask
-        for f in &mut self.foam {
-            *f *= FOAM_DECAY;
-            if *f < 0.004 {
-                *f = 0.0;
-            }
-        }
-
-        self.energy = total_energy;
-        if total_energy < ENERGY_IDLE_THRESHOLD {
-            self.idle_ticks += 1;
-            if self.idle_ticks >= IDLE_TICKS_LIMIT {
-                self.active = false;
-            }
+        let (half_width, spread_speed, amplitude, max_age) = if is_boat {
+            let amp = (speed * 2.2).clamp(0.4, 1.8);
+            (0.65f32, 1.15f32, amp, 3.6f32)
         } else {
-            self.idle_ticks = 0;
+            let amp = (speed * 1.5).clamp(0.3, 1.4);
+            (0.30f32, 0.72f32, amp, 2.5f32)
+        };
+
+        Self {
+            pos_x,
+            pos_z,
+            water_y,
+            dir_x,
+            dir_z,
+            left_x,
+            left_z,
+            half_width,
+            spread_speed,
+            amplitude,
+            age: 0.0,
+            max_age,
+            is_boat,
         }
     }
 
-    pub fn inject_impulse(&mut self, wx: f64, wz: f64, radius: f32, amplitude: f32, add_foam: f32) {
-        let res = self.res;
-        let dx = TILE_SIZE / (res as f32);
-        let origin_x = self.center_x - (TILE_SIZE * 0.5) as f64;
-        let origin_z = self.center_z - (TILE_SIZE * 0.5) as f64;
-
-        let gx = ((wx - origin_x) as f32) / dx;
-        let gz = ((wz - origin_z) as f32) / dx;
-
-        let r_cells = (radius / dx).max(1.5);
-        let r_sq = r_cells * r_cells;
-
-        let min_i = (gx - r_cells * 2.2).floor().max(1.0) as usize;
-        let max_i = (gx + r_cells * 2.2).ceil().min((res - 2) as f32) as usize;
-        let min_j = (gz - r_cells * 2.2).floor().max(1.0) as usize;
-        let max_j = (gz + r_cells * 2.2).ceil().min((res - 2) as f32) as usize;
-
-        if min_i > max_i || min_j > max_j {
-            return;
-        }
-
-        self.active = true;
-        self.idle_ticks = 0;
-
-        for j in min_j..=max_j {
-            let row = j * res;
-            let dj = (j as f32) - gz;
-            for i in min_i..=max_i {
-                let di = (i as f32) - gx;
-                let d2 = di * di + dj * dj;
-                if d2 <= r_sq * 4.0 {
-                    let factor = (-d2 / (2.0 * r_sq)).exp();
-                    let idx = row + i;
-                    self.h[idx] += amplitude * factor;
-                    if add_foam > 0.0 {
-                        self.foam[idx] = (self.foam[idx] + add_foam * factor).min(1.0);
-                    }
-                }
-            }
-        }
+    #[inline]
+    pub fn is_alive(&self) -> bool {
+        self.age < self.max_age
     }
 
-    pub fn inject_splash(&mut self, wx: f64, wz: f64, radius: f32, amplitude: f32, foam_amount: f32) {
-        let res = self.res;
-        let dx = TILE_SIZE / (res as f32);
-        let origin_x = self.center_x - (TILE_SIZE * 0.5) as f64;
-        let origin_z = self.center_z - (TILE_SIZE * 0.5) as f64;
-
-        let gx = ((wx - origin_x) as f32) / dx;
-        let gz = ((wz - origin_z) as f32) / dx;
-
-        let r_cells = (radius / dx).max(1.8);
-        let r_sq = r_cells * r_cells;
-
-        let min_i = (gx - r_cells * 2.5).floor().max(1.0) as usize;
-        let max_i = (gx + r_cells * 2.5).ceil().min((res - 2) as f32) as usize;
-        let min_j = (gz - r_cells * 2.5).floor().max(1.0) as usize;
-        let max_j = (gz + r_cells * 2.5).ceil().min((res - 2) as f32) as usize;
-
-        if min_i > max_i || min_j > max_j {
-            return;
-        }
-
-        self.active = true;
-        self.idle_ticks = 0;
-
-        for j in min_j..=max_j {
-            let row = j * res;
-            let dj = (j as f32) - gz;
-            for i in min_i..=max_i {
-                let di = (i as f32) - gx;
-                let d2 = di * di + dj * dj;
-                if d2 <= r_sq * 5.0 {
-                    let d_norm = (d2 / r_sq).sqrt();
-                    // Mexican-hat splash: center cavity surrounded by raised shockwave rim
-                    let wave = (1.0 - d_norm * d_norm) * (-d2 / (2.0 * r_sq)).exp();
-                    let idx = row + i;
-                    self.h[idx] += amplitude * wave;
-                    self.foam[idx] = (self.foam[idx] + foam_amount * (-d2 / (2.5 * r_sq)).exp()).min(1.0);
-                }
-            }
-        }
+    #[inline]
+    pub fn step(&mut self, dt: f32) {
+        self.age += dt;
+        self.half_width += self.spread_speed * dt;
     }
 }
 
 pub struct WaterSimulation {
-    pub tiles: Vec<WaveTile>,
-    pub resolution: usize,
-    pub max_tiles: usize,
+    pub rings: Vec<RippleRing>,
+    pub wake_nodes: Vec<WakeNode>,
+    pub max_rings: usize,
+    pub max_wake_nodes: usize,
+    pub segments: usize,
     pub intensity: f32,
 }
 
 impl WaterSimulation {
     pub fn new() -> Self {
         Self {
-            tiles: Vec::with_capacity(DEFAULT_MAX_TILES),
-            resolution: DEFAULT_RES,
-            max_tiles: DEFAULT_MAX_TILES,
+            rings: Vec::with_capacity(DEFAULT_MAX_RINGS),
+            wake_nodes: Vec::with_capacity(DEFAULT_MAX_WAKE_NODES),
+            max_rings: DEFAULT_MAX_RINGS,
+            max_wake_nodes: DEFAULT_MAX_WAKE_NODES,
+            segments: 24, // smooth 24-gon circle
             intensity: 1.0,
-        }
-    }
-
-    pub fn set_resolution(&mut self, res: usize) {
-        if self.resolution == res {
-            return;
-        }
-        self.resolution = res;
-        for tile in &mut self.tiles {
-            *tile = WaveTile::new(tile.center_x, tile.center_z, tile.water_y, res);
-        }
-    }
-
-    pub fn set_max_tiles(&mut self, max: usize) {
-        self.max_tiles = max;
-        if self.tiles.len() > max {
-            self.tiles.truncate(max);
         }
     }
 
@@ -264,86 +153,116 @@ impl WaterSimulation {
         self.intensity = intensity.clamp(0.4, 2.5);
     }
 
-    pub fn get_or_create_tile(&mut self, wx: f64, wz: f64, water_y: f64) -> &mut WaveTile {
-        // 1. Check if an active tile covers this position
-        for i in 0..self.tiles.len() {
-            if self.tiles[i].active && (self.tiles[i].water_y - water_y).abs() < 0.8 && self.tiles[i].covers(wx, wz) {
-                return &mut self.tiles[i];
-            }
-        }
-
-        // 2. Check for an idle tile to re-center
-        for i in 0..self.tiles.len() {
-            if !self.tiles[i].active {
-                self.tiles[i].reset(wx, wz, water_y);
-                return &mut self.tiles[i];
-            }
-        }
-
-        // 3. Allocate a new tile if under capacity
-        if self.tiles.len() < self.max_tiles {
-            let mut tile = WaveTile::new(wx, wz, water_y, self.resolution);
-            tile.active = true;
-            self.tiles.push(tile);
-            return self.tiles.last_mut().unwrap();
-        }
-
-        // 4. Overwrite tile with lowest energy
-        let mut victim_idx = 0;
-        let mut min_energy = f32::MAX;
-        for (idx, tile) in self.tiles.iter().enumerate() {
-            if tile.energy < min_energy {
-                min_energy = tile.energy;
-                victim_idx = idx;
-            }
-        }
-
-        self.tiles[victim_idx].reset(wx, wz, water_y);
-        &mut self.tiles[victim_idx]
-    }
-
-    pub fn inject_impulse(&mut self, wx: f64, wz: f64, water_y: f64, radius: f32, amplitude: f32, add_foam: f32) {
-        let amp = amplitude * self.intensity;
-        let mut injected = false;
-        for tile in &mut self.tiles {
-            if tile.active && (tile.water_y - water_y).abs() < 0.8 && tile.covers(wx, wz) {
-                tile.inject_impulse(wx, wz, radius, amp, add_foam);
-                injected = true;
-            }
-        }
-        if !injected {
-            let tile = self.get_or_create_tile(wx, wz, water_y);
-            tile.inject_impulse(wx, wz, radius, amp, add_foam);
+    pub fn set_max_rings(&mut self, max: usize) {
+        self.max_rings = max;
+        if self.rings.len() > max {
+            self.rings.truncate(max);
         }
     }
 
-    pub fn inject_splash(&mut self, wx: f64, wz: f64, water_y: f64, radius: f32, amplitude: f32, foam_amount: f32) {
-        let amp = amplitude * self.intensity;
-        let mut injected = false;
-        for tile in &mut self.tiles {
-            if tile.active && (tile.water_y - water_y).abs() < 0.8 && tile.covers(wx, wz) {
-                tile.inject_splash(wx, wz, radius, amp, foam_amount);
-                injected = true;
-            }
-        }
-        if !injected {
-            let tile = self.get_or_create_tile(wx, wz, water_y);
-            tile.inject_splash(wx, wz, radius, amp, foam_amount);
-        }
+    pub fn set_segments(&mut self, segments: usize) {
+        self.segments = segments.clamp(16, 32);
     }
 
-    pub fn step(&mut self) -> bool {
-        let mut any_active = false;
-        for tile in &mut self.tiles {
-            if tile.active {
-                tile.step();
-                any_active = true;
+    pub fn spawn_ring(
+        &mut self,
+        center_x: f64,
+        center_z: f64,
+        water_y: f64,
+        initial_radius: f32,
+        max_radius: f32,
+        speed: f32,
+        amplitude: f32,
+        max_age: f32,
+        has_foam: bool,
+    ) {
+        if self.rings.len() >= self.max_rings {
+            // Drop oldest ring
+            self.rings.remove(0);
+        }
+        self.rings.push(RippleRing::new(
+            center_x,
+            center_z,
+            water_y,
+            initial_radius,
+            max_radius,
+            speed,
+            amplitude * self.intensity,
+            max_age,
+            has_foam,
+        ));
+    }
+
+    pub fn spawn_splash_burst(
+        &mut self,
+        center_x: f64,
+        center_z: f64,
+        water_y: f64,
+        impact: f32,
+    ) {
+        let amp = (impact * 0.85).clamp(0.4, 1.8);
+        // Staggered concentric ripple rings radiating outward
+        self.spawn_ring(center_x, center_z, water_y, 0.15, 2.2, 1.85, amp, 2.4, true);
+        self.spawn_ring(center_x, center_z, water_y, 0.05, 1.6, 1.40, amp * 0.75, 2.0, false);
+        self.spawn_ring(center_x, center_z, water_y, 0.02, 1.1, 1.05, amp * 0.50, 1.6, false);
+    }
+
+    pub fn add_wake_node(
+        &mut self,
+        pos_x: f64,
+        pos_z: f64,
+        water_y: f64,
+        dir_x: f32,
+        dir_z: f32,
+        speed: f32,
+        is_boat: bool,
+    ) {
+        if let Some(last) = self.wake_nodes.last() {
+            let dx = pos_x - last.pos_x;
+            let dz = pos_z - last.pos_z;
+            let dist_sq = dx * dx + dz * dz;
+            let min_dist = if is_boat { 0.35 } else { 0.20 };
+            if dist_sq < min_dist * min_dist {
+                return;
             }
         }
-        any_active
+
+        if self.wake_nodes.len() >= self.max_wake_nodes {
+            self.wake_nodes.remove(0);
+        }
+
+        self.wake_nodes.push(WakeNode::new(
+            pos_x,
+            pos_z,
+            water_y,
+            dir_x,
+            dir_z,
+            speed * self.intensity,
+            is_boat,
+        ));
+    }
+
+    pub fn step(&mut self, dt: f32) -> bool {
+        let mut had_active = false;
+
+        // Step and prune ripple rings
+        for ring in &mut self.rings {
+            ring.step(dt);
+            had_active = true;
+        }
+        self.rings.retain(|r| r.is_alive());
+
+        // Step and prune wake nodes
+        for node in &mut self.wake_nodes {
+            node.step(dt);
+            had_active = true;
+        }
+        self.wake_nodes.retain(|n| n.is_alive());
+
+        had_active
     }
 
     pub fn any_active(&self) -> bool {
-        self.tiles.iter().any(|t| t.active)
+        !self.rings.is_empty() || !self.wake_nodes.is_empty()
     }
 }

@@ -214,4 +214,27 @@ When testing with custom shader packs (such as Reimagined shaders), the initial 
   - Idle timeout extended to 90 ticks ($3.0$ seconds).
   - Damping tuned to $0.016$, allowing $3-5$ visible concentric rings to expand naturally.
 
+---
+
+## 9. Water Physics v3.0 (Zero-Grid Geometric Fluid Engine & Particle Splash System)
+
+### 9.1. Root Cause Diagnosis of "It looks terrible"
+The v2.x heightfield grid architecture approximated continuous circular ripples across discrete $32 \times 32$ square cells:
+1. **Low-Poly Origami Creasing:** Each square cell was split diagonally into two triangles. When non-planar height offsets were applied, light bounced off diagonal cuts, creating a faceted low-poly folded paper appearance.
+2. **Untextured Gouraud Plasticity:** Without a fluid normal or sprite texture, Gouraud vertex shading looked like untextured cellophane or plastic floating on top of the water.
+3. **Square Tile Clipping:** Even with edge fading, waves stopped abruptly at rectangular tile boundaries.
+
+### 9.2. Complete Architectural Overhaul in v3.0
+- **Zero-Grid Analytical Ripple Geometry:**
+  - Replaced the $32 \times 32$ grid with smooth 24-gon circular 3D torus waves.
+  - Crests elevate $+0.02\text{m}$ to $+0.05\text{m}$ in real 3D with specular sun glints.
+  - Inner and outer edges taper to $\alpha = 0$, producing 100% seamless, mathematically circular wave expansion without diagonal seams or square borders.
+- **Continuous Kelvin V-Wake Ribbons:**
+  - Entities moving across water leave two continuous curved wake ribbons flaring at $19.47^\circ$, with raised crests, aerated foam highlights, and a central churning trail.
+- **Vanilla Splash Particle Integration:**
+  - Water impacts now trigger physical `ParticleType::Splash` bursts (water droplets arcing into the air) synchronized with expanding 3D concentric shockwave rings.
+- **Buttery Smooth Live Framerate:**
+  - Simulation steps with continuous delta time ($\Delta t$), delivering 60/90/120 FPS fluid motion.
+
+
 
