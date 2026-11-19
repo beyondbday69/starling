@@ -1,4 +1,4 @@
-// Geometric water wave and wake renderer (v3.5).
+// Geometric water wave and wake renderer (v3.6).
 //
 // Key features:
 // - Shader-Preserving Water Optics: Eliminates artificial body tint overlays. Uses 100% transparent
@@ -110,8 +110,8 @@ impl Game<'_> {
             let r_inner = (r_crest - width * 0.5).max(0.02);
             let r_outer = r_crest + width * 0.5;
 
-            // Physical 3D crest displacement: elevates smoothly up to +0.060m
-            let crest_h = (0.045 * amp).min(0.060);
+            // Physical 3D crest displacement: elevates smoothly up to +0.070m
+            let crest_h = (0.050 * amp).min(0.070);
             let y_base = ring.water_y as f32 + 0.002 + cam_y;
             let y_crest = ring.water_y as f32 + 0.003 + crest_h + cam_y;
 
@@ -241,9 +241,17 @@ impl Game<'_> {
             let y_base0 = n0.water_y as f32 + 0.002 + cam_y;
             let y_base1 = n1.water_y as f32 + 0.002 + cam_y;
 
-            // Physical 3D wave displacement: sleek raised crest line (+0.04m to +0.06m)
-            let crest_h0 = (0.040 * amp0).min(0.060);
-            let crest_h1 = (0.040 * amp1).min(0.060);
+            // Physical 3D wave displacement: realistic undulating 3D open water crests
+            let crest_h0 = if n0.is_boat {
+                (0.065 * amp0).min(0.090)
+            } else {
+                (0.042 * amp0).min(0.060)
+            };
+            let crest_h1 = if n1.is_boat {
+                (0.065 * amp1).min(0.090)
+            } else {
+                (0.042 * amp1).min(0.060)
+            };
             let y_crest0 = y_base0 + 0.001 + crest_h0;
             let y_crest1 = y_base1 + 0.001 + crest_h1;
 
@@ -342,13 +350,13 @@ impl Game<'_> {
                 let hw_wash0 = ((0.32 + 0.08 * n0.age).clamp(0.35, 0.55)).min(w_in0);
                 let hw_wash1 = ((0.32 + 0.08 * n1.age).clamp(0.35, 0.55)).min(w_in1);
 
-                let crest_keel0 = (0.025 * amp0).min(0.035);
-                let crest_keel1 = (0.025 * amp1).min(0.035);
+                let crest_keel0 = (0.045 * amp0).min(0.065);
+                let crest_keel1 = (0.045 * amp1).min(0.065);
                 let y_keel0 = y_base0 + 0.001 + crest_keel0;
                 let y_keel1 = y_base1 + 0.001 + crest_keel1;
 
-                let alpha_keel0 = (0.13 * amp0).clamp(0.0, 0.16);
-                let alpha_keel1 = (0.13 * amp1).clamp(0.0, 0.16);
+                let alpha_keel0 = (0.14 * amp0).clamp(0.0, 0.18);
+                let alpha_keel1 = (0.14 * amp1).clamp(0.0, 0.18);
                 let a_keel0_u32 = (alpha_keel0 * 255.0) as u32;
                 let a_keel1_u32 = (alpha_keel1 * 255.0) as u32;
 
@@ -383,13 +391,13 @@ impl Game<'_> {
                     let w_mid0 = (hw_wash0 + w_in0) * 0.5;
                     let w_mid1 = (hw_wash1 + w_in1) * 0.5;
 
-                    let crest_tr0 = (0.020 * amp0).min(0.030);
-                    let crest_tr1 = (0.020 * amp1).min(0.030);
+                    let crest_tr0 = (0.035 * amp0).min(0.055);
+                    let crest_tr1 = (0.035 * amp1).min(0.055);
                     let y_tr0 = y_base0 + 0.001 + crest_tr0;
                     let y_tr1 = y_base1 + 0.001 + crest_tr1;
 
-                    let alpha_tr0 = (0.10 * amp0).clamp(0.0, 0.13);
-                    let alpha_tr1 = (0.10 * amp1).clamp(0.0, 0.13);
+                    let alpha_tr0 = (0.11 * amp0).clamp(0.0, 0.15);
+                    let alpha_tr1 = (0.11 * amp1).clamp(0.0, 0.15);
                     let a_tr0_u32 = (alpha_tr0 * 255.0) as u32;
                     let a_tr1_u32 = (alpha_tr1 * 255.0) as u32;
 

@@ -1,4 +1,4 @@
-// Geometric water wave and wake simulation engine (v3.5).
+// Geometric water wave and wake simulation engine (v3.6).
 //
 // Key features:
 // 1. Concentric Ripple Rings: Smooth circular expanding torus waves for footsteps, drops, splashes, and oars.
