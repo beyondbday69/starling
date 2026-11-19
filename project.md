@@ -3,8 +3,8 @@
 **Repository:** `beyondbday69/starling`  
 **Current Active Branch:** `feat/water-physics-v2`  
 **Target Platform:** Android (ARM64 `arm64-v8a`)  
-**Latest Commit:** `e763b1f` (`fix(water_physics): consume boat spray emitters by value to fix type casting`)  
-**Latest CI Run:** `#44598471252` (Artifact: `14567207891`, size: 35.2 MB)  
+**Latest Commit:** `27a6d07` (`feat(water_physics): v3.7 surrounding water reaction, wide 8.5m lateral bow surge waves`)  
+**Latest CI Run:** `#44603162331` (Artifact: `14570157486`, size: 35.2 MB)  
 **Last Updated:** November 2026  
 
 ---
@@ -195,10 +195,28 @@ graph TD
 
 ---
 
+## 3.6. Water Physics Native Mod v3.7 (Surrounding Water Reaction, Outward-Propagating 8.5m Lateral Bow Surge Waves)
+* **Goal:** Direct answer to user feedback *"aju baju ka pani bbi react krna chaiye"* — ensure the entire surrounding water surface (4m to 8m+ to the left and right sides) reacts with real 3D wave swells as the boat moves through it.
+* **Key Features & Enhancements:**
+  * **Outward-Propagating Lateral Bow Surge Waves (`glue.rs`):**
+    * Sheds dual lateral wave pulses from left and right bow shoulders (`bx ± left_x * 0.85`) every ~0.26s when cruising (`b_speed > 0.75`).
+    * Waves expand up to 8.5 meters outward across the surrounding water on both sides (`max_radius: 8.5m`, `speed: 2.1 m/s`, `lifetime: 4.0s`).
+    * Sized as wide rolling swells (`width: 0.24m - 0.90m`) with +0.080m 3D physical displacement.
+  * **Extended Wake Reach & Buffer Capacity (`sim.rs`):**
+    * Doubled ring buffer capacity from 48 to 96, and wake node capacity from 48 to 64.
+    * Increased boat Kelvin wake spread speed from 0.60 m/s to 1.15 m/s, reaching 11+ meters wide across surrounding water.
+    * Expanded player wading/swimming ripple radius to 4.8m and ambient idle wavelets to 3.8m.
+  * **Shader Pack Optics & Performance:**
+    * 100% transparent baseline ($\alpha = 0$) and pure neutral celestial Fresnel glints `(248, 252, 255)`, guaranteeing active shader pack water colors and caustics show through completely.
+    * Zero-allocation analytical geometry for smooth 60 FPS mobile performance.
+
+---
+
 ## 4. Key Artifacts, Releases & Action Runs
 
 | Run ID | Commit | Description | Artifact ID / Download | Status |
 |---|---|---|---|---|
+| **#44603162331** | `27a6d07` | **Water Physics v3.7 (Surrounding Water Reaction, Wide 8.5m Lateral Bow Surge Swells) + Full Native Mods:** Added dual lateral bow surge wave pulses propagating 8.5m into surrounding water on both sides, doubled ring buffer capacity to 96, increased Kelvin wake spread to 1.15 m/s (11m+ span), wave swell width up to 0.90m, player ripple reach to 4.8m, shader-preserving optics (`starling-preview-0.8.0-arm64-v8a.apk`) | [Artifact 14570157486](https://github.com/beyondbday69/starling/actions/runs/44603162331/artifacts/14570157486) | **PASSED (Green)** |
 | **#44598471252** | `e763b1f` | **Water Physics v3.6 (3D Living Waves, Boat Bow Spray & Stern Bubbles, Ambient Wavelets) + Full Native Mods:** Added boat bow spray droplets (`ParticleType::Splash`) and stern bubble churn (`ParticleType::Bubble`), elevated 3D wave crest displacement to +0.090m, ambient 3D surface wavelets around idle boats/players, shader-preserving optics (`starling-preview-0.8.0-arm64-v8a.apk`) | [Artifact 14567207891](https://github.com/beyondbday69/starling/actions/runs/44598471252/artifacts/14567207891) | **PASSED (Green)** |
 | **#44590988150** | `7ec1b8f` | **Water Physics v3.5 (3D Boat Wake Field & Shader-Preserving Water Optics) + Full Native Mods:** Replaced 2 isolated ribbons with full hydrodynamic 3D wake field (central hull wash +0.025m, transverse Kelvin wavelets bridging to outer V-arms), stern wake origin offset (0.35m), 100% transparent overlay baseline with pure neutral Fresnel glint (248, 252, 255) highlights preserving shader pack water colors/caustics (`starling-preview-0.8.0-arm64-v8a.apk`) | [Artifact 14564053585](https://github.com/beyondbday69/starling/actions/runs/44590988150/artifacts/14564053585) | **PASSED (Green)** |
 | **#44579421912** | `7e986bd` | **Water Physics v3.4 (Native Minecraft Biome Water Color & Passenger Boat Center Circle Suppression) + Full Native Mods:** Sample chunk biome water color (`wp_water_tint`), eliminate hardcoded cyan paint, suppress player & mob footsteps/splashes/rings inside boats, smooth 20% sun glint highlight (`starling-preview-0.8.0-arm64-v8a.apk`) | [Artifact 14557789411](https://github.com/beyondbday69/starling/actions/runs/44579421912/artifacts/14557789411) | **PASSED (Green)** |
