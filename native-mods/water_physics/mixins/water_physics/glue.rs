@@ -18,7 +18,7 @@ use horizon_client::particles::{ParticleOptions, ParticleType};
 
 pub const ID: &str = "water_physics";
 pub const NAME: &str = "Water Physics";
-pub const VERSION: &str = "3.2.0";
+pub const VERSION: &str = "3.3.0";
 pub const DESCRIPTION: &str = "Smooth 3D ripple rings, Kelvin V-wakes, splash droplets, and boat hydrodynamics.";
 
 struct WaterPhysicsState {
@@ -126,7 +126,6 @@ impl Game<'_> {
         let mut wake_sample: Option<(f64, f64, f64, f32, f32, f32, bool)> = None;
         let mut player_rings: Vec<(f64, f64, f64, f32)> = Vec::new();
         let mut boat_samples: Vec<(f64, f64, f64, f32, f32, f32)> = Vec::new();
-        let mut oar_rings: Vec<(f64, f64, f64)> = Vec::new();
         let mut mob_rings: Vec<(f64, f64, f64)> = Vec::new();
 
         // Player disturbance evaluation
@@ -237,17 +236,8 @@ impl Game<'_> {
                     let rad = (b.yaw as f32).to_radians();
                     let fwd_x = -rad.sin();
                     let fwd_z = rad.cos();
-                    let right_x = rad.cos() as f64;
-                    let right_z = rad.sin() as f64;
 
                     boat_samples.push((bx, bz, water_y, fwd_x, fwd_z, b_speed));
-
-                    if b.paddling[0] {
-                        oar_rings.push((bx - right_x * 1.05, bz - right_z * 1.05, water_y));
-                    }
-                    if b.paddling[1] {
-                        oar_rings.push((bx + right_x * 1.05, bz + right_z * 1.05, water_y));
-                    }
                 }
             }
         }
@@ -334,12 +324,9 @@ impl Game<'_> {
                 state.sim.spawn_ring(rx, rz, ry, 0.08, 2.6, 1.25, r_amp, 2.2, false);
             }
 
-            // Boat wakes & oar ripples
+            // Boat wakes
             for (bx, bz, by, fwd_x, fwd_z, b_speed) in boat_samples {
                 state.sim.add_wake_node(bx, bz, by, fwd_x, fwd_z, b_speed, true);
-            }
-            for (ox, oz, oy) in oar_rings {
-                state.sim.spawn_ring(ox, oz, oy, 0.08, 2.4, 1.20, 0.65, 2.2, false);
             }
 
             // Mobs
@@ -353,7 +340,7 @@ impl Game<'_> {
             // Logcat profiling output every 2 seconds
             if now.duration_since(state.last_log_time) >= std::time::Duration::from_secs(2) {
                 log::info!(
-                    "water_physics v3.2: rings={}, player_wakes={}, boat_wakes={}",
+                    "water_physics v3.3: rings={}, player_wakes={}, boat_wakes={}",
                     state.sim.rings.len(),
                     state.sim.player_wakes.len(),
                     state.sim.boat_wakes.len()

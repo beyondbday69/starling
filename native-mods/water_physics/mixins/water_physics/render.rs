@@ -1,10 +1,10 @@
-// Geometric water wave and wake renderer (v3.2).
+// Geometric water wave and wake renderer (v3.3).
 //
 // Key features:
 // - Circular ripple rings: Smooth 24-gon expanding torus quads with raised 3D crests (+0.045m to +0.065m).
 //   Zero-pop envelope ensures perfectly smooth attack and cubic decay to zero alpha and zero height.
-// - V-Wake ribbons: True continuous Kelvin wake arms flaring behind swimmers and boats with dual-crest
-//   wave ridges and realistic water trough cross-sections (true 3D height displacement +0.048m to +0.075m).
+// - V-Wake ribbons: Sleek, hydrodynamic single-ridge 3D Kelvin V-wake arms (Left and Right) with raised crests
+//   (+0.04m to +0.06m) and slender ~25-40cm width, eliminating multi-ribbon striping and thick bands.
 // - Soft glass water reflection with zero-alpha edges for 100% seamless blending. ZERO white foam quads.
 
 use crate::game::Game;
@@ -225,38 +225,35 @@ impl Game<'_> {
             let y_base0 = n0.water_y as f32 + 0.002 + cam_y;
             let y_base1 = n1.water_y as f32 + 0.002 + cam_y;
 
-            // Physical 3D wave displacement:
-            // Dual crests with realistic water trough between them
-            let crest1_h0 = (0.048 * amp0).min(0.075);
-            let crest1_h1 = (0.048 * amp1).min(0.075);
-            let crest2_h0 = crest1_h0 * 0.55;
-            let crest2_h1 = crest1_h1 * 0.55;
-            let trough_h0 = crest1_h0 * 0.15;
-            let trough_h1 = crest1_h1 * 0.15;
-
-            let y_cr2_0 = y_base0 + 0.001 + crest2_h0;
-            let y_cr2_1 = y_base1 + 0.001 + crest2_h1;
-            let y_tr_0 = y_base0 + 0.001 + trough_h0;
-            let y_tr_1 = y_base1 + 0.001 + trough_h1;
-            let y_cr1_0 = y_base0 + 0.001 + crest1_h0;
-            let y_cr1_1 = y_base1 + 0.001 + crest1_h1;
+            // Physical 3D wave displacement: sleek raised crest line (+0.04m to +0.06m)
+            let crest_h0 = (0.040 * amp0).min(0.060);
+            let crest_h1 = (0.040 * amp1).min(0.060);
+            let y_crest0 = y_base0 + 0.001 + crest_h0;
+            let y_crest1 = y_base1 + 0.001 + crest_h1;
 
             let hw0 = n0.half_width;
             let hw1 = n1.half_width;
-            let arm_w0 = (0.24 + 0.12 * hw0).min(0.60);
-            let arm_w1 = (0.24 + 0.12 * hw1).min(0.60);
 
-            // Shading & Alpha: Pure crystal water reflection, NO foam
-            let alpha_cr1_0 = (0.34 * amp0).clamp(0.0, 0.40);
-            let alpha_cr1_1 = (0.34 * amp1).clamp(0.0, 0.40);
-            let a_cr1_0_u32 = (alpha_cr1_0 * 255.0) as u32;
-            let a_cr1_1_u32 = (alpha_cr1_1 * 255.0) as u32;
+            // Slender, hydrodynamic arm thickness (thin, NOT thick ribbons)
+            let arm_w0 = if n0.is_boat {
+                (0.22 + 0.06 * hw0).clamp(0.24, 0.42)
+            } else {
+                (0.16 + 0.05 * hw0).clamp(0.18, 0.32)
+            };
+            let arm_w1 = if n1.is_boat {
+                (0.22 + 0.06 * hw1).clamp(0.24, 0.42)
+            } else {
+                (0.16 + 0.05 * hw1).clamp(0.18, 0.32)
+            };
 
-            let a_cr2_0_u32 = ((alpha_cr1_0 * 0.60) * 255.0) as u32;
-            let a_cr2_1_u32 = ((alpha_cr1_1 * 0.60) * 255.0) as u32;
+            let half_w0 = arm_w0 * 0.5;
+            let half_w1 = arm_w1 * 0.5;
 
-            let a_tr_0_u32 = ((alpha_cr1_0 * 0.25) * 255.0) as u32;
-            let a_tr_1_u32 = ((alpha_cr1_1 * 0.25) * 255.0) as u32;
+            // Shading & Alpha: Pure crystal water reflection glint, NO foam
+            let alpha_cr0 = (0.32 * amp0).clamp(0.0, 0.38);
+            let alpha_cr1 = (0.32 * amp1).clamp(0.0, 0.38);
+            let a_cr0_u32 = (alpha_cr0 * 255.0) as u32;
+            let a_cr1_u32 = (alpha_cr1 * 255.0) as u32;
 
             let (r0, g0, b0) = (215u32, 235u32, 255u32);
             let (r1, g1, b1) = (215u32, 235u32, 255u32);
@@ -264,96 +261,54 @@ impl Game<'_> {
             let col_edge0 = (b0 << 16) | (g0 << 8) | r0; // alpha = 0 for seamless baseline
             let col_edge1 = (b1 << 16) | (g1 << 8) | r1;
 
-            let col_cr2_0 = (a_cr2_0_u32 << 24) | (b0 << 16) | (g0 << 8) | r0;
-            let col_cr2_1 = (a_cr2_1_u32 << 24) | (b1 << 16) | (g1 << 8) | r1;
+            let col_crest0 = (a_cr0_u32 << 24) | (b0 << 16) | (g0 << 8) | r0;
+            let col_crest1 = (a_cr1_u32 << 24) | (b1 << 16) | (g1 << 8) | r1;
 
-            let col_tr_0 = (a_tr_0_u32 << 24) | (b0 << 16) | (g0 << 8) | r0;
-            let col_tr_1 = (a_tr_1_u32 << 24) | (b1 << 16) | (g1 << 8) | r1;
+            // Transverse wave sample widths along single Kelvin arm:
+            let w_in0 = (hw0 - half_w0).max(0.03);
+            let w_in1 = (hw1 - half_w1).max(0.03);
+            let w_cr0 = hw0;
+            let w_cr1 = hw1;
+            let w_out0 = hw0 + half_w0;
+            let w_out1 = hw1 + half_w1;
 
-            let col_cr1_0 = (a_cr1_0_u32 << 24) | (b0 << 16) | (g0 << 8) | r0;
-            let col_cr1_1 = (a_cr1_1_u32 << 24) | (b1 << 16) | (g1 << 8) | r1;
-
-            // Transverse wave sample widths along Kelvin arm cross-section:
-            let w_in0 = (hw0 * 0.40 - 0.10).max(0.03);
-            let w_in1 = (hw1 * 0.40 - 0.10).max(0.03);
-            let w_cr2_0 = hw0 * 0.58;
-            let w_cr2_1 = hw1 * 0.58;
-            let w_tr0 = hw0 * 0.78;
-            let w_tr1 = hw1 * 0.78;
-            let w_cr1_0 = hw0;
-            let w_cr1_1 = hw1;
-            let w_out0 = hw0 + arm_w0 * 0.65;
-            let w_out1 = hw1 + arm_w1 * 0.65;
-
-            // --- Left V-Arm Ribbon (4 undulating 3D strips) ---
+            // --- Left V-Arm (Single 3D ridge: Inner -> Crest -> Outer) ---
             let l_in0 = [base_x0 + n0.left_x * w_in0, y_base0, base_z0 + n0.left_z * w_in0];
             let l_in1 = [base_x1 + n1.left_x * w_in1, y_base1, base_z1 + n1.left_z * w_in1];
-            let l_cr2_0 = [base_x0 + n0.left_x * w_cr2_0, y_cr2_0, base_z0 + n0.left_z * w_cr2_0];
-            let l_cr2_1 = [base_x1 + n1.left_x * w_cr2_1, y_cr2_1, base_z1 + n1.left_z * w_cr2_1];
-            let l_tr0 = [base_x0 + n0.left_x * w_tr0, y_tr_0, base_z0 + n0.left_z * w_tr0];
-            let l_tr1 = [base_x1 + n1.left_x * w_tr1, y_tr_1, base_z1 + n1.left_z * w_tr1];
-            let l_cr1_0 = [base_x0 + n0.left_x * w_cr1_0, y_cr1_0, base_z0 + n0.left_z * w_cr1_0];
-            let l_cr1_1 = [base_x1 + n1.left_x * w_cr1_1, y_cr1_1, base_z1 + n1.left_z * w_cr1_1];
+            let l_cr0 = [base_x0 + n0.left_x * w_cr0, y_crest0, base_z0 + n0.left_z * w_cr0];
+            let l_cr1 = [base_x1 + n1.left_x * w_cr1, y_crest1, base_z1 + n1.left_z * w_cr1];
             let l_out0 = [base_x0 + n0.left_x * w_out0, y_base0, base_z0 + n0.left_z * w_out0];
             let l_out1 = [base_x1 + n1.left_x * w_out1, y_base1, base_z1 + n1.left_z * w_out1];
 
-            // 1. Left Inner baseline -> Crest 2
+            // 1. Left inner slope (in -> cr)
             out.push(Vertex { pos: l_in0, uv: [u_white, v_white], layer, color: col_edge0, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
             out.push(Vertex { pos: l_in1, uv: [u_white, v_white], layer, color: col_edge1, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
-            out.push(Vertex { pos: l_cr2_1, uv: [u_white, v_white], layer, color: col_cr2_1, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
-            out.push(Vertex { pos: l_cr2_0, uv: [u_white, v_white], layer, color: col_cr2_0, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+            out.push(Vertex { pos: l_cr1, uv: [u_white, v_white], layer, color: col_crest1, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+            out.push(Vertex { pos: l_cr0, uv: [u_white, v_white], layer, color: col_crest0, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
 
-            // 2. Left Crest 2 -> Trough dip
-            out.push(Vertex { pos: l_cr2_0, uv: [u_white, v_white], layer, color: col_cr2_0, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
-            out.push(Vertex { pos: l_cr2_1, uv: [u_white, v_white], layer, color: col_cr2_1, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
-            out.push(Vertex { pos: l_tr1, uv: [u_white, v_white], layer, color: col_tr_1, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
-            out.push(Vertex { pos: l_tr0, uv: [u_white, v_white], layer, color: col_tr_0, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
-
-            // 3. Left Trough -> Primary Crest 1
-            out.push(Vertex { pos: l_tr0, uv: [u_white, v_white], layer, color: col_tr_0, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
-            out.push(Vertex { pos: l_tr1, uv: [u_white, v_white], layer, color: col_tr_1, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
-            out.push(Vertex { pos: l_cr1_1, uv: [u_white, v_white], layer, color: col_cr1_1, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
-            out.push(Vertex { pos: l_cr1_0, uv: [u_white, v_white], layer, color: col_cr1_0, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
-
-            // 4. Left Primary Crest 1 -> Outer baseline
-            out.push(Vertex { pos: l_cr1_0, uv: [u_white, v_white], layer, color: col_cr1_0, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
-            out.push(Vertex { pos: l_cr1_1, uv: [u_white, v_white], layer, color: col_cr1_1, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+            // 2. Left outer slope (cr -> out)
+            out.push(Vertex { pos: l_cr0, uv: [u_white, v_white], layer, color: col_crest0, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+            out.push(Vertex { pos: l_cr1, uv: [u_white, v_white], layer, color: col_crest1, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
             out.push(Vertex { pos: l_out1, uv: [u_white, v_white], layer, color: col_edge1, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
             out.push(Vertex { pos: l_out0, uv: [u_white, v_white], layer, color: col_edge0, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
 
-            // --- Right V-Arm Ribbon (4 undulating 3D strips) ---
+            // --- Right V-Arm (Single 3D ridge: Inner -> Crest -> Outer) ---
             let r_in0 = [base_x0 - n0.left_x * w_in0, y_base0, base_z0 - n0.left_z * w_in0];
             let r_in1 = [base_x1 - n1.left_x * w_in1, y_base1, base_z1 - n1.left_z * w_in1];
-            let r_cr2_0 = [base_x0 - n0.left_x * w_cr2_0, y_cr2_0, base_z0 - n0.left_z * w_cr2_0];
-            let r_cr2_1 = [base_x1 - n1.left_x * w_cr2_1, y_cr2_1, base_z1 - n1.left_z * w_cr2_1];
-            let r_tr0 = [base_x0 - n0.left_x * w_tr0, y_tr_0, base_z0 - n0.left_z * w_tr0];
-            let r_tr1 = [base_x1 - n1.left_x * w_tr1, y_tr_1, base_z1 - n1.left_z * w_tr1];
-            let r_cr1_0 = [base_x0 - n0.left_x * w_cr1_0, y_cr1_0, base_z0 - n0.left_z * w_cr1_0];
-            let r_cr1_1 = [base_x1 - n1.left_x * w_cr1_1, y_cr1_1, base_z1 - n1.left_z * w_cr1_1];
+            let r_cr0 = [base_x0 - n0.left_x * w_cr0, y_crest0, base_z0 - n0.left_z * w_cr0];
+            let r_cr1 = [base_x1 - n1.left_x * w_cr1, y_crest1, base_z1 - n1.left_z * w_cr1];
             let r_out0 = [base_x0 - n0.left_x * w_out0, y_base0, base_z0 - n0.left_z * w_out0];
             let r_out1 = [base_x1 - n1.left_x * w_out1, y_base1, base_z1 - n1.left_z * w_out1];
 
-            // 1. Right Inner baseline -> Crest 2
+            // 1. Right inner slope (in -> cr)
             out.push(Vertex { pos: r_in0, uv: [u_white, v_white], layer, color: col_edge0, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
             out.push(Vertex { pos: r_in1, uv: [u_white, v_white], layer, color: col_edge1, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
-            out.push(Vertex { pos: r_cr2_1, uv: [u_white, v_white], layer, color: col_cr2_1, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
-            out.push(Vertex { pos: r_cr2_0, uv: [u_white, v_white], layer, color: col_cr2_0, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+            out.push(Vertex { pos: r_cr1, uv: [u_white, v_white], layer, color: col_crest1, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+            out.push(Vertex { pos: r_cr0, uv: [u_white, v_white], layer, color: col_crest0, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
 
-            // 2. Right Crest 2 -> Trough dip
-            out.push(Vertex { pos: r_cr2_0, uv: [u_white, v_white], layer, color: col_cr2_0, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
-            out.push(Vertex { pos: r_cr2_1, uv: [u_white, v_white], layer, color: col_cr2_1, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
-            out.push(Vertex { pos: r_tr1, uv: [u_white, v_white], layer, color: col_tr_1, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
-            out.push(Vertex { pos: r_tr0, uv: [u_white, v_white], layer, color: col_tr_0, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
-
-            // 3. Right Trough -> Primary Crest 1
-            out.push(Vertex { pos: r_tr0, uv: [u_white, v_white], layer, color: col_tr_0, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
-            out.push(Vertex { pos: r_tr1, uv: [u_white, v_white], layer, color: col_tr_1, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
-            out.push(Vertex { pos: r_cr1_1, uv: [u_white, v_white], layer, color: col_cr1_1, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
-            out.push(Vertex { pos: r_cr1_0, uv: [u_white, v_white], layer, color: col_cr1_0, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
-
-            // 4. Right Primary Crest 1 -> Outer baseline
-            out.push(Vertex { pos: r_cr1_0, uv: [u_white, v_white], layer, color: col_cr1_0, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
-            out.push(Vertex { pos: r_cr1_1, uv: [u_white, v_white], layer, color: col_cr1_1, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+            // 2. Right outer slope (cr -> out)
+            out.push(Vertex { pos: r_cr0, uv: [u_white, v_white], layer, color: col_crest0, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+            out.push(Vertex { pos: r_cr1, uv: [u_white, v_white], layer, color: col_crest1, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
             out.push(Vertex { pos: r_out1, uv: [u_white, v_white], layer, color: col_edge1, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
             out.push(Vertex { pos: r_out0, uv: [u_white, v_white], layer, color: col_edge0, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
         }

@@ -1,4 +1,4 @@
-// Geometric water wave and wake simulation engine (v3.1).
+// Geometric water wave and wake simulation engine (v3.3).
 //
 // Key features:
 // 1. Concentric Ripple Rings: Smooth circular expanding torus waves for footsteps, drops, splashes, and oars.
@@ -109,11 +109,11 @@ impl WakeNode {
         let left_z = dir_x;
 
         let (half_width, spread_speed, amplitude, max_age) = if is_boat {
-            let amp = (speed * 0.45).clamp(0.55, 1.8);
-            (0.55f32, 1.10f32, amp, 3.5f32)
+            let amp = (speed * 0.40).clamp(0.50, 1.6);
+            (0.42f32, 0.65f32, amp, 3.0f32)
         } else {
-            let amp = (speed * 0.45).clamp(0.45, 1.4);
-            (0.30f32, 0.75f32, amp, 2.5f32)
+            let amp = (speed * 0.40).clamp(0.40, 1.3);
+            (0.22f32, 0.50f32, amp, 2.2f32)
         };
 
         Self {
