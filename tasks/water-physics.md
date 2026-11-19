@@ -182,3 +182,36 @@ When testing with custom shader packs (such as Reimagined shaders), the initial 
   - Base wave alpha is reduced to $|h| \times 0.28$ (capped at $0.40$), providing a clean specular sheen on wave edges.
   - Foam maximum alpha is lowered to $0.45$ (down from $0.85$), ensuring foam appears as gentle airy bubbles rather than an opaque white crust.
 
+---
+
+## 8. Water Physics v2.2 (Dynamic V-Wake Hydrodynamics, True 3D Crests, and Continuous Motion Tracking)
+
+### 8.1. Root Cause Diagnosis of User Feedback
+1. **Unresponsive / "React nhi krra":**
+   - In multiplayer / mobile clients, `player.velocity` can be zeroed out between network packets or interpolated frames, causing motion detection to fail.
+   - Water surface detection searched an overly narrow vertical band (`-2..=1`), failing in deeper lakes or when wading in 1-block deep water where $dy < -0.85$.
+2. **Premature Shutoff / "Kabhi kabhi band hojara":**
+   - Tile size was overly constricted ($4.5$m) with only 2 tiles. Moving just 2-3 blocks triggered `reset()`, instantly clearing all active waves.
+   - Idle timeout was set to 15 ticks ($0.5$s), extinguishing ripples before they could expand across the lake.
+   - An artificial $0.05$m baseline lift lifted calm water into a visible raised plateau that popped in and out of existence.
+3. **No Real V-Wake / "Real water jaisa V shape wake nhi hora":**
+   - The simulation injected only a single circular dot every 3 ticks instead of physical hydrodynamics.
+   - Damping ($0.038$) was too high, strangling waves before constructive interference could build the wake arms.
+
+### 8.2. Engineering Fixes in v2.2
+- **Position-Delta Motion Engine:** Tracks $(\Delta x, \Delta z)$ directly from `player.position`. Velocity is computed faithfully regardless of network interpolation or zeroed client vectors.
+- **Physical V-Wake Injection:**
+  - Swimming produces a 4-point hydrodynamic disturbance: bow push ($+0.28$), dual lateral divergence arms ($+0.32$, foam $0.50$), and a central stern trough ($-0.30$).
+  - Walking/wading produces continuous lateral bow wake plus alternating left/right footstep splashes ($0.55$m stride interval).
+  - Boats produce full Kelvin envelope: bow cutting wave, hull shoulder divergence, deep stern trough, and trailing foam wake.
+- **True 3D Wave Crests Without Plateauing:**
+  - Removed artificial baseline lift (`base_lift = 0.0`). Calm water ($h = 0$) sits at $+0.002$m with $\alpha = 0$ (100% invisible, seamless blending).
+  - Wave crests ($h > 0$) elevate dynamically up to $+0.085$m into real 3D.
+  - Wave troughs ($h < 0$) stay on the baseline plane with deep refraction shadows, completely avoiding vanilla water depth-buffer z-fighting.
+- **Wide 8.0m Multi-Tile Simulation:**
+  - Tile size increased to $8.0$m (covers $64\text{ m}^2$).
+  - Max active tiles set to 3-4 (over $24$m of wake coverage).
+  - Idle timeout extended to 90 ticks ($3.0$ seconds).
+  - Damping tuned to $0.016$, allowing $3-5$ visible concentric rings to expand naturally.
+
+

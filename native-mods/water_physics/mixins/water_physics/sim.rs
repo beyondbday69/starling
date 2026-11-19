@@ -1,22 +1,23 @@
-// 2D Heightfield water wave simulation with leapfrog PDE and dispersion (v2).
+// 2D Heightfield water wave simulation with leapfrog PDE and dispersion (v2.2).
 //
 // Optimized for mobile:
-// - Small tiles (~4.5 blocks) at high resolution (32x32 cells = ~7.1 cells/block)
+// - Wide 8.0-meter tiles at high resolution (32x32 cells = 4 cells/block)
 // - Preallocated h_next buffer to eliminate per-step heap allocations
-// - Higher energy threshold for rapid idle sleeping
-// - Smooth Gaussian / Ricker splash kernels for clean concentric ring generation
+// - Multi-tile coverage (up to 3-4 active tiles) preventing premature tile resets
+// - Low damping (0.016) so waves expand 3-5 visible concentric rings and wakes stay alive ~3 seconds
+// - Multi-tile injection so disturbances crossing tile borders inject seamlessly
 
 pub const DEFAULT_RES: usize = 32;
-pub const DEFAULT_MAX_TILES: usize = 2;
-pub const TILE_SIZE: f32 = 4.5;
+pub const DEFAULT_MAX_TILES: usize = 3;
+pub const TILE_SIZE: f32 = 8.0;
 
-// Wave physics constants tuned for 30Hz update rate and 3-5 ring expansion
-const WAVE_SPEED_SQ: f32 = 0.24;
-const DAMPING: f32 = 0.038;
-const DISPERSION: f32 = 0.030;
-const FOAM_DECAY: f32 = 0.92;
-const ENERGY_IDLE_THRESHOLD: f32 = 0.002;
-const IDLE_TICKS_LIMIT: u32 = 15;
+// Wave physics constants tuned for 30Hz update rate and natural fluid propagation
+const WAVE_SPEED_SQ: f32 = 0.26;
+const DAMPING: f32 = 0.016;
+const DISPERSION: f32 = 0.025;
+const FOAM_DECAY: f32 = 0.94;
+const ENERGY_IDLE_THRESHOLD: f32 = 0.0003;
+const IDLE_TICKS_LIMIT: u32 = 90; // 3 full seconds at 30Hz
 
 #[derive(Clone, Debug)]
 pub struct WaveTile {
@@ -66,7 +67,7 @@ impl WaveTile {
 
     #[inline]
     pub fn covers(&self, x: f64, z: f64) -> bool {
-        let half = (TILE_SIZE * 0.5 - 0.2) as f64;
+        let half = (TILE_SIZE * 0.5 - 0.25) as f64;
         (x - self.center_x).abs() <= half && (z - self.center_z).abs() <= half
     }
 
@@ -104,12 +105,12 @@ impl WaveTile {
                 // Frequency dispersion creates trailing concentric wavelets
                 let disp = DISPERSION * (diag - lap);
 
-                // Leapfrog integration step with damping
+                // Leapfrog integration step with low natural fluid damping
                 let mut val = 2.0 * c - p + WAVE_SPEED_SQ * lap_iso + disp - DAMPING * (c - p);
 
-                // Boundary absorption ramp on perimeter
+                // Boundary absorption ramp on perimeter to prevent artificial hard wall reflections
                 if i <= 2 || i >= res - 3 || j <= 2 || j >= res - 3 {
-                    val *= 0.75;
+                    val *= 0.78;
                 }
 
                 self.h_next[idx] = val;
@@ -124,7 +125,7 @@ impl WaveTile {
         // Decay foam mask
         for f in &mut self.foam {
             *f *= FOAM_DECAY;
-            if *f < 0.005 {
+            if *f < 0.004 {
                 *f = 0.0;
             }
         }
@@ -214,7 +215,7 @@ impl WaveTile {
                 let d2 = di * di + dj * dj;
                 if d2 <= r_sq * 5.0 {
                     let d_norm = (d2 / r_sq).sqrt();
-                    // Clean Mexican-hat splash: center depression with surrounding raised ring
+                    // Mexican-hat splash: center cavity surrounded by raised shockwave rim
                     let wave = (1.0 - d_norm * d_norm) * (-d2 / (2.0 * r_sq)).exp();
                     let idx = row + i;
                     self.h[idx] += amplitude * wave;
@@ -303,14 +304,32 @@ impl WaterSimulation {
 
     pub fn inject_impulse(&mut self, wx: f64, wz: f64, water_y: f64, radius: f32, amplitude: f32, add_foam: f32) {
         let amp = amplitude * self.intensity;
-        let tile = self.get_or_create_tile(wx, wz, water_y);
-        tile.inject_impulse(wx, wz, radius, amp, add_foam);
+        let mut injected = false;
+        for tile in &mut self.tiles {
+            if tile.active && (tile.water_y - water_y).abs() < 0.8 && tile.covers(wx, wz) {
+                tile.inject_impulse(wx, wz, radius, amp, add_foam);
+                injected = true;
+            }
+        }
+        if !injected {
+            let tile = self.get_or_create_tile(wx, wz, water_y);
+            tile.inject_impulse(wx, wz, radius, amp, add_foam);
+        }
     }
 
     pub fn inject_splash(&mut self, wx: f64, wz: f64, water_y: f64, radius: f32, amplitude: f32, foam_amount: f32) {
         let amp = amplitude * self.intensity;
-        let tile = self.get_or_create_tile(wx, wz, water_y);
-        tile.inject_splash(wx, wz, radius, amp, foam_amount);
+        let mut injected = false;
+        for tile in &mut self.tiles {
+            if tile.active && (tile.water_y - water_y).abs() < 0.8 && tile.covers(wx, wz) {
+                tile.inject_splash(wx, wz, radius, amp, foam_amount);
+                injected = true;
+            }
+        }
+        if !injected {
+            let tile = self.get_or_create_tile(wx, wz, water_y);
+            tile.inject_splash(wx, wz, radius, amp, foam_amount);
+        }
     }
 
     pub fn step(&mut self) -> bool {

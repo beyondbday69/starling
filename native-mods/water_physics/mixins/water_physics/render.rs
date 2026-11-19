@@ -1,9 +1,11 @@
-// Water wave overlay renderer (v2).
+// Water wave overlay renderer (v2.2).
 //
 // Generates a smooth 3D displaced mesh for active wave tiles:
-// - Vertex y = water_surface + baseline_lift + h * amplitude
-// - Elevated baseline prevents troughs from clipping into flat vanilla water
-// - Smooth envelope fades displacement and alpha to 0 at edges and shoreline
+// - Crests (h > 0) rise up into true 3D (+0.02m to +0.085m) with gleaming specular highlight
+// - Troughs (h < 0) stay at the water surface baseline (+0.002m) to prevent z-clipping with vanilla water,
+//   shaded with deep refraction shadows
+// - Foam renders as crisp aerated white lines on wake arms and splash rims
+// - Smooth activity envelope fades alpha to 0 on calm water (zero visual blobs, custom shaders show through cleanly)
 // - Preallocated quad buffer cached at 30Hz simulation steps; zero per-frame allocation
 // - Cheap directional diffuse lighting (no heavy CPU specular loops)
 
@@ -80,12 +82,11 @@ impl Game<'_> {
         cache.quads.clear();
         cache.dirty = false;
 
-        let sun_x = 0.24f32;
+        let sun_x = 0.28f32;
         let sun_y = 0.88f32;
-        let sun_z = -0.40f32;
+        let sun_z = -0.38f32;
 
-        let base_lift = 0.050f32;
-        let ripple_scale = 0.075f32 * sim.intensity;
+        let ripple_scale = 0.085f32 * sim.intensity;
 
         for tile in &sim.tiles {
             if !tile.active {
@@ -127,12 +128,12 @@ impl Game<'_> {
                     let h_val = tile.h[idx];
                     let foam_val = tile.foam[idx];
 
-                    // Boundary fade to zero on tile edges
+                    // Boundary fade to zero on tile edges (smooth 3-cell ramp)
                     let edge_dist = (i.min(j).min(res - 1 - i).min(res - 1 - j)) as f32;
                     let b_fade = (edge_dist / 3.0).min(1.0);
 
-                    // Activity envelope
-                    let activity = (h_val.abs() * 6.0 + foam_val * 2.5).min(1.0);
+                    // Activity envelope: only active where there are crests, troughs, or foam
+                    let activity = (h_val.abs() * 4.0 + foam_val * 2.0).min(1.0);
                     let w = b_fade * activity;
                     if w < 0.005 {
                         continue;
@@ -140,9 +141,12 @@ impl Game<'_> {
 
                     cache.node_weight[idx] = w;
 
-                    // 3D displaced surface elevation:
-                    // base_lift ensures troughs stay above vanilla flat water top
-                    let y = water_y + 0.002 + w * (base_lift + h_val * ripple_scale);
+                    // Real 3D Crest Elevation:
+                    // Only wave crests (h > 0) rise up into 3D (up to +0.085m).
+                    // Troughs (h < 0) stay at the water surface (+0.002m) so they NEVER clip into vanilla water.
+                    // Calm water (h = 0) stays at +0.002m with alpha = 0 (100% invisible/seamless).
+                    let crest_lift = (h_val.max(0.0) * ripple_scale).min(0.085);
+                    let y = water_y + 0.002 + w * crest_lift;
                     cache.node_y[idx] = y;
 
                     // Central-difference slope for per-vertex normal
@@ -163,22 +167,29 @@ impl Game<'_> {
                     let norm_y = inv_len;
                     let norm_z = nz * inv_len;
 
-                    // Fast directional lighting (single dot product, no CPU specular loop)
-                    let dot = (norm_x * sun_x + norm_y * sun_y + norm_z * sun_z).max(0.0);
-                    let lit = 0.70 + 0.30 * dot;
+                    // Fast directional lighting (sun reflection on wave slopes)
+                    let dot = (norm_x * sun_x + norm_y * sun_y + norm_z * sun_z).clamp(0.0, 1.0);
+                    let lit = 0.68 + 0.32 * dot;
 
-                    // Glass-like water (v2.1): the overlay has no body colour of its own, the real water
-                    // underneath (vanilla or a shader pack such as Reimagined) already supplies tint,
-                    // reflections and depth. Only a soft light crest, a soft dark trough and a little
-                    // foam are painted, each at low alpha, so the real water shows through.
-                    let crest = (h_val * 5.0).clamp(0.0, 1.0);
-                    let trough = (-h_val * 5.0).clamp(0.0, 1.0);
+                    // Dynamic wave optics:
+                    let crest = (h_val * 4.5).clamp(0.0, 1.0);
+                    let trough = (-h_val * 4.5).clamp(0.0, 1.0);
                     let f = foam_val.clamp(0.0, 1.0);
 
-                    let r = (((200.0 + 45.0 * crest - 150.0 * trough) * (1.0 - f) + 255.0 * f) * lit).clamp(0.0, 255.0);
-                    let g = (((225.0 + 25.0 * crest - 150.0 * trough) * (1.0 - f) + 255.0 * f) * lit).clamp(0.0, 255.0);
-                    let b = (((245.0 + 10.0 * crest - 110.0 * trough) * (1.0 - f) + 255.0 * f) * lit).clamp(0.0, 255.0);
-                    let a = (w * (0.03 + 0.22 * crest + 0.12 * trough + 0.40 * f)).clamp(0.0, 0.45);
+                    // Colors:
+                    // Crest: bright sky reflection / sun highlight (crisp whitish-cyan glint)
+                    // Trough: deeper water shadow (dark marine blue shadow)
+                    // Foam: brilliant white aeration
+                    let r = (((210.0 + 45.0 * crest - 170.0 * trough) * (1.0 - f) + 255.0 * f) * lit).clamp(0.0, 255.0);
+                    let g = (((230.0 + 25.0 * crest - 150.0 * trough) * (1.0 - f) + 255.0 * f) * lit).clamp(0.0, 255.0);
+                    let b = (((250.0 + 5.0 * crest - 110.0 * trough) * (1.0 - f) + 255.0 * f) * lit).clamp(0.0, 255.0);
+
+                    // Alpha:
+                    // Visible crest highlights (up to 0.45)
+                    // Visible trough shadows (up to 0.35)
+                    // Visible foam lines (up to 0.65)
+                    // Smoothly fades to 0 where calm, so underlying shader water shows through
+                    let a = (w * (0.04 + 0.38 * crest + 0.28 * trough + 0.55 * f)).clamp(0.0, 0.65);
 
                     cache.node_color[idx] = ((a * 255.0) as u32) << 24
                         | ((b as u32) << 16)
