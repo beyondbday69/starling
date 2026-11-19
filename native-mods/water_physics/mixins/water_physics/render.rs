@@ -167,14 +167,18 @@ impl Game<'_> {
                     let dot = (norm_x * sun_x + norm_y * sun_y + norm_z * sun_z).max(0.0);
                     let lit = 0.70 + 0.30 * dot;
 
-                    // Crest and foam color blending
-                    let crest = (h_val * 4.5).clamp(0.0, 1.0);
+                    // Glass-like water (v2.1): the overlay has no body colour of its own, the real water
+                    // underneath (vanilla or a shader pack such as Reimagined) already supplies tint,
+                    // reflections and depth. Only a soft light crest, a soft dark trough and a little
+                    // foam are painted, each at low alpha, so the real water shows through.
+                    let crest = (h_val * 5.0).clamp(0.0, 1.0);
+                    let trough = (-h_val * 5.0).clamp(0.0, 1.0);
                     let f = foam_val.clamp(0.0, 1.0);
 
-                    let r = (((42.0 * (1.0 - crest) + 180.0 * crest) * (1.0 - f) + 245.0 * f) * lit).clamp(0.0, 255.0);
-                    let g = (((132.0 * (1.0 - crest) + 225.0 * crest) * (1.0 - f) + 250.0 * f) * lit).clamp(0.0, 255.0);
-                    let b = (((218.0 * (1.0 - crest) + 255.0 * crest) * (1.0 - f) + 255.0 * f) * lit).clamp(0.0, 255.0);
-                    let a = (w * (0.16 + 0.65 * h_val.abs() + 0.65 * f)).clamp(0.0, 0.85);
+                    let r = (((200.0 + 45.0 * crest - 150.0 * trough) * (1.0 - f) + 255.0 * f) * lit).clamp(0.0, 255.0);
+                    let g = (((225.0 + 25.0 * crest - 150.0 * trough) * (1.0 - f) + 255.0 * f) * lit).clamp(0.0, 255.0);
+                    let b = (((245.0 + 10.0 * crest - 110.0 * trough) * (1.0 - f) + 255.0 * f) * lit).clamp(0.0, 255.0);
+                    let a = (w * (0.03 + 0.22 * crest + 0.12 * trough + 0.40 * f)).clamp(0.0, 0.45);
 
                     cache.node_color[idx] = ((a * 255.0) as u32) << 24
                         | ((b as u32) << 16)
