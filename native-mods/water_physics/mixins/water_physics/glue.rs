@@ -18,7 +18,7 @@ use horizon_client::particles::{ParticleOptions, ParticleType};
 
 pub const ID: &str = "water_physics";
 pub const NAME: &str = "Water Physics";
-pub const VERSION: &str = "3.0.0";
+pub const VERSION: &str = "3.1.0";
 pub const DESCRIPTION: &str = "Smooth 3D ripple rings, Kelvin V-wakes, splash droplets, and boat hydrodynamics.";
 
 struct WaterPhysicsState {
@@ -295,7 +295,7 @@ impl Game<'_> {
                 state.sim.add_wake_node(wx, wz, wy, dx, dz, spd, false);
             }
             if let Some((fx, fz, fy)) = step_ring {
-                state.sim.spawn_ring(fx, fz, fy, 0.10, 1.4, 1.4, 0.65, 2.0, false);
+                state.sim.spawn_ring(fx, fz, fy, 0.06, 2.4, 1.15, 0.55, 2.2, false);
             }
 
             // Boat wakes & oar ripples
@@ -303,12 +303,12 @@ impl Game<'_> {
                 state.sim.add_wake_node(bx, bz, by, fwd_x, fwd_z, b_speed, true);
             }
             for (ox, oz, oy) in oar_rings {
-                state.sim.spawn_ring(ox, oz, oy, 0.14, 1.6, 1.5, 0.85, 2.2, true);
+                state.sim.spawn_ring(ox, oz, oy, 0.08, 2.4, 1.20, 0.65, 2.2, false);
             }
 
             // Mobs
             for (mx, mz, my) in mob_rings {
-                state.sim.spawn_ring(mx, mz, my, 0.08, 0.9, 1.1, 0.40, 1.6, false);
+                state.sim.spawn_ring(mx, mz, my, 0.05, 1.5, 0.95, 0.35, 1.8, false);
             }
 
             // Step fluid physics at live frame rate

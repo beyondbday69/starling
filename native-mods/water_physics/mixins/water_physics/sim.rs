@@ -1,13 +1,14 @@
-// Geometric water wave and wake simulation engine (v3.0).
+// Geometric water wave and wake simulation engine (v3.1).
 //
-// Replaces the coarse 32x32 heightfield grid with smooth analytical fluid geometry:
+// Key features:
 // 1. Concentric Ripple Rings: Smooth circular expanding torus waves for footsteps, drops, splashes, and oars.
-// 2. Continuous Kelvin V-Wakes: Trailing hydrodynamic wake ribbons flaring at 19.47 degrees with foam.
-// 3. Zero-grid architecture: Eliminates low-poly triangulated origami artifacts, square boundary popping,
-//    and untextured Gouraud shading creases.
+//    Mathematically continuous harmonic envelope (smooth attack + cubic decay): ZERO spawn pop, ZERO death pop.
+// 2. Separate Player and Boat Kelvin Wake Channels: Prevents cross-entity ribbon stretching.
+// 3. Node continuity enforcement: Eliminates random stretched ribbons on pauses, turns, and teleports.
+// 4. Zero-grid architecture: Pure analytical fluid geometry without creases or square edges.
 
-pub const DEFAULT_MAX_RINGS: usize = 18;
-pub const DEFAULT_MAX_WAKE_NODES: usize = 32;
+pub const DEFAULT_MAX_RINGS: usize = 48;
+pub const DEFAULT_MAX_WAKE_NODES: usize = 40;
 
 #[derive(Clone, Debug)]
 pub struct RippleRing {
@@ -51,13 +52,29 @@ impl RippleRing {
 
     #[inline]
     pub fn is_alive(&self) -> bool {
-        self.age < self.max_age && self.radius < self.max_radius
+        self.age < self.max_age
     }
 
     #[inline]
     pub fn step(&mut self, dt: f32) {
         self.age += dt;
         self.radius += self.speed * dt;
+    }
+
+    /// Continuous harmonic envelope: 0.0 on spawn, smoothly rises, then smoothly decays to 0.0.
+    /// Completely eliminates sudden "circle pops" on appearance or expiration.
+    #[inline]
+    pub fn envelope(&self) -> f32 {
+        if self.max_age <= 0.001 {
+            return 0.0;
+        }
+        let p = (self.age / self.max_age).clamp(0.0, 1.0);
+        // Smooth cubic decay: (1 - p)^3 reaches exactly 0.0 with 0 slope at p=1.0
+        let decay = (1.0 - p) * (1.0 - p) * (1.0 - p);
+        // Smooth attack over the first 12% of lifetime: smoothstep from 0 to 1
+        let attack_p = (p / 0.12).min(1.0);
+        let attack = attack_p * attack_p * (3.0 - 2.0 * attack_p);
+        attack * decay
     }
 }
 
@@ -92,11 +109,11 @@ impl WakeNode {
         let left_z = dir_x;
 
         let (half_width, spread_speed, amplitude, max_age) = if is_boat {
-            let amp = (speed * 2.2).clamp(0.4, 1.8);
-            (0.65f32, 1.15f32, amp, 3.6f32)
+            let amp = (speed * 1.8).clamp(0.35, 1.5);
+            (0.55f32, 1.05f32, amp, 3.2f32)
         } else {
-            let amp = (speed * 1.5).clamp(0.3, 1.4);
-            (0.30f32, 0.72f32, amp, 2.5f32)
+            let amp = (speed * 1.3).clamp(0.25, 1.1);
+            (0.28f32, 0.65f32, amp, 2.2f32)
         };
 
         Self {
@@ -126,11 +143,23 @@ impl WakeNode {
         self.age += dt;
         self.half_width += self.spread_speed * dt;
     }
+
+    #[inline]
+    pub fn envelope(&self) -> f32 {
+        if self.max_age <= 0.001 {
+            return 0.0;
+        }
+        let p = (self.age / self.max_age).clamp(0.0, 1.0);
+        let decay = (1.0 - p) * (1.0 - p);
+        let attack = (p / 0.08).min(1.0);
+        attack * decay
+    }
 }
 
 pub struct WaterSimulation {
     pub rings: Vec<RippleRing>,
-    pub wake_nodes: Vec<WakeNode>,
+    pub player_wakes: Vec<WakeNode>,
+    pub boat_wakes: Vec<WakeNode>,
     pub max_rings: usize,
     pub max_wake_nodes: usize,
     pub segments: usize,
@@ -141,7 +170,8 @@ impl WaterSimulation {
     pub fn new() -> Self {
         Self {
             rings: Vec::with_capacity(DEFAULT_MAX_RINGS),
-            wake_nodes: Vec::with_capacity(DEFAULT_MAX_WAKE_NODES),
+            player_wakes: Vec::with_capacity(DEFAULT_MAX_WAKE_NODES),
+            boat_wakes: Vec::with_capacity(DEFAULT_MAX_WAKE_NODES),
             max_rings: DEFAULT_MAX_RINGS,
             max_wake_nodes: DEFAULT_MAX_WAKE_NODES,
             segments: 24, // smooth 24-gon circle
@@ -177,8 +207,17 @@ impl WaterSimulation {
         has_foam: bool,
     ) {
         if self.rings.len() >= self.max_rings {
-            // Drop oldest ring
-            self.rings.remove(0);
+            // Drop the ring with the lowest visible amplitude to avoid visible pops
+            let mut min_idx = 0;
+            let mut min_val = f32::MAX;
+            for (idx, r) in self.rings.iter().enumerate() {
+                let val = r.envelope() * r.amplitude;
+                if val < min_val {
+                    min_val = val;
+                    min_idx = idx;
+                }
+            }
+            self.rings.swap_remove(min_idx);
         }
         self.rings.push(RippleRing::new(
             center_x,
@@ -200,11 +239,10 @@ impl WaterSimulation {
         water_y: f64,
         impact: f32,
     ) {
-        let amp = (impact * 0.85).clamp(0.4, 1.8);
-        // Staggered concentric ripple rings radiating outward
-        self.spawn_ring(center_x, center_z, water_y, 0.15, 2.2, 1.85, amp, 2.4, true);
-        self.spawn_ring(center_x, center_z, water_y, 0.05, 1.6, 1.40, amp * 0.75, 2.0, false);
-        self.spawn_ring(center_x, center_z, water_y, 0.02, 1.1, 1.05, amp * 0.50, 1.6, false);
+        let amp = (impact * 0.70).clamp(0.35, 1.4);
+        // Staggered concentric ripple rings radiating outward smoothly
+        self.spawn_ring(center_x, center_z, water_y, 0.08, 2.8, 1.35, amp, 2.2, false);
+        self.spawn_ring(center_x, center_z, water_y, 0.02, 1.8, 0.95, amp * 0.65, 2.0, false);
     }
 
     pub fn add_wake_node(
@@ -217,21 +255,26 @@ impl WaterSimulation {
         speed: f32,
         is_boat: bool,
     ) {
-        if let Some(last) = self.wake_nodes.last() {
+        let (wake_vec, min_dist) = if is_boat {
+            (&mut self.boat_wakes, 0.35f64)
+        } else {
+            (&mut self.player_wakes, 0.20f64)
+        };
+
+        if let Some(last) = wake_vec.last() {
             let dx = pos_x - last.pos_x;
             let dz = pos_z - last.pos_z;
             let dist_sq = dx * dx + dz * dz;
-            let min_dist = if is_boat { 0.35 } else { 0.20 };
             if dist_sq < min_dist * min_dist {
                 return;
             }
         }
 
-        if self.wake_nodes.len() >= self.max_wake_nodes {
-            self.wake_nodes.remove(0);
+        if wake_vec.len() >= self.max_wake_nodes {
+            wake_vec.remove(0);
         }
 
-        self.wake_nodes.push(WakeNode::new(
+        wake_vec.push(WakeNode::new(
             pos_x,
             pos_z,
             water_y,
@@ -252,17 +295,24 @@ impl WaterSimulation {
         }
         self.rings.retain(|r| r.is_alive());
 
-        // Step and prune wake nodes
-        for node in &mut self.wake_nodes {
+        // Step and prune player wake nodes
+        for node in &mut self.player_wakes {
             node.step(dt);
             had_active = true;
         }
-        self.wake_nodes.retain(|n| n.is_alive());
+        self.player_wakes.retain(|n| n.is_alive());
+
+        // Step and prune boat wake nodes
+        for node in &mut self.boat_wakes {
+            node.step(dt);
+            had_active = true;
+        }
+        self.boat_wakes.retain(|n| n.is_alive());
 
         had_active
     }
 
     pub fn any_active(&self) -> bool {
-        !self.rings.is_empty() || !self.wake_nodes.is_empty()
+        !self.rings.is_empty() || !self.player_wakes.is_empty() || !self.boat_wakes.is_empty()
     }
 }
