@@ -503,6 +503,49 @@ The v2.x heightfield grid architecture approximated continuous circular ripples 
 - **APK Name:** `starling-preview-0.8.0-arm64-v8a.apk` (inside `starling-apk-arm64-v8a.zip`)
 - **Applied Mods:** `cinematic_interactions v0.12.2`, `skins_3d v1.1.1`, `gyro v1.6.0`, `water_physics v3.5.0`
 
+---
+
+## 15. Water Physics v3.6 (3D Living Waves, Boat Bow Spray & Stern Bubbles, and Ambient Wavelets)
+
+### 15.1. Motivation & User Request
+> *"add 3d waves also like real water and particlws for boat"*
+
+### 15.2. Engineering Fixes in v3.6
+- **Boat Water Particles (`glue.rs`):**
+  - **Bow Cutting Spray:**
+    - Emits lateral `ParticleType::Splash` droplets from the front bow cutting through water (`bx + fwd_x * 0.95`, `bz + fwd_z * 0.95`).
+    - Spray is angled laterally outward and upward with velocity scaling with boat speed.
+  - **Stern Wash Churn:**
+    - Emits `ParticleType::Bubble` water bubbles from the boat stern (`bx - fwd_x * 0.90`, `bz - fwd_z * 0.90`) at water depth.
+    - At speeds $> 2.8\text{ m/s}$, adds churning foaming splash droplets into the wake.
+  - **Smooth Rate-Limiting:**
+    - Emits at $\sim 12\text{ Hz}$ ($0.08\text{s}$ interval) to provide fluid, continuous visual feedback while strictly preserving mobile 60 FPS performance.
+
+- **Real 3D Rolling Waves (`render.rs`):**
+  - Elevated physical 3D wave crest displacement to deliver a realistic rolling wave appearance:
+    - Boat Kelvin arms: up to $+0.090\text{m}$ (previously $+0.060\text{m}$).
+    - Central keel wash: up to $+0.065\text{m}$ (previously $+0.035\text{m}$).
+    - Transverse bridging wavelets: up to $+0.055\text{m}$ (previously $+0.030\text{m}$).
+    - Circular ripple rings: up to $+0.070\text{m}$ (previously $+0.060\text{m}$).
+  - Shaded with pure neutral Fresnel highlights `(248, 252, 255)` and 100% transparent baseline ($\alpha = 0$), preserving underlying shader pack water colors and caustics completely.
+
+- **Ambient 3D Surface Wavelets (`glue.rs`):**
+  - Added gentle ambient surface wavelets lapping every $\sim 2.2\text{s}$ around idling boats and resting players in water.
+  - Eliminates flat dead-glass water surfaces, giving open water continuous, organic breathing motion.
+
+- **Compiler Error Fix (`glue.rs`, Commit `e763b1f`):**
+  - Consumed `boat_spray_emitters` by value in `glue.rs` loop to ensure tuple values are primitive `f32`/`f64` rather than references, resolving `error[E0606]: casting &f32 as f64 is invalid`.
+
+### 15.3. Build Verification
+- **Run ID:** `#44598471252`
+- **Commit:** `e763b1f` (v3.6 + type casting fix)
+- **Status:** PASSED (Green)
+- **Artifact:** `starling-apk-arm64-v8a` (ID: `14567207891`, size: 35.2 MB)
+- **Direct Download Link:** [Artifact 14567207891](https://github.com/beyondbday69/starling/actions/runs/44598471252/artifacts/14567207891)
+- **APK Name:** `starling-preview-0.8.0-arm64-v8a.apk` (inside `starling-apk-arm64-v8a.zip`)
+- **Applied Mods:** `cinematic_interactions v0.12.2`, `skins_3d v1.1.1`, `gyro v1.6.0`, `water_physics v3.6.0`
+
+
 
 
 

@@ -3,8 +3,8 @@
 **Repository:** `beyondbday69/starling`  
 **Current Active Branch:** `feat/water-physics-v2`  
 **Target Platform:** Android (ARM64 `arm64-v8a`)  
-**Latest Commit:** `7ec1b8f` (`fix(water_physics): resolve variable shadowing between color channels and vertex positions`)  
-**Latest CI Run:** `#44590988150` (Artifact: `14564053585`, size: 35.2 MB)  
+**Latest Commit:** `e763b1f` (`fix(water_physics): consume boat spray emitters by value to fix type casting`)  
+**Latest CI Run:** `#44598471252` (Artifact: `14567207891`, size: 35.2 MB)  
 **Last Updated:** November 2026  
 
 ---
@@ -178,10 +178,28 @@ graph TD
 
 ---
 
+## 3.5. Water Physics Native Mod v3.6 (3D Living Waves, Boat Spray Particles & Ambient Surface Wavelets)
+* **Goal:** Deliver realistic open-water dynamics with physical boat particles (cutting bow spray and stern wash bubbling) and true 3D rolling waves that prevent flat dead water.
+* **Key Features & Improvements:**
+  * **Boat Water Particles (`ParticleType::Splash` & `ParticleType::Bubble`):**
+    * **Bow Cutting Spray:** Lateral spray droplets emitted from the front bow (`bx + fwd_x * 0.95`, `bz + fwd_z * 0.95`), angled outward and upward proportionally to boat velocity.
+    * **Stern Wash Churn:** Bubbles (`ParticleType::Bubble`) and foaming spray droplets churning into the trailing wake wash.
+    * **Rate-Limited Emissions:** Throttle particle spawning at ~12 Hz to maintain buttery smooth 60 FPS on mobile.
+  * **Real 3D Rolling Waves:**
+    * Elevated physical 3D crest displacement up to +0.090m on boat Kelvin arms, +0.065m on keel wash, +0.055m on transverse wavelets, and +0.070m on ripple rings for a volumetric 3D rolling wave experience.
+  * **Ambient 3D Surface Wavelets:**
+    * Gentle concentric surface wavelets (lapping at ~2.2s intervals) radiate around idling boats and resting players in open water, preventing flat dead-glass water surfaces.
+  * **Preserved Shader Pack Optics:**
+    * 100% transparent baseline ($\alpha = 0$) with pure neutral celestial Fresnel glints `(248, 252, 255)` so shader pack water colors and caustics shine through completely.
+  * **Type Casting Fix:** Consumed `boat_spray_emitters` by value in `glue.rs` to ensure proper `f32`/`f64` primitive types.
+
+---
+
 ## 4. Key Artifacts, Releases & Action Runs
 
 | Run ID | Commit | Description | Artifact ID / Download | Status |
 |---|---|---|---|---|
+| **#44598471252** | `e763b1f` | **Water Physics v3.6 (3D Living Waves, Boat Bow Spray & Stern Bubbles, Ambient Wavelets) + Full Native Mods:** Added boat bow spray droplets (`ParticleType::Splash`) and stern bubble churn (`ParticleType::Bubble`), elevated 3D wave crest displacement to +0.090m, ambient 3D surface wavelets around idle boats/players, shader-preserving optics (`starling-preview-0.8.0-arm64-v8a.apk`) | [Artifact 14567207891](https://github.com/beyondbday69/starling/actions/runs/44598471252/artifacts/14567207891) | **PASSED (Green)** |
 | **#44590988150** | `7ec1b8f` | **Water Physics v3.5 (3D Boat Wake Field & Shader-Preserving Water Optics) + Full Native Mods:** Replaced 2 isolated ribbons with full hydrodynamic 3D wake field (central hull wash +0.025m, transverse Kelvin wavelets bridging to outer V-arms), stern wake origin offset (0.35m), 100% transparent overlay baseline with pure neutral Fresnel glint (248, 252, 255) highlights preserving shader pack water colors/caustics (`starling-preview-0.8.0-arm64-v8a.apk`) | [Artifact 14564053585](https://github.com/beyondbday69/starling/actions/runs/44590988150/artifacts/14564053585) | **PASSED (Green)** |
 | **#44579421912** | `7e986bd` | **Water Physics v3.4 (Native Minecraft Biome Water Color & Passenger Boat Center Circle Suppression) + Full Native Mods:** Sample chunk biome water color (`wp_water_tint`), eliminate hardcoded cyan paint, suppress player & mob footsteps/splashes/rings inside boats, smooth 20% sun glint highlight (`starling-preview-0.8.0-arm64-v8a.apk`) | [Artifact 14557789411](https://github.com/beyondbday69/starling/actions/runs/44579421912/artifacts/14557789411) | **PASSED (Green)** |
 | **#44569997411** | `546af9d` | **Water Physics v3.3 (Sleek Single-Ridge 3D V-Wake & Paddle Ripple Removal) + Full Native Mods:** Replaced 4-strip multi-stripe with sleek single-ridge 3D wave cross-section (Left and Right arms, 2 arms total, 25-40cm width, +0.04m to +0.06m height), eliminated 6-ribbon bug, removed paddle circle ripple spam (`starling-preview-0.8.0-arm64-v8a.apk`) | [Artifact 14552884730](https://github.com/beyondbday69/starling/actions/runs/44569997411/artifacts/14552884730) | **PASSED (Green)** |
