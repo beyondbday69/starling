@@ -165,3 +165,20 @@ Every 1.0 second, `glue.rs` outputs performance metrics to Android Logcat:
 | **Idle CPU Cost** | Scanned 24m mobs even on land | Instant early-out if not near water | **0 ms / 0 CPU on land** |
 | **Avg Sim Time** | ~1.5 - 3.2 ms | **~0.15 - 0.35 ms** | **~85% faster** |
 | **Avg Mesh Build Time** | ~2.5 - 6.0 ms | **~0.20 - 0.45 ms** | **~90% faster** |
+
+---
+
+## 7. Water Physics v2.1 (Glass-Like Transparent Overlay for Shader Compatibility)
+
+### 7.1. Motivation & Shader Interaction
+When testing with custom shader packs (such as Reimagined shaders), the initial v2 wave overlay rendered with an opaque/tinted blue body color that clashed with the shader pack's custom water tint, caustic patterns, and screen-space reflections, appearing as an unnatural opaque blue/white blob.
+
+### 7.2. Changes in v2.1 (`render.rs`)
+- **Zero Body Color Tint:** Removed synthetic ambient water color baseline (`[0.18, 0.42, 0.65]`). The base overlay is now completely transparent, allowing the underlying vanilla or custom shader water to show through untouched.
+- **Pure Dynamic Wave Shading:** Shading is strictly applied as additive highlights and multiplicative soft shadows:
+  - Wave crests ($h > 0$) add subtle brightness ($0.50 + \text{diffuse} \times 0.25$).
+  - Wave troughs ($h < 0$) add gentle depth/shadow ($0.50 - \text{diffuse} \times 0.20$).
+- **Refined Alpha Profile:**
+  - Base wave alpha is reduced to $|h| \times 0.28$ (capped at $0.40$), providing a clean specular sheen on wave edges.
+  - Foam maximum alpha is lowered to $0.45$ (down from $0.85$), ensuring foam appears as gentle airy bubbles rather than an opaque white crust.
+
