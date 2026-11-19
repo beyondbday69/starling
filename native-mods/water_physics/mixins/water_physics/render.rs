@@ -1,13 +1,16 @@
-// Geometric water wave and wake renderer (v3.4).
+// Geometric water wave and wake renderer (v3.5).
 //
 // Key features:
-// - Native Minecraft Biome Water Color: Uses the exact biome water color (sampled from chunk biomes)
-//   for seamless matching across all biomes (swamp, ocean, river, warm ocean, shaders). ZERO artificial cyan paint.
-// - Circular ripple rings: Smooth 24-gon expanding torus quads with raised 3D crests (+0.045m to +0.060m).
-//   Zero-pop envelope ensures perfectly smooth attack and cubic decay to zero alpha and zero height.
-// - V-Wake ribbons: Sleek, hydrodynamic single-ridge 3D Kelvin V-wake arms (Left and Right) with raised crests
-//   (+0.04m to +0.06m) and slender ~25-40cm width, eliminating multi-ribbon striping and thick bands.
-// - Soft crystal water reflection with zero-alpha edges for 100% seamless blending. ZERO white foam quads.
+// - Shader-Preserving Water Optics: Eliminates artificial body tint overlays. Uses 100% transparent
+//   baseline with pure neutral Fresnel specular sun/skylight glint highlights so the underlying
+//   shader pack's water color (e.g. tropical turquoise, emerald, sapphire), caustics, and depth absorption
+//   show through completely.
+// - Full 3D Boat Wake Field: Replaces two isolated ribbon lines with a complete hydrodynamic wake field:
+//   * Central hull wash / stern keel trail trailing directly behind the boat keel.
+//   * Transverse Kelvin wavelets bridging the hull wash and the outer V-arms.
+//   * Hydrodynamic lateral Kelvin V-arms radiating outwards.
+// - Concentric ripple rings: Smooth 24-gon expanding torus quads with raised 3D crests (+0.045m to +0.060m).
+//   Harmonic envelope ensures zero spawn/death pops and zero-alpha seamless edge blending.
 
 use crate::game::Game;
 use super::native_water_physics_sim as sim;
@@ -48,25 +51,6 @@ pub fn render_wave_overlays(
 }
 
 impl Game<'_> {
-    pub(super) fn wp_water_tint(&self, bx: i32, by: i32, bz: i32) -> (u32, u32, u32) {
-        let chunk_x = bx >> 4;
-        let chunk_z = bz >> 4;
-        let water_color = if let Some(chunk) = self.world.chunks.get(&(chunk_x, chunk_z)) {
-            let biome_id = chunk.biome(bx & 15, by, bz & 15);
-            let biomes = match &self.world_biomes {
-                Some(b) => b.as_ref(),
-                None => self.res.biomes().as_ref(),
-            };
-            biomes.get(biome_id).water
-        } else {
-            0x3F76E4
-        };
-        let r = (water_color >> 16) & 0xFF;
-        let g = (water_color >> 8) & 0xFF;
-        let b = water_color & 0xFF;
-        (r, g, b)
-    }
-
     pub(super) fn render_wave_overlays(
         &self,
         sim: &sim::WaterSimulation,
@@ -90,6 +74,11 @@ impl Game<'_> {
         let sun_x = 0.28f32;
         let sun_y = 0.88f32;
         let sun_z = -0.38f32;
+
+        // Neutral specular glint color (pure celestial sun/skylight glint)
+        // Baseline has alpha = 0 so underlying shader water color shows through 100% untouched.
+        let (glint_r, glint_g, glint_b) = (248u32, 252u32, 255u32);
+        let color_edge = (glint_b << 16) | (glint_g << 8) | glint_r; // alpha = 0 for 100% transparent baseline
 
         // -------------------------------------------------------------
         // 1. Render Concentric Ripple Rings (Smooth circular 3D waves)
@@ -115,8 +104,6 @@ impl Game<'_> {
             let light_packed = self.world.light(bx, by + 1, bz);
             let light = horizon_client::block_entity_render::vertex_light(light_packed);
 
-            let (r_base, g_base, b_base) = self.wp_water_tint(bx, by, bz);
-
             // Ring geometry parameters: expands smoothly with radius
             let r_crest = ring.radius;
             let width = (0.14 + 0.16 * ring.radius).clamp(0.18, 0.48);
@@ -131,10 +118,8 @@ impl Game<'_> {
             let base_cam_x = (ring.center_x - camera.x) as f32;
             let base_cam_z = (ring.center_z - camera.z) as f32;
 
-            let alpha_crest = (0.24 * amp).clamp(0.0, 0.28);
+            let alpha_crest = (0.18 * amp).clamp(0.0, 0.22);
             let a_crest_u32 = (alpha_crest * 255.0) as u32;
-
-            let color_edge = (b_base << 16) | (g_base << 8) | r_base; // alpha = 0 for seamless blend
 
             for k in 0..segments {
                 let th0 = (k as f32) * step_rad;
@@ -149,10 +134,10 @@ impl Game<'_> {
                 let norm_dot = (c0 * sun_x + 0.92 * sun_y + s0 * sun_z).clamp(0.0, 1.0);
                 let lit = 1.0 + 0.20 * norm_dot;
 
-                // Natural water reflection glint over native Minecraft water color
-                let r_col = ((r_base as f32 * lit).min(255.0)) as u32;
-                let g_col = ((g_base as f32 * lit).min(255.0)) as u32;
-                let b_col = ((b_base as f32 * lit).min(255.0)) as u32;
+                // Neutral specular sun glint highlight - shader water shows through 100%
+                let r_col = ((glint_r as f32 * lit).min(255.0)) as u32;
+                let g_col = ((glint_g as f32 * lit).min(255.0)) as u32;
+                let b_col = ((glint_b as f32 * lit).min(255.0)) as u32;
 
                 let color_crest = (a_crest_u32 << 24) | (b_col << 16) | (g_col << 8) | r_col;
 
@@ -184,7 +169,7 @@ impl Game<'_> {
         }
 
         // -------------------------------------------------------------
-        // 2. Render Continuous Kelvin V-Wakes (Player and Boat ribbons)
+        // 2. Render Continuous Kelvin V-Wakes & Hydrodynamic Wake Fields
         // -------------------------------------------------------------
         self.render_wake_ribbon(&sim.player_wakes, camera, cam_y, u_white, v_white, layer, out);
         self.render_wake_ribbon(&sim.boat_wakes, camera, cam_y, u_white, v_white, layer, out);
@@ -204,6 +189,13 @@ impl Game<'_> {
             return;
         }
 
+        let sun_x = 0.28f32;
+        let sun_y = 0.88f32;
+        let sun_z = -0.38f32;
+
+        let (glint_r, glint_g, glint_b) = (248u32, 252u32, 255u32);
+        let col_edge = (glint_b << 16) | (glint_g << 8) | glint_r; // alpha = 0 for 100% transparent baseline
+
         for i in 0..wake_nodes.len() - 1 {
             let n0 = &wake_nodes[i];
             let n1 = &wake_nodes[i + 1];
@@ -217,7 +209,7 @@ impl Game<'_> {
             let dx = (n1.pos_x - n0.pos_x) as f32;
             let dz = (n1.pos_z - n0.pos_z) as f32;
             let dist_sq = dx * dx + dz * dz;
-            if dist_sq > 1.25 * 1.25 || dist_sq < 0.0001 {
+            if dist_sq > 1.40 * 1.40 || dist_sq < 0.0001 {
                 continue;
             }
 
@@ -241,12 +233,6 @@ impl Game<'_> {
             let bz0 = n0.pos_z.floor() as i32;
             let light = horizon_client::block_entity_render::vertex_light(self.world.light(bx0, by0 + 1, bz0));
 
-            let (r0, g0, b0) = self.wp_water_tint(bx0, by0, bz0);
-            let bx1 = n1.pos_x.floor() as i32;
-            let by1 = n1.water_y.floor() as i32;
-            let bz1 = n1.pos_z.floor() as i32;
-            let (r1, g1, b1) = self.wp_water_tint(bx1, by1, bz1);
-
             let base_x0 = (n0.pos_x - camera.x) as f32;
             let base_z0 = (n0.pos_z - camera.z) as f32;
             let base_x1 = (n1.pos_x - camera.x) as f32;
@@ -264,7 +250,7 @@ impl Game<'_> {
             let hw0 = n0.half_width;
             let hw1 = n1.half_width;
 
-            // Slender, hydrodynamic arm thickness (thin, NOT thick ribbons)
+            // Slender, hydrodynamic arm thickness
             let arm_w0 = if n0.is_boat {
                 (0.22 + 0.06 * hw0).clamp(0.24, 0.42)
             } else {
@@ -279,33 +265,27 @@ impl Game<'_> {
             let half_w0 = arm_w0 * 0.5;
             let half_w1 = arm_w1 * 0.5;
 
-            // Shading & Alpha: Pure water reflection glint over native Minecraft water color
-            let alpha_cr0 = (0.22 * amp0).clamp(0.0, 0.26);
-            let alpha_cr1 = (0.22 * amp1).clamp(0.0, 0.26);
+            // Pure neutral specular glint highlight over shader water
+            let alpha_cr0 = (0.18 * amp0).clamp(0.0, 0.22);
+            let alpha_cr1 = (0.18 * amp1).clamp(0.0, 0.22);
             let a_cr0_u32 = (alpha_cr0 * 255.0) as u32;
             let a_cr1_u32 = (alpha_cr1 * 255.0) as u32;
 
-            let sun_x = 0.28f32;
-            let sun_y = 0.88f32;
-            let sun_z = -0.38f32;
             let lit0 = 1.0 + 0.20 * (n0.dir_x * sun_x + 0.92 * sun_y + n0.dir_z * sun_z).clamp(0.0, 1.0);
             let lit1 = 1.0 + 0.20 * (n1.dir_x * sun_x + 0.92 * sun_y + n1.dir_z * sun_z).clamp(0.0, 1.0);
 
-            let r_cr0 = ((r0 as f32 * lit0).min(255.0)) as u32;
-            let g_cr0 = ((g0 as f32 * lit0).min(255.0)) as u32;
-            let b_cr0 = ((b0 as f32 * lit0).min(255.0)) as u32;
+            let r_cr0 = ((glint_r as f32 * lit0).min(255.0)) as u32;
+            let g_cr0 = ((glint_g as f32 * lit0).min(255.0)) as u32;
+            let b_cr0 = ((glint_b as f32 * lit0).min(255.0)) as u32;
 
-            let r_cr1 = ((r1 as f32 * lit1).min(255.0)) as u32;
-            let g_cr1 = ((g1 as f32 * lit1).min(255.0)) as u32;
-            let b_cr1 = ((b1 as f32 * lit1).min(255.0)) as u32;
-
-            let col_edge0 = (b0 << 16) | (g0 << 8) | r0; // alpha = 0 for seamless baseline
-            let col_edge1 = (b1 << 16) | (g1 << 8) | r1;
+            let r_cr1 = ((glint_r as f32 * lit1).min(255.0)) as u32;
+            let g_cr1 = ((glint_g as f32 * lit1).min(255.0)) as u32;
+            let b_cr1 = ((glint_b as f32 * lit1).min(255.0)) as u32;
 
             let col_crest0 = (a_cr0_u32 << 24) | (b_cr0 << 16) | (g_cr0 << 8) | r_cr0;
             let col_crest1 = (a_cr1_u32 << 24) | (b_cr1 << 16) | (g_cr1 << 8) | r_cr1;
 
-            // Transverse wave sample widths along single Kelvin arm:
+            // Outer Kelvin V-arm width coordinates:
             let w_in0 = (hw0 - half_w0).max(0.03);
             let w_in1 = (hw1 - half_w1).max(0.03);
             let w_cr0 = hw0;
@@ -313,7 +293,7 @@ impl Game<'_> {
             let w_out0 = hw0 + half_w0;
             let w_out1 = hw1 + half_w1;
 
-            // --- Left V-Arm (Single 3D ridge: Inner -> Crest -> Outer) ---
+            // --- Left V-Arm (Inner -> Crest -> Outer) ---
             let l_in0 = [base_x0 + n0.left_x * w_in0, y_base0, base_z0 + n0.left_z * w_in0];
             let l_in1 = [base_x1 + n1.left_x * w_in1, y_base1, base_z1 + n1.left_z * w_in1];
             let l_cr0 = [base_x0 + n0.left_x * w_cr0, y_crest0, base_z0 + n0.left_z * w_cr0];
@@ -322,18 +302,18 @@ impl Game<'_> {
             let l_out1 = [base_x1 + n1.left_x * w_out1, y_base1, base_z1 + n1.left_z * w_out1];
 
             // 1. Left inner slope (in -> cr)
-            out.push(Vertex { pos: l_in0, uv: [u_white, v_white], layer, color: col_edge0, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
-            out.push(Vertex { pos: l_in1, uv: [u_white, v_white], layer, color: col_edge1, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+            out.push(Vertex { pos: l_in0, uv: [u_white, v_white], layer, color: col_edge, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+            out.push(Vertex { pos: l_in1, uv: [u_white, v_white], layer, color: col_edge, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
             out.push(Vertex { pos: l_cr1, uv: [u_white, v_white], layer, color: col_crest1, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
             out.push(Vertex { pos: l_cr0, uv: [u_white, v_white], layer, color: col_crest0, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
 
             // 2. Left outer slope (cr -> out)
             out.push(Vertex { pos: l_cr0, uv: [u_white, v_white], layer, color: col_crest0, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
             out.push(Vertex { pos: l_cr1, uv: [u_white, v_white], layer, color: col_crest1, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
-            out.push(Vertex { pos: l_out1, uv: [u_white, v_white], layer, color: col_edge1, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
-            out.push(Vertex { pos: l_out0, uv: [u_white, v_white], layer, color: col_edge0, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+            out.push(Vertex { pos: l_out1, uv: [u_white, v_white], layer, color: col_edge, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+            out.push(Vertex { pos: l_out0, uv: [u_white, v_white], layer, color: col_edge, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
 
-            // --- Right V-Arm (Single 3D ridge: Inner -> Crest -> Outer) ---
+            // --- Right V-Arm (Inner -> Crest -> Outer) ---
             let r_in0 = [base_x0 - n0.left_x * w_in0, y_base0, base_z0 - n0.left_z * w_in0];
             let r_in1 = [base_x1 - n1.left_x * w_in1, y_base1, base_z1 - n1.left_z * w_in1];
             let r_cr0 = [base_x0 - n0.left_x * w_cr0, y_crest0, base_z0 - n0.left_z * w_cr0];
@@ -342,16 +322,113 @@ impl Game<'_> {
             let r_out1 = [base_x1 - n1.left_x * w_out1, y_base1, base_z1 - n1.left_z * w_out1];
 
             // 1. Right inner slope (in -> cr)
-            out.push(Vertex { pos: r_in0, uv: [u_white, v_white], layer, color: col_edge0, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
-            out.push(Vertex { pos: r_in1, uv: [u_white, v_white], layer, color: col_edge1, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+            out.push(Vertex { pos: r_in0, uv: [u_white, v_white], layer, color: col_edge, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+            out.push(Vertex { pos: r_in1, uv: [u_white, v_white], layer, color: col_edge, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
             out.push(Vertex { pos: r_cr1, uv: [u_white, v_white], layer, color: col_crest1, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
             out.push(Vertex { pos: r_cr0, uv: [u_white, v_white], layer, color: col_crest0, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
 
             // 2. Right outer slope (cr -> out)
             out.push(Vertex { pos: r_cr0, uv: [u_white, v_white], layer, color: col_crest0, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
             out.push(Vertex { pos: r_cr1, uv: [u_white, v_white], layer, color: col_crest1, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
-            out.push(Vertex { pos: r_out1, uv: [u_white, v_white], layer, color: col_edge1, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
-            out.push(Vertex { pos: r_out0, uv: [u_white, v_white], layer, color: col_edge0, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+            out.push(Vertex { pos: r_out1, uv: [u_white, v_white], layer, color: col_edge, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+            out.push(Vertex { pos: r_out0, uv: [u_white, v_white], layer, color: col_edge, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+
+            // -------------------------------------------------------------
+            // Boat Hydrodynamic Wake Field: Stern Wash & Transverse Wavelets
+            // -------------------------------------------------------------
+            if n0.is_boat {
+                // Central Stern Wash (hull keel trail):
+                // Trailing directly behind the hull along the keel centerline (w=0)
+                let hw_wash0 = ((0.32 + 0.08 * n0.age).clamp(0.35, 0.55)).min(w_in0);
+                let hw_wash1 = ((0.32 + 0.08 * n1.age).clamp(0.35, 0.55)).min(w_in1);
+
+                let crest_keel0 = (0.025 * amp0).min(0.035);
+                let crest_keel1 = (0.025 * amp1).min(0.035);
+                let y_keel0 = y_base0 + 0.001 + crest_keel0;
+                let y_keel1 = y_base1 + 0.001 + crest_keel1;
+
+                let alpha_keel0 = (0.13 * amp0).clamp(0.0, 0.16);
+                let alpha_keel1 = (0.13 * amp1).clamp(0.0, 0.16);
+                let a_keel0_u32 = (alpha_keel0 * 255.0) as u32;
+                let a_keel1_u32 = (alpha_keel1 * 255.0) as u32;
+
+                let col_keel0 = (a_keel0_u32 << 24) | (b_cr0 << 16) | (g_cr0 << 8) | r_cr0;
+                let col_keel1 = (a_keel1_u32 << 24) | (b_cr1 << 16) | (g_cr1 << 8) | r_cr1;
+
+                // Center keel ridge:
+                let keel0 = [base_x0, y_keel0, base_z0];
+                let keel1 = [base_x1, y_keel1, base_z1];
+
+                // Left & right wash boundaries:
+                let w_l0 = [base_x0 + n0.left_x * hw_wash0, y_base0, base_z0 + n0.left_z * hw_wash0];
+                let w_l1 = [base_x1 + n1.left_x * hw_wash1, y_base1, base_z1 + n1.left_z * hw_wash1];
+                let w_r0 = [base_x0 - n0.left_x * hw_wash0, y_base0, base_z0 - n0.left_z * hw_wash0];
+                let w_r1 = [base_x1 - n1.left_x * hw_wash1, y_base1, base_z1 - n1.left_z * hw_wash1];
+
+                // Hull wash left slope (left wash edge -> keel center):
+                out.push(Vertex { pos: w_l0, uv: [u_white, v_white], layer, color: col_edge, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+                out.push(Vertex { pos: w_l1, uv: [u_white, v_white], layer, color: col_edge, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+                out.push(Vertex { pos: keel1, uv: [u_white, v_white], layer, color: col_keel1, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+                out.push(Vertex { pos: keel0, uv: [u_white, v_white], layer, color: col_keel0, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+
+                // Hull wash right slope (keel center -> right wash edge):
+                out.push(Vertex { pos: keel0, uv: [u_white, v_white], layer, color: col_keel0, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+                out.push(Vertex { pos: keel1, uv: [u_white, v_white], layer, color: col_keel1, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+                out.push(Vertex { pos: w_r1, uv: [u_white, v_white], layer, color: col_edge, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+                out.push(Vertex { pos: w_r0, uv: [u_white, v_white], layer, color: col_edge, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+
+                // Transverse wave bridges:
+                // When outer arms have spread past the hull wash, transverse wavelets bridge the gap
+                if w_in0 > hw_wash0 + 0.06 && w_in1 > hw_wash1 + 0.06 {
+                    let w_mid0 = (hw_wash0 + w_in0) * 0.5;
+                    let w_mid1 = (hw_wash1 + w_in1) * 0.5;
+
+                    let crest_tr0 = (0.020 * amp0).min(0.030);
+                    let crest_tr1 = (0.020 * amp1).min(0.030);
+                    let y_tr0 = y_base0 + 0.001 + crest_tr0;
+                    let y_tr1 = y_base1 + 0.001 + crest_tr1;
+
+                    let alpha_tr0 = (0.10 * amp0).clamp(0.0, 0.13);
+                    let alpha_tr1 = (0.10 * amp1).clamp(0.0, 0.13);
+                    let a_tr0_u32 = (alpha_tr0 * 255.0) as u32;
+                    let a_tr1_u32 = (alpha_tr1 * 255.0) as u32;
+
+                    let col_tr0 = (a_tr0_u32 << 24) | (b_cr0 << 16) | (g_cr0 << 8) | r_cr0;
+                    let col_tr1 = (a_tr1_u32 << 24) | (b_cr1 << 16) | (g_cr1 << 8) | r_cr1;
+
+                    // Left transverse crest:
+                    let tr_l0 = [base_x0 + n0.left_x * w_mid0, y_tr0, base_z0 + n0.left_z * w_mid0];
+                    let tr_l1 = [base_x1 + n1.left_x * w_mid1, y_tr1, base_z1 + n1.left_z * w_mid1];
+
+                    // Left transverse inner slope (wash edge -> transverse crest):
+                    out.push(Vertex { pos: w_l0, uv: [u_white, v_white], layer, color: col_edge, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+                    out.push(Vertex { pos: w_l1, uv: [u_white, v_white], layer, color: col_edge, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+                    out.push(Vertex { pos: tr_l1, uv: [u_white, v_white], layer, color: col_tr1, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+                    out.push(Vertex { pos: tr_l0, uv: [u_white, v_white], layer, color: col_tr0, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+
+                    // Left transverse outer slope (transverse crest -> outer arm inner edge):
+                    out.push(Vertex { pos: tr_l0, uv: [u_white, v_white], layer, color: col_tr0, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+                    out.push(Vertex { pos: tr_l1, uv: [u_white, v_white], layer, color: col_tr1, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+                    out.push(Vertex { pos: l_in1, uv: [u_white, v_white], layer, color: col_edge, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+                    out.push(Vertex { pos: l_in0, uv: [u_white, v_white], layer, color: col_edge, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+
+                    // Right transverse crest:
+                    let tr_r0 = [base_x0 - n0.left_x * w_mid0, y_tr0, base_z0 - n0.left_z * w_mid0];
+                    let tr_r1 = [base_x1 - n1.left_x * w_mid1, y_tr1, base_z1 - n1.left_z * w_mid1];
+
+                    // Right transverse outer slope (outer arm inner edge -> transverse crest):
+                    out.push(Vertex { pos: r_in0, uv: [u_white, v_white], layer, color: col_edge, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+                    out.push(Vertex { pos: r_in1, uv: [u_white, v_white], layer, color: col_edge, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+                    out.push(Vertex { pos: tr_r1, uv: [u_white, v_white], layer, color: col_tr1, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+                    out.push(Vertex { pos: tr_r0, uv: [u_white, v_white], layer, color: col_tr0, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+
+                    // Right transverse inner slope (transverse crest -> wash edge):
+                    out.push(Vertex { pos: tr_r0, uv: [u_white, v_white], layer, color: col_tr0, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+                    out.push(Vertex { pos: tr_r1, uv: [u_white, v_white], layer, color: col_tr1, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+                    out.push(Vertex { pos: w_r1, uv: [u_white, v_white], layer, color: col_edge, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+                    out.push(Vertex { pos: w_r0, uv: [u_white, v_white], layer, color: col_edge, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+                }
+            }
         }
     }
 }

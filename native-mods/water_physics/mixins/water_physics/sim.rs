@@ -1,14 +1,15 @@
-// Geometric water wave and wake simulation engine (v3.3).
+// Geometric water wave and wake simulation engine (v3.5).
 //
 // Key features:
 // 1. Concentric Ripple Rings: Smooth circular expanding torus waves for footsteps, drops, splashes, and oars.
 //    Mathematically continuous harmonic envelope (smooth attack + cubic decay): ZERO spawn pop, ZERO death pop.
 // 2. Separate Player and Boat Kelvin Wake Channels: Prevents cross-entity ribbon stretching.
-// 3. Node continuity enforcement: Eliminates random stretched ribbons on pauses, turns, and teleports.
-// 4. Zero-grid architecture: Pure analytical fluid geometry without creases or square edges.
+// 3. Extended boat hydrodynamics: 3D hull wash, transverse bridging wavelets, and Kelvin V-arms.
+// 4. Node continuity enforcement: Eliminates random stretched ribbons on pauses, turns, and teleports.
+// 5. Zero-grid architecture: Pure analytical fluid geometry without creases or square edges.
 
 pub const DEFAULT_MAX_RINGS: usize = 48;
-pub const DEFAULT_MAX_WAKE_NODES: usize = 40;
+pub const DEFAULT_MAX_WAKE_NODES: usize = 48;
 
 #[derive(Clone, Debug)]
 pub struct RippleRing {
@@ -110,7 +111,7 @@ impl WakeNode {
 
         let (half_width, spread_speed, amplitude, max_age) = if is_boat {
             let amp = (speed * 0.40).clamp(0.50, 1.6);
-            (0.42f32, 0.65f32, amp, 3.0f32)
+            (0.42f32, 0.60f32, amp, 3.5f32)
         } else {
             let amp = (speed * 0.40).clamp(0.40, 1.3);
             (0.22f32, 0.50f32, amp, 2.2f32)
@@ -256,7 +257,7 @@ impl WaterSimulation {
         is_boat: bool,
     ) {
         let (wake_vec, min_dist) = if is_boat {
-            (&mut self.boat_wakes, 0.35f64)
+            (&mut self.boat_wakes, 0.30f64)
         } else {
             (&mut self.player_wakes, 0.18f64)
         };

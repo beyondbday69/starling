@@ -18,8 +18,8 @@ use horizon_client::particles::{ParticleOptions, ParticleType};
 
 pub const ID: &str = "water_physics";
 pub const NAME: &str = "Water Physics";
-pub const VERSION: &str = "3.4.0";
-pub const DESCRIPTION: &str = "Smooth 3D ripple rings, Kelvin V-wakes, splash droplets, and boat hydrodynamics.";
+pub const VERSION: &str = "3.5.0";
+pub const DESCRIPTION: &str = "Smooth 3D ripple rings, full Kelvin wake fields with hull wash, splash droplets, and shader-preserving water optics.";
 
 struct WaterPhysicsState {
     sim: sim::WaterSimulation,
@@ -256,12 +256,16 @@ impl Game<'_> {
                 let bvx = b.velocity.x as f64;
                 let bvz = b.velocity.z as f64;
                 let b_speed = (((bvx * bvx + bvz * bvz).sqrt() * 20.0) as f32).clamp(0.0, 10.0);
-                if b_speed > 0.3 {
+                if b_speed > 0.25 {
                     let rad = (b.yaw as f32).to_radians();
                     let fwd_x = -rad.sin();
                     let fwd_z = rad.cos();
 
-                    boat_samples.push((bx, bz, water_y, fwd_x, fwd_z, b_speed));
+                    // Offset slightly toward the boat stern where the wake originates
+                    let stern_x = bx - (fwd_x as f64) * 0.35;
+                    let stern_z = bz - (fwd_z as f64) * 0.35;
+
+                    boat_samples.push((stern_x, stern_z, water_y, fwd_x, fwd_z, b_speed));
                 }
             }
         }
@@ -372,7 +376,7 @@ impl Game<'_> {
             // Logcat profiling output every 2 seconds
             if now.duration_since(state.last_log_time) >= std::time::Duration::from_secs(2) {
                 log::info!(
-                    "water_physics v3.4: rings={}, player_wakes={}, boat_wakes={}",
+                    "water_physics v3.5: rings={}, player_wakes={}, boat_wakes={}",
                     state.sim.rings.len(),
                     state.sim.player_wakes.len(),
                     state.sim.boat_wakes.len()
