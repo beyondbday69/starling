@@ -447,6 +447,63 @@ The v2.x heightfield grid architecture approximated continuous circular ripples 
 - **APK Name:** `starling-preview-0.8.0-arm64-v8a.apk` (inside `starling-apk-arm64-v8a.zip`)
 - **Applied Mods:** `cinematic_interactions v0.12.2`, `skins_3d v1.1.1`, `gyro v1.6.0`, `water_physics v3.4.0`
 
+---
+
+## 14. Water Physics v3.5 (3D Boat Wake Field & Shader-Preserving Water Optics)
+
+### 14.1. Root Cause Diagnosis of User Feedback
+1. **"On boat its just like 2 ribbons each side of boat not immersive feel and not real water feel fix":**
+   - In v3.3/v3.4, the wake renderer only generated two isolated outer Kelvin arms (`l_in -> l_cr -> l_out` and `r_in -> r_cr -> r_out`).
+   - The entire interior between `l_in` and `r_in` was completely empty, rendering as two disjointed ribbon tracks with no central disturbance or transverse waves.
+   - Real hydrodynamic boat wakes feature:
+     - A central hull wash / stern trail following the keel centerline.
+     - Transverse Kelvin wavelets bridging between the central wash and the outer V-arms, forming a cohesive 3D wake envelope.
+   - In addition, the wake origin was sampled directly at the boat entity origin `(bx, bz)`, which sits near the boat center rather than at the stern where propulsion and wake shedding actually occur.
+
+2. **"Shader ka color aana chahiye jo color water ko deta shader" ("The shader's color should appear, whatever color the shader gives water"):**
+   - In v3.4, the mod sampled chunk biome water tints and applied them with $\alpha \approx 0.22 - 0.28$ over the water mesh.
+   - When custom shader packs (e.g. Reimagined, Complementary, Starling Visuals) run, they calculate dynamic water color on the GPU via depth absorption, screen-space reflections, and custom palettes.
+   - Horizon does not expose the shader pack's GPU water color to CPU/Rust.
+   - The overlay's opaque blue/tinted body color painted over the water, masking the shader pack's custom water tint, caustics, and reflections.
+
+### 14.2. Engineering Fixes in v3.5
+- **Full Hydrodynamic 3D Boat Wake Field (`render.rs`):**
+  - **Central Hull Wash / Stern Keel Trail:**
+    - Generates a continuous 3D central wash trailing directly behind the keel centerline (`w = 0`).
+    - Elevated in real 3D ($y = y_{base} + 0.001 + \text{crest\_keel}$, up to $+0.025\text{m}$ to $+0.035\text{m}$).
+    - Shaded with subtle turbulent glint ($\alpha \approx 0.13 \cdot \text{amp}$).
+  - **Transverse Kelvin Wavelets:**
+    - When outer arms spread past the hull wash (`w_in > hw_wash + 0.06`), transverse wave ridges bridge between the hull wash and the outer V-arm inner edges.
+    - Forms a complete, continuous 3D hydrodynamic wake surface: `l_out -> l_crest -> l_in -> transverse_left -> hull_wash -> transverse_right -> r_in -> r_crest -> r_out`.
+    - Eliminates isolated ribbon strips, replacing them with a realistic, immersive 3D boat wake field.
+  - **Stern Wake Origin Offset (`glue.rs`):**
+    - Offset boat wake emission position backward by $0.35\text{m}$ along the negative forward vector:
+      `stern_x = bx - fwd_x * 0.35; stern_z = bz - fwd_z * 0.35;`
+    - Positions the wake origin naturally at the boat's stern.
+  - **Expanded Wake Envelope (`sim.rs`):**
+    - Increased `DEFAULT_MAX_WAKE_NODES` to 48.
+    - Extended boat wake node max lifetime to $3.5\text{s}$ (spread speed $0.60\text{ m/s}$) for expansive wake trails.
+
+- **Shader-Preserving Water Optics (`render.rs`):**
+  - **100% Transparent Baseline:**
+    - Zero-alpha baseline and edges (`col_edge` with $\alpha = 0$), allowing underlying shader pack water colors, depth absorption, and caustics to shine through completely untouched.
+  - **Pure Neutral Celestial Fresnel Glint:**
+    - Wave crests, transverse wavelets, and ripple rings use pure neutral celestial glint `(248, 252, 255)` with subtle specular alpha ($\alpha \approx 0.18 - 0.22 \cdot \text{amp}$).
+    - Completely eliminates artificial biome body tint overlays, guaranteeing 100% fidelity to the active shader pack's water color.
+
+- **Compiler Error Fix (`render.rs`, Commit `7ec1b8f`):**
+  - Resolved variable shadowing between color channel variables (`red0/grn0/blu0`) and right-arm crest vertex positions (`r_crest0/r_crest1`), fixing `u32 | [f32; 3]` bitwise-OR compiler error.
+
+### 14.3. Build Verification
+- **Run ID:** `#44590988150`
+- **Commit:** `7ec1b8f` (v3.5 + variable shadowing fix)
+- **Status:** PASSED (Green)
+- **Artifact:** `starling-apk-arm64-v8a` (ID: `14564053585`, size: 35.2 MB)
+- **Direct Download Link:** [Artifact 14564053585](https://github.com/beyondbday69/starling/actions/runs/44590988150/artifacts/14564053585)
+- **APK Name:** `starling-preview-0.8.0-arm64-v8a.apk` (inside `starling-apk-arm64-v8a.zip`)
+- **Applied Mods:** `cinematic_interactions v0.12.2`, `skins_3d v1.1.1`, `gyro v1.6.0`, `water_physics v3.5.0`
+
+
 
 
 

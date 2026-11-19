@@ -3,8 +3,8 @@
 **Repository:** `beyondbday69/starling`  
 **Current Active Branch:** `feat/water-physics-v2`  
 **Target Platform:** Android (ARM64 `arm64-v8a`)  
-**Latest Commit:** `546af9d` (`fix(water_physics): v3.3 sleek single-ridge 3D V-wake and remove paddle circle ripples`)  
-**Latest CI Run:** `#44569997411` (Artifact: `14552884730`, size: 35.2 MB)  
+**Latest Commit:** `7ec1b8f` (`fix(water_physics): resolve variable shadowing between color channels and vertex positions`)  
+**Latest CI Run:** `#44590988150` (Artifact: `14564053585`, size: 35.2 MB)  
 **Last Updated:** November 2026  
 
 ---
@@ -163,10 +163,26 @@ graph TD
 
 ---
 
+## 3.4. Water Physics Native Mod v3.5 (3D Boat Wake Field & Shader-Preserving Water Optics)
+* **Goal:** Eliminate disjointed "two ribbons" boat wake appearance and ensure underlying custom shader pack water colors/caustics show through 100% untouched.
+* **Key Features & Fixes:**
+  * **Full Hydrodynamic 3D Wake Field:**
+    * **Central Hull Wash / Stern Keel Trail:** Continuous raised 3D crest (+0.025m) trailing directly behind the boat keel with gentle turbulent glint.
+    * **Transverse Kelvin Wavelets:** Continuous 3D wave ridges bridging between the hull wash and the outer V-arms, replacing isolated ribbon lines with a rich, cohesive 3D wake field.
+    * **Stern Wake Origin Offset:** Boat wake emission shifted 0.35m backward to align with physical boat stern.
+    * **Expansive Trail:** Extended node capacity to 48 and wake lifetime to 3.5s.
+  * **Shader-Preserving Water Optics:**
+    * Overlay baseline and edges have $\alpha = 0$ (100% transparent), allowing underlying shader pack water colors, depth absorption, and caustics to shine through untouched.
+    * Crests and ripple rings use pure neutral celestial Fresnel specular glint `(248, 252, 255)` highlights ($\alpha \approx 0.18 - 0.22 \cdot \text{amp}$), completely eliminating artificial biome body tint overlays.
+  * **Variable Collision Fix:** Renamed color channels to `red0`/`grn0`/`blu0` and right crest vertices to `r_crest0`/`r_crest1`, resolving `u32 | [f32; 3]` compiler error.
+
+---
+
 ## 4. Key Artifacts, Releases & Action Runs
 
 | Run ID | Commit | Description | Artifact ID / Download | Status |
 |---|---|---|---|---|
+| **#44590988150** | `7ec1b8f` | **Water Physics v3.5 (3D Boat Wake Field & Shader-Preserving Water Optics) + Full Native Mods:** Replaced 2 isolated ribbons with full hydrodynamic 3D wake field (central hull wash +0.025m, transverse Kelvin wavelets bridging to outer V-arms), stern wake origin offset (0.35m), 100% transparent overlay baseline with pure neutral Fresnel glint (248, 252, 255) highlights preserving shader pack water colors/caustics (`starling-preview-0.8.0-arm64-v8a.apk`) | [Artifact 14564053585](https://github.com/beyondbday69/starling/actions/runs/44590988150/artifacts/14564053585) | **PASSED (Green)** |
 | **#44579421912** | `7e986bd` | **Water Physics v3.4 (Native Minecraft Biome Water Color & Passenger Boat Center Circle Suppression) + Full Native Mods:** Sample chunk biome water color (`wp_water_tint`), eliminate hardcoded cyan paint, suppress player & mob footsteps/splashes/rings inside boats, smooth 20% sun glint highlight (`starling-preview-0.8.0-arm64-v8a.apk`) | [Artifact 14557789411](https://github.com/beyondbday69/starling/actions/runs/44579421912/artifacts/14557789411) | **PASSED (Green)** |
 | **#44569997411** | `546af9d` | **Water Physics v3.3 (Sleek Single-Ridge 3D V-Wake & Paddle Ripple Removal) + Full Native Mods:** Replaced 4-strip multi-stripe with sleek single-ridge 3D wave cross-section (Left and Right arms, 2 arms total, 25-40cm width, +0.04m to +0.06m height), eliminated 6-ribbon bug, removed paddle circle ripple spam (`starling-preview-0.8.0-arm64-v8a.apk`) | [Artifact 14552884730](https://github.com/beyondbday69/starling/actions/runs/44569997411/artifacts/14552884730) | **PASSED (Green)** |
 | **#44563686338** | `8a87a1e` | **Water Physics v3.2 (True 3D Dual-Crest Ripple Wake & Player Speed-in-mps Tracking) + Full Native Mods:** Resolved player wake generation (true m/s speed calculation, expanded vertical surface window, shoreline neighbor checks), dual-crest 3D undulating Kelvin wake profile (+0.048m to +0.075m crests, +0.010m trough), continuous transverse ripple shedding, strictly zero foam (`starling-preview-0.8.0-arm64-v8a.apk`) | [Artifact 14552011610](https://github.com/beyondbday69/starling/actions/runs/44563686338/artifacts/14552011610) | **PASSED (Green)** |
