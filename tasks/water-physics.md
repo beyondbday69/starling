@@ -268,6 +268,14 @@ The v2.x heightfield grid architecture approximated continuous circular ripples 
   - Ring pool capacity expanded to 48 with minimum-energy eviction if capacity is reached.
 - **Transparent Glass Shading:** Crest colors softened to `(215, 235, 255)` glint with 0 alpha on all edges for seamless water blending.
 
+### 10.3. Build Verification
+- **Run ID:** `#44551742604`
+- **Commit:** `bacbb90` (v3.1 white strip & zero-pop fixes)
+- **Status:** PASSED (Green)
+- **Artifact:** `starling-apk-arm64-v8a` (ID: `14544247729`)
+- **APK Name:** `starling-preview-0.8.0-arm64-v8a-cinematic_interactions-skins_3d-gyro-water_physics.apk`
+- **Applied Mods:** `cinematic_interactions v0.12.2`, `skins_3d v1.1.1`, `gyro v1.6.0`, `water_physics v3.1.0`
+
 
 
 
