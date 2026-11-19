@@ -276,6 +276,64 @@ The v2.x heightfield grid architecture approximated continuous circular ripples 
 - **APK Name:** `starling-preview-0.8.0-arm64-v8a-cinematic_interactions-skins_3d-gyro-water_physics.apk`
 - **Applied Mods:** `cinematic_interactions v0.12.2`, `skins_3d v1.1.1`, `gyro v1.6.0`, `water_physics v3.1.0`
 
+---
+
+## 11. Water Physics v3.2 (True 3D Dual-Crest Ripple Wake & Player Speed-in-mps Tracking)
+
+### 11.1. Root Cause Diagnosis of User Feedback
+1. **"Player cant make wakes":**
+   - In `glue.rs:146`, speed was calculated as `let speed = (dist_h.max(vel_h) as f32).clamp(0.0, 3.5);`.
+   - `dist_h` is the position delta over a single render frame (at 60–90 FPS, walking moves only ~0.02m to 0.03m per frame).
+   - In Minecraft/Starling, `player.velocity` is in blocks per tick (at 20 ticks/sec, walking at 4.3 m/s has `velocity = 0.215` blocks/tick).
+   - Because neither was scaled to seconds, `speed` was clamped at 0.03 to 0.21.
+   - In `WakeNode::new`, `let amp = (speed * 1.3).clamp(0.25, 1.1);` gave minimum amplitude floor 0.25.
+   - In `render.rs`, `amp0 = n0.amplitude * env0` (e.g. 0.25 * 0.03 = 0.0075).
+   - Line 211 had `if amp0 < 0.008 && amp1 < 0.008 { continue; }`, completely skipping and culling every player wake segment!
+   - In `glue.rs:164`, `is_at_surface` required `py + 1.85 >= water_y`. In water > 1.85m deep, or when wading on the seabed, `py + 1.85 < water_y`, disabling wakes entirely.
+   - In `glue.rs:97`, `wp_water_surface_at` only tested the exact block column `(bx, bz)`. If the player stepped into water from a shore block, the check failed.
+
+2. **"Umm now add 3D effect for that wake like real water do not add foam etc just add ripples":**
+   - The wake previously only had a single triangular ridge (`in -> cr -> out`).
+   - Real hydrodynamic Kelvin wakes feature an undulating wave pattern: divergent wavelets, troughs, and transverse ripple rings.
+   - User explicitly instructed: strictly NO FOAM, pure translucent water glints and ripples with real 3D undulation.
+
+### 11.2. Engineering Fixes in v3.2
+- **True Physical Speed in Meters Per Second (`glue.rs`):**
+  - Tracks frame delta time $\Delta t_{sec}$ via `Instant`.
+  - Calculates true speed in m/s: `let speed_mps = (dist_h / dt_sec) as f32;`
+  - Multiplies tick velocity by 20.0: `let vel_mps = (vel_h * 20.0) as f32;`
+  - Result: walking at 4.3 m/s gives `speed = 4.3` (not 0.03).
+- **Robust Water Surface Detection (`glue.rs`):**
+  - Expands vertical scan range to `base_y - 3..=base_y + 5`.
+  - Checks 4 horizontal neighbors `(±1, 0), (0, ±1)` for shoreline entry.
+  - Detects surface interaction via:
+    `let in_water = player.fluids.was_touching_water || player.swimming;`
+    `let is_at_surface = (py <= water_y + 0.40 && py + 2.50 >= water_y) || (in_water && py <= water_y + 0.25);`
+- **Dual-Crest 3D Undulating Wave Profile (`render.rs`):**
+  - Each Kelvin V-arm is modeled with 4 continuous 3D quad strips:
+    1. Inner Baseline: $y = y_{base}$, $\alpha = 0$ (seamless blending)
+    2. Secondary Crest (Inner ripple): $y = y_{base} + \text{crest}_2$, $\alpha = 0.60 \cdot \alpha_{crest}$
+    3. Wave Trough (Dip): $y = y_{base} + \text{crest} \cdot 0.15$, $\alpha = 0.25 \cdot \alpha_{crest}$
+    4. Primary Crest (Main Kelvin cusp): $y = y_{base} + \text{crest}_1$, $\alpha = \alpha_{crest}$
+    5. Outer Baseline: $y = y_{base}$, $\alpha = 0$
+  - True physical 3D wave displacement: $+0.048\text{m}$ to $+0.075\text{m}$ crests, $+0.010\text{m}$ trough.
+- **Continuous Trailing Transverse 3D Ripple Shedding (`glue.rs`):**
+  - Every $0.50$m of movement in water, a transverse circular 3D ripple ring is shed directly behind the swimmer/wader, creating the complete Kelvin wake interference pattern.
+- **Strictly Zero Foam:**
+  - All vertices shaded with pure crystal glass reflection `(215, 235, 255)`. Zero opaque white quads.
+- **Lowered Early Culling & Fast Attack:**
+  - Culling threshold lowered from $0.008$ to $0.003$.
+  - Attack ramp shortened to $5\%$ of lifetime ($p / 0.05$), so wakes appear immediately behind feet/stern without gaps.
+
+### 11.3. Build Verification
+- **Run ID:** `#44563686338`
+- **Commit:** `8a87a1e` (v3.2 true 3D dual-crest ripple wake & player speed tracking)
+- **Status:** PASSED (Green)
+- **Artifact:** `starling-apk-arm64-v8a` (ID: `14552011610`, size: 35.2 MB)
+- **Direct Download Link:** [Artifact 14552011610](https://github.com/beyondbday69/starling/actions/runs/44563686338/artifacts/14552011610)
+- **APK Name:** `starling-preview-0.8.0-arm64-v8a.apk` (inside `starling-apk-arm64-v8a.zip`)
+- **Applied Mods:** `cinematic_interactions v0.12.2`, `skins_3d v1.1.1`, `gyro v1.6.0`, `water_physics v3.2.0`
+
 
 
 

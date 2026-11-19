@@ -3,8 +3,8 @@
 **Repository:** `beyondbday69/starling`  
 **Current Active Branch:** `feat/water-physics-v2`  
 **Target Platform:** Android (ARM64 `arm64-v8a`)  
-**Latest Commit:** `bacbb90` (`fix(water_physics): update logcat profiling statement for separated wake vectors`)  
-**Latest Successful CI Run:** `#44551742604` (Artifact: `14544247729`, size: 35.2 MB)  
+**Latest Commit:** `8a87a1e` (`feat(water_physics): v3.2 true 3D dual-crest ripple wake and player speed-in-mps tracking`)  
+**Latest CI Run:** `#44563686338` (Artifact: `14552011610`, size: 35.2 MB)  
 **Last Updated:** November 2026  
 
 ---
@@ -167,6 +167,7 @@ graph TD
 
 | Run ID | Commit | Description | Artifact ID / Download | Status |
 |---|---|---|---|---|
+| **#44563686338** | `8a87a1e` | **Water Physics v3.2 (True 3D Dual-Crest Ripple Wake & Player Speed-in-mps Tracking) + Full Native Mods:** Resolved player wake generation (true m/s speed calculation, expanded vertical surface window, shoreline neighbor checks), dual-crest 3D undulating Kelvin wake profile (+0.048m to +0.075m crests, +0.010m trough), continuous transverse ripple shedding, strictly zero foam (`starling-preview-0.8.0-arm64-v8a.apk`) | [Artifact 14552011610](https://github.com/beyondbday69/starling/actions/runs/44563686338/artifacts/14552011610) | **PASSED (Green)** |
 | **#44551742604** | `bacbb90` | **Water Physics v3.1 (White Strip Artifact Fix & Continuous Zero-Pop Harmonic Envelope) + Full Native Mods:** Removed center foam strip, node continuity distance/direction guards, independent player/boat wake channels, smooth cubic decay envelope (`starling-preview-0.8.0-arm64-v8a-cinematic_interactions-skins_3d-gyro-water_physics.apk`) | [Artifact 14544247729](https://github.com/beyondbday69/starling/actions/runs/44551742604/artifacts/14544247729) | **PASSED (Green)** |
 | **#44543723733** | `5a2db4a` | **Water Physics v3.0 (Zero-Grid Fluid Engine, 24-gon Circular 3D Rings, Kelvin V-Wake Ribbons, Particle Droplets) + Full Native Mods:** Smooth circular 3D waves, true 19.47° V-wake ribbons, ParticleType::Splash droplet bursts, live framerate integration (`starling-preview-0.8.0-arm64-v8a-cinematic_interactions-skins_3d-gyro-water_physics.apk`) | [Artifact 14540746729](https://github.com/beyondbday69/starling/actions/runs/44543723733/artifacts/14540746729) | **PASSED (Green)** |
 | **#44535215513** | `f60300b` | **Water Physics v2.2 (Dynamic V-Wake Hydrodynamics, True 3D Crests, Continuous Motion Tracking) + Full Native Mods:** 4-point physical V-wake, alternating footstep ripples, boat Kelvin wake, 8m tiles, 3s idle timeout, no plateauing (`starling-preview-0.8.0-arm64-v8a-cinematic_interactions-skins_3d-gyro-water_physics.apk`) | [Artifact 14536726864](https://github.com/beyondbday69/starling/actions/runs/44535215513/artifacts/14536726864) | **PASSED (Green)** |
