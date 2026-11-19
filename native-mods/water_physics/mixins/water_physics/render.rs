@@ -274,16 +274,16 @@ impl Game<'_> {
             let lit0 = 1.0 + 0.20 * (n0.dir_x * sun_x + 0.92 * sun_y + n0.dir_z * sun_z).clamp(0.0, 1.0);
             let lit1 = 1.0 + 0.20 * (n1.dir_x * sun_x + 0.92 * sun_y + n1.dir_z * sun_z).clamp(0.0, 1.0);
 
-            let r_cr0 = ((glint_r as f32 * lit0).min(255.0)) as u32;
-            let g_cr0 = ((glint_g as f32 * lit0).min(255.0)) as u32;
-            let b_cr0 = ((glint_b as f32 * lit0).min(255.0)) as u32;
+            let red0 = ((glint_r as f32 * lit0).min(255.0)) as u32;
+            let grn0 = ((glint_g as f32 * lit0).min(255.0)) as u32;
+            let blu0 = ((glint_b as f32 * lit0).min(255.0)) as u32;
 
-            let r_cr1 = ((glint_r as f32 * lit1).min(255.0)) as u32;
-            let g_cr1 = ((glint_g as f32 * lit1).min(255.0)) as u32;
-            let b_cr1 = ((glint_b as f32 * lit1).min(255.0)) as u32;
+            let red1 = ((glint_r as f32 * lit1).min(255.0)) as u32;
+            let grn1 = ((glint_g as f32 * lit1).min(255.0)) as u32;
+            let blu1 = ((glint_b as f32 * lit1).min(255.0)) as u32;
 
-            let col_crest0 = (a_cr0_u32 << 24) | (b_cr0 << 16) | (g_cr0 << 8) | r_cr0;
-            let col_crest1 = (a_cr1_u32 << 24) | (b_cr1 << 16) | (g_cr1 << 8) | r_cr1;
+            let col_crest0 = (a_cr0_u32 << 24) | (blu0 << 16) | (grn0 << 8) | red0;
+            let col_crest1 = (a_cr1_u32 << 24) | (blu1 << 16) | (grn1 << 8) | red1;
 
             // Outer Kelvin V-arm width coordinates:
             let w_in0 = (hw0 - half_w0).max(0.03);
@@ -316,20 +316,20 @@ impl Game<'_> {
             // --- Right V-Arm (Inner -> Crest -> Outer) ---
             let r_in0 = [base_x0 - n0.left_x * w_in0, y_base0, base_z0 - n0.left_z * w_in0];
             let r_in1 = [base_x1 - n1.left_x * w_in1, y_base1, base_z1 - n1.left_z * w_in1];
-            let r_cr0 = [base_x0 - n0.left_x * w_cr0, y_crest0, base_z0 - n0.left_z * w_cr0];
-            let r_cr1 = [base_x1 - n1.left_x * w_cr1, y_crest1, base_z1 - n1.left_z * w_cr1];
+            let r_crest0 = [base_x0 - n0.left_x * w_cr0, y_crest0, base_z0 - n0.left_z * w_cr0];
+            let r_crest1 = [base_x1 - n1.left_x * w_cr1, y_crest1, base_z1 - n1.left_z * w_cr1];
             let r_out0 = [base_x0 - n0.left_x * w_out0, y_base0, base_z0 - n0.left_z * w_out0];
             let r_out1 = [base_x1 - n1.left_x * w_out1, y_base1, base_z1 - n1.left_z * w_out1];
 
             // 1. Right inner slope (in -> cr)
             out.push(Vertex { pos: r_in0, uv: [u_white, v_white], layer, color: col_edge, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
             out.push(Vertex { pos: r_in1, uv: [u_white, v_white], layer, color: col_edge, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
-            out.push(Vertex { pos: r_cr1, uv: [u_white, v_white], layer, color: col_crest1, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
-            out.push(Vertex { pos: r_cr0, uv: [u_white, v_white], layer, color: col_crest0, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+            out.push(Vertex { pos: r_crest1, uv: [u_white, v_white], layer, color: col_crest1, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+            out.push(Vertex { pos: r_crest0, uv: [u_white, v_white], layer, color: col_crest0, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
 
             // 2. Right outer slope (cr -> out)
-            out.push(Vertex { pos: r_cr0, uv: [u_white, v_white], layer, color: col_crest0, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
-            out.push(Vertex { pos: r_cr1, uv: [u_white, v_white], layer, color: col_crest1, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+            out.push(Vertex { pos: r_crest0, uv: [u_white, v_white], layer, color: col_crest0, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
+            out.push(Vertex { pos: r_crest1, uv: [u_white, v_white], layer, color: col_crest1, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
             out.push(Vertex { pos: r_out1, uv: [u_white, v_white], layer, color: col_edge, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
             out.push(Vertex { pos: r_out0, uv: [u_white, v_white], layer, color: col_edge, light, normal: [0; 4], glint_uv: [0.0, 0.0] });
 
@@ -352,8 +352,8 @@ impl Game<'_> {
                 let a_keel0_u32 = (alpha_keel0 * 255.0) as u32;
                 let a_keel1_u32 = (alpha_keel1 * 255.0) as u32;
 
-                let col_keel0 = (a_keel0_u32 << 24) | (b_cr0 << 16) | (g_cr0 << 8) | r_cr0;
-                let col_keel1 = (a_keel1_u32 << 24) | (b_cr1 << 16) | (g_cr1 << 8) | r_cr1;
+                let col_keel0 = (a_keel0_u32 << 24) | (blu0 << 16) | (grn0 << 8) | red0;
+                let col_keel1 = (a_keel1_u32 << 24) | (blu1 << 16) | (grn1 << 8) | red1;
 
                 // Center keel ridge:
                 let keel0 = [base_x0, y_keel0, base_z0];
@@ -393,8 +393,8 @@ impl Game<'_> {
                     let a_tr0_u32 = (alpha_tr0 * 255.0) as u32;
                     let a_tr1_u32 = (alpha_tr1 * 255.0) as u32;
 
-                    let col_tr0 = (a_tr0_u32 << 24) | (b_cr0 << 16) | (g_cr0 << 8) | r_cr0;
-                    let col_tr1 = (a_tr1_u32 << 24) | (b_cr1 << 16) | (g_cr1 << 8) | r_cr1;
+                    let col_tr0 = (a_tr0_u32 << 24) | (blu0 << 16) | (grn0 << 8) | red0;
+                    let col_tr1 = (a_tr1_u32 << 24) | (blu1 << 16) | (grn1 << 8) | red1;
 
                     // Left transverse crest:
                     let tr_l0 = [base_x0 + n0.left_x * w_mid0, y_tr0, base_z0 + n0.left_z * w_mid0];
