@@ -110,6 +110,7 @@ fn ensure_skin(game: &Game<'_>, location: &str) {
     if let Some(rgba) = downloads.image(location)
         && let Some((width, height)) = size(rgba.len())
     {
+        log::info!("3D Skins: resolved '{location}' ({}x{}) from skin_downloads", width, height);
         voxels::offer(location, width, height, rgba);
         return;
     }
@@ -117,6 +118,7 @@ fn ensure_skin(game: &Game<'_>, location: &str) {
         && let Some(rgba) = game.own_skin.image.as_ref()
         && let Some((width, height)) = size(rgba.len())
     {
+        log::info!("3D Skins: resolved '{location}' ({}x{}) from own_skin", width, height);
         voxels::offer(location, width, height, rgba);
         return;
     }
@@ -124,30 +126,37 @@ fn ensure_skin(game: &Game<'_>, location: &str) {
         && let Some((rgba, _)) = horizon_client::skins::offline_skin()
         && let Some((width, height)) = size(rgba.len())
     {
+        log::info!("3D Skins: resolved '{location}' ({}x{}) from offline_skin", width, height);
         voxels::offer(location, width, height, rgba);
         return;
     }
     if let Some((width, height, rgba)) = from_atlas(game, location) {
+        log::info!("3D Skins: resolved '{location}' ({}x{}) from GUI atlas", width, height);
         voxels::offer(location, width, height, &rgba);
         return;
     }
     if let Some((width, height, rgba)) = bundled(game, location)
         && size(rgba.len()) == Some((width, height))
     {
+        log::info!("3D Skins: resolved '{location}' ({}x{}) from bundled texture file", width, height);
         voxels::offer(location, width, height, &rgba);
         return;
     }
     if location.starts_with("skins/") {
         let mut logged = LOGGED.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         if logged.len() < MAX_MISSING && logged.insert(location.to_owned()) {
-            log::info!("3D Skins: waiting for the pixels of downloaded skin {location}");
+            log::info!("3D Skins: waiting for download of skin '{location}'");
         }
         return;
     }
     if location == OWN_SKIN || location == OFFLINE_SKIN {
+        let mut logged = LOGGED.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        if logged.len() < MAX_MISSING && logged.insert(location.to_owned()) {
+            log::info!("3D Skins: waiting for profile/own_skin image for '{location}'");
+        }
         return;
     }
-    log::info!("3D Skins: no pixels for skin {location}; it keeps its flat layer");
+    log::warn!("3D Skins: no pixels found for '{location}', keeping flat layer");
     if missing.len() < MAX_MISSING {
         missing.insert(location.to_owned());
     }
@@ -256,7 +265,9 @@ pub(super) fn frame(game: &mut Game<'_>) {
         }
         return;
     }
-    ACTIVE.store(true, Ordering::Relaxed);
+    if !ACTIVE.swap(true, Ordering::Relaxed) {
+        log::info!("3D Skins: initialized, active=true, reach={}, native_on={}", reach(game), game.native_on(ID));
+    }
     let reach = f64::from(reach(game));
     let camera = game.native_camera().map(|c| c.position);
     let near = |x: f64, y: f64, z: f64| camera.is_none_or(|c| (x - c[0]).powi(2) + (y - c[1]).powi(2) + (z - c[2]).powi(2) <= reach * reach);

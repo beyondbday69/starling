@@ -127,6 +127,18 @@ graph TD
 
 ---
 
+## 3.1. 3D Skins Native Mod Flat Outer Layers Fix
+* **Problem:** Outer skin layers (hat, jacket, sleeves, pants) rendered flat on Android devices.
+* **Fixes Applied:**
+  * Added `from_atlas()` in `glue.rs` to extract default player skin pixels directly from `game.gui.atlas.pixels()`.
+  * Resolved `horizon/own_skin` and `horizon/offline_skin` directly from `game.own_skin.image` and `horizon_client::skins::offline_skin()`.
+  * Prevented dynamic skin locations from being blacklisted in `MISSING`.
+  * Fixed `render_visible()` in `crates/horizon-client/src/mobs/render.rs` so `m.skin_3d` is not overridden by CEM custom body models.
+  * Added dynamic model cache invalidation in `cache.rs` on RGBA change.
+  * Added logcat tracing for resolution steps and mod initialization.
+
+---
+
 ## 4. Key Artifacts, Releases & Action Runs
 
 | Run ID | Commit | Description | Artifact ID / Download | Status |

@@ -1963,13 +1963,13 @@ fn render_visible(
     let cem_key = cem_key(&model_key);
     let custom_body = cem.layer(cem_key);
     let body_animation = custom_body.and_then(|c| c.animation.as_ref());
-    let model = match custom_body {
-        Some(custom) => custom.model.clone(),
-        None => m
-            .skin_3d
-            .as_ref()
+    let model = match (m.skin_3d.as_ref(), custom_body) {
+        (Some(skin_3d), _) => skin_3d.clone(),
+        (None, Some(custom)) => custom.model.clone(),
+        (None, None) => m
+            .kind
+            .layer(&model_key)
             .cloned()
-            .or_else(|| m.kind.layer(&model_key).cloned())
             .unwrap_or_else(|| m.kind.model.clone()),
     };
     let texture = cem_texture(custom_body, &texture, atlas);
