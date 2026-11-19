@@ -3,8 +3,8 @@
 **Repository:** `beyondbday69/starling`  
 **Current Active Branch:** `feat/water-physics-v2`  
 **Target Platform:** Android (ARM64 `arm64-v8a`)  
-**Latest Commit:** `5199ea1` (`feat(water_physics): v2 real 3D ripples, concentric rings, and 30Hz zero-allocation engine`)  
-**Latest Successful CI Run:** `#44502832147` (Artifact: `14518980841`, size: 35.0 MB)  
+**Latest Commit:** `7b40393` (`build: update prebuilt bundle for native mods suite`)  
+**Latest Successful CI Run:** `#44521237888` (Artifact: `14527869199`, size: 35.2 MB)  
 **Last Updated:** November 2026  
 
 ---
@@ -167,8 +167,9 @@ graph TD
 
 | Run ID | Commit | Description | Artifact ID / Download | Status |
 |---|---|---|---|---|
-| **#44502832147** | `5199ea1` | **Water Physics v2:** Real 3D Displaced Mesh + Baseline Lift + Small High-Res Tiles + 30Hz Zero-Alloc Engine | [Artifact 14518980841](https://github.com/beyondbday69/starling/actions/runs/44502832147/artifacts/14518980841) | **PASSED (Green)** |
-| **#44498811898** | `1f03664` | **Water Physics Native Mod (`water_physics`):** 2D Heightfield Leapfrog Wave Simulation + Kelvin Wake + Splash + Specular Mesh Overlay | [Artifact 14516308815](https://github.com/beyondbday69/starling/actions/runs/44498811898/artifacts/14516308815) | **PASSED (Green)** |
+| **#44521237888** | `7b40393` | **Water Physics v2 with Full Native Mods Compiled In:** Real 3D Ripples + Baseline Lift + Small High-Res Tiles + 30Hz Zero-Alloc Engine + Cinematic Interactions + 3D Skins + Gyro (`starling-preview-0.8.0-arm64-v8a-cinematic_interactions-skins_3d-gyro-water_physics.apk`) | [Artifact 14527869199](https://github.com/beyondbday69/starling/actions/runs/44521237888/artifacts/14527869199) | **PASSED (Green)** |
+| **#44502832147** | `5199ea1` | **Water Physics v2 (Plain APK build without native_mods input):** Real 3D Displaced Mesh + Baseline Lift + Small High-Res Tiles + 30Hz Zero-Alloc Engine | [Artifact 14518980841](https://github.com/beyondbday69/starling/actions/runs/44502832147/artifacts/14518980841) | **PASSED (Green)** |
+| **#44498811898** | `1f03664` | **Water Physics Native Mod v1 (Plain APK build):** 2D Heightfield Leapfrog Wave Simulation + Kelvin Wake + Splash + Specular Mesh Overlay | [Artifact 14516308815](https://github.com/beyondbday69/starling/actions/runs/44498811898/artifacts/14516308815) | **PASSED (Green)** |
 | **#44464049499** | `dcf4245` | **3D Skins Real Voxels Fix:** Atlas Extraction + In-Memory Own Skin + CEM Override Prevention + Screen-Split Controls | [Artifact 14501069325](https://github.com/beyondbday69/starling/actions/runs/44464049499/artifacts/14501069325) | **PASSED (Green)** |
 | **#44408523280** | `0faef7a` | Screen-Split LMB/RMB Controls + Action Text Indicator + Cinematic Interactions + 3D Skins + Gyro | [Artifact 14475234256](https://github.com/beyondbday69/starling/actions/runs/44408523280/artifacts/14475234256) | PASSED |
 | **#44395053407** | `e35ea8e` | Sweep Drag + Cinematic Interactions + 3D Skins + Gyro | [Artifact 14472020982](https://github.com/beyondbday69/starling/actions/runs/44395053407/artifacts/14472020982) | PASSED |
@@ -186,3 +187,10 @@ graph TD
 2. **Target Branch:** `feat/shader-fsr-upscaling`
 3. **VPS Memory Limit:** VPS has only 2GB RAM. **Never run `cargo build` locally** on the VPS. Always build via GitHub Actions workflow (`workflow_dispatch` on `android.yml`).
 4. **Git Remote Operations:** Always use `BypassSandbox: true` when running `gh` commands.
+5. **Rule for Testing Native Mods:** Every APK build intended for testing native mods MUST pass `-f native_mods="..."` with all desired native mods to `gh workflow run android.yml`. When `native_mods` is omitted or empty, `build_apk.py` builds the plain vanilla APK without any native mods compiled into `libhorizon_android.so`.
+6. **Built-in vs. Native Mods:** `holdmyitems`, `zoom`, `elytratrails`, and `livingmotion` are built directly into Starling core (`crates/horizon-client/src/game/`). Do NOT pass them in `native_mods` (doing so causes `E_MODULE_CONFLICT` in `horizon-mixins`). The external native mods are `cinematic_interactions`, `skins_3d`, `gyro`, and `water_physics`.
+
+### 5.1. Exact Working Workflow Dispatch Command for APK Builds with Native Mods
+```bash
+gh workflow run android.yml --ref feat/water-physics-v2 -f native_mods="cinematic_interactions skins_3d gyro water_physics"
+```
