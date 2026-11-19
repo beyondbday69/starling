@@ -244,5 +244,30 @@ The v2.x heightfield grid architecture approximated continuous circular ripples 
 - **APK Name:** `starling-preview-0.8.0-arm64-v8a-cinematic_interactions-skins_3d-gyro-water_physics.apk`
 - **Applied Mods:** `cinematic_interactions v0.12.2`, `skins_3d v1.1.1`, `gyro v1.6.0`, `water_physics v3.0.0`
 
+---
+
+## 10. Water Physics v3.1 (White Strip Artifact Fix & Continuous Zero-Pop Ripple Envelope)
+
+### 10.1. Root Cause Diagnosis of User Feedback
+1. **"Thick white strip behind player coming randomly":**
+   - In v3.0, a central rectangular foam quad (`col_foam`, pure white `(255, 255, 255)` up to 1.1m wide) was drawn between consecutive wake nodes.
+   - Nodes lacked continuity guards: when the player paused, jumped, turned around, or when boat and player nodes were mixed in the same vector, giant rectangular white strips stretched across the terrain/water between distant points.
+2. **"Circle pops are not good":**
+   - Rings had a hard cutoff `radius < max_radius`. At high speeds, rings reached `max_radius` in ~0.9s while `max_age` was 2.0s, abruptly dying while still at ~30% amplitude and height.
+   - At spawn ($t=0$), rings appeared in 1 frame at 100% full opacity and height without attack ramp.
+   - The ring pool cap (`DEFAULT_MAX_RINGS = 18`) used a blunt `remove(0)` that killed active, visible rings whenever capacity was reached.
+
+### 10.2. Engineering Fixes in v3.1
+- **Eliminated White Center Quad:** Completely removed the artificial center foam strip. The Kelvin wake is defined cleanly by the two 3D crest arms flaring at $19.47^\circ$, with natural water in the center.
+- **Node Continuity Guards:** Wake ribbon quads are now guarded by distance ($\le 1.25$m), direction ($\cos \theta \ge 0.15$), and entity type match. No stretched polygons can ever appear.
+- **Separate Wake Channels:** Player and boat wake nodes now run in independent streams (`player_wakes` and `boat_wakes`), preventing any cross-entity stretching.
+- **Harmonic Zero-Pop Wave Envelope:**
+  - Smooth attack over the first 12% of lifetime (smoothstep $3p^2 - 2p^3$) prevents popping into existence.
+  - Smooth cubic decay $(1 - p)^3$ guarantees amplitude, height, and alpha reach exactly $0.000$ before eviction.
+  - Removed premature `max_radius` death; rings live their full smooth expansion cycle.
+  - Ring pool capacity expanded to 48 with minimum-energy eviction if capacity is reached.
+- **Transparent Glass Shading:** Crest colors softened to `(215, 235, 255)` glint with 0 alpha on all edges for seamless water blending.
+
+
 
 
