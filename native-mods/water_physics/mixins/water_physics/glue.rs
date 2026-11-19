@@ -18,7 +18,7 @@ use horizon_client::particles::{ParticleOptions, ParticleType};
 
 pub const ID: &str = "water_physics";
 pub const NAME: &str = "Water Physics";
-pub const VERSION: &str = "3.1.0";
+pub const VERSION: &str = "3.2.0";
 pub const DESCRIPTION: &str = "Smooth 3D ripple rings, Kelvin V-wakes, splash droplets, and boat hydrodynamics.";
 
 struct WaterPhysicsState {
@@ -34,7 +34,9 @@ static TRACKING: Mutex<PlayerTracking> = Mutex::new(PlayerTracking {
     last_pos_y: 0.0,
     last_pos_z: 0.0,
     last_vel_y: 0.0,
+    last_time: None,
     step_accum: 0.0,
+    wake_accum: 0.0,
     alt_step: false,
     initialized: false,
 });
@@ -44,7 +46,9 @@ struct PlayerTracking {
     last_pos_y: f64,
     last_pos_z: f64,
     last_vel_y: f64,
+    last_time: Option<Instant>,
     step_accum: f64,
+    wake_accum: f64,
     alt_step: bool,
     initialized: bool,
 }
@@ -94,9 +98,17 @@ impl Game<'_> {
         let base_y = wy.floor() as i32;
         let bz = wz.floor() as i32;
 
-        for y in (base_y - 3..=base_y + 3).rev() {
+        for y in (base_y - 3..=base_y + 5).rev() {
             if self.wp_is_water(bx, y, bz) && !self.wp_is_water(bx, y + 1, bz) {
                 return Some(y as f64 + (8.0 / 9.0));
+            }
+        }
+        // Check immediate horizontal neighbors if right on the shoreline edge or wading
+        for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+            for y in (base_y - 3..=base_y + 5).rev() {
+                if self.wp_is_water(bx + dx, y, bz + dz) && !self.wp_is_water(bx + dx, y + 1, bz + dz) {
+                    return Some(y as f64 + (8.0 / 9.0));
+                }
             }
         }
         None
@@ -112,7 +124,7 @@ impl Game<'_> {
         // 1. Collect disturbances outside the mutex to allow mutable particle spawning
         let mut splash_impact: Option<(f64, f64, f64, f32)> = None;
         let mut wake_sample: Option<(f64, f64, f64, f32, f32, f32, bool)> = None;
-        let mut step_ring: Option<(f64, f64, f64)> = None;
+        let mut player_rings: Vec<(f64, f64, f64, f32)> = Vec::new();
         let mut boat_samples: Vec<(f64, f64, f64, f32, f32, f32)> = Vec::new();
         let mut oar_rings: Vec<(f64, f64, f64)> = Vec::new();
         let mut mob_rings: Vec<(f64, f64, f64)> = Vec::new();
@@ -131,7 +143,9 @@ impl Game<'_> {
                     track.last_pos_y = py;
                     track.last_pos_z = pz;
                     track.last_vel_y = p_vy;
+                    track.last_time = Some(now);
                     track.step_accum = 0.0;
+                    track.wake_accum = 0.0;
                     track.alt_step = false;
                     track.initialized = true;
                 } else {
@@ -140,10 +154,19 @@ impl Game<'_> {
                     let delta_z = pz - track.last_pos_z;
                     let dist_h = (delta_x * delta_x + delta_z * delta_z).sqrt();
 
+                    let dt_sec = track
+                        .last_time
+                        .map(|t| now.duration_since(t).as_secs_f64())
+                        .unwrap_or(0.016)
+                        .clamp(0.001, 0.10);
+                    track.last_time = Some(now);
+
+                    let speed_mps = (dist_h / dt_sec) as f32;
                     let p_vx = player.velocity.x as f64;
                     let p_vz = player.velocity.z as f64;
                     let vel_h = (p_vx * p_vx + p_vz * p_vz).sqrt();
-                    let speed = (dist_h.max(vel_h) as f32).clamp(0.0, 3.5);
+                    let vel_mps = (vel_h * 20.0) as f32; // tick velocity to m/s
+                    let speed = speed_mps.max(vel_mps).clamp(0.0, 8.0);
 
                     let (dir_x, dir_z) = if dist_h > 0.002 {
                         ((delta_x / dist_h) as f32, (delta_z / dist_h) as f32)
@@ -160,23 +183,36 @@ impl Game<'_> {
                         splash_impact = Some((px, water_y, pz, impact));
                     }
 
-                    // Surface interaction
-                    let is_at_surface = py <= water_y + 0.25 && py + 1.85 >= water_y;
-                    if is_at_surface && speed > 0.015 {
+                    // Surface interaction (wading or swimming at water boundary)
+                    let in_water = player.fluids.was_touching_water || player.swimming;
+                    let is_at_surface = (py <= water_y + 0.40 && py + 2.50 >= water_y) || (in_water && py <= water_y + 0.25);
+                    if is_at_surface && speed > 0.12 && (dir_x * dir_x + dir_z * dir_z) > 0.01 {
                         let is_swimming = player.swimming || py < water_y - 0.35;
                         wake_sample = Some((px, pz, water_y, dir_x, dir_z, speed, is_swimming));
 
                         if !is_swimming {
                             // Wading footstep ripples
                             track.step_accum += dist_h;
-                            if track.step_accum >= 0.50 {
+                            if track.step_accum >= 0.45 {
                                 track.step_accum = 0.0;
                                 track.alt_step = !track.alt_step;
                                 let offset_lat = if track.alt_step { 0.22 } else { -0.22 };
                                 let foot_x = px + (-dir_z as f64) * offset_lat;
                                 let foot_z = pz + (dir_x as f64) * offset_lat;
-                                step_ring = Some((foot_x, foot_z, water_y));
+                                player_rings.push((foot_x, foot_z, water_y, 0.55));
                             }
+                        }
+
+                        // Periodic trailing transverse 3D ripple shedding behind the moving body
+                        track.wake_accum += dist_h;
+                        let shed_threshold = if is_swimming { 0.60 } else { 0.50 };
+                        if track.wake_accum >= shed_threshold {
+                            track.wake_accum = 0.0;
+                            let trail_offset = 0.30;
+                            let shed_x = px - (dir_x as f64) * trail_offset;
+                            let shed_z = pz - (dir_z as f64) * trail_offset;
+                            let ring_amp = (speed * 0.28).clamp(0.40, 0.95);
+                            player_rings.push((shed_x, shed_z, water_y, ring_amp));
                         }
                     }
 
@@ -196,8 +232,8 @@ impl Game<'_> {
             if let Some(water_y) = self.wp_water_surface_at(bx, by, bz) {
                 let bvx = b.velocity.x as f64;
                 let bvz = b.velocity.z as f64;
-                let b_speed = (bvx * bvx + bvz * bvz).sqrt() as f32;
-                if b_speed > 0.02 {
+                let b_speed = (((bvx * bvx + bvz * bvz).sqrt() * 20.0) as f32).clamp(0.0, 10.0);
+                if b_speed > 0.3 {
                     let rad = (b.yaw as f32).to_radians();
                     let fwd_x = -rad.sin();
                     let fwd_z = rad.cos();
@@ -290,12 +326,12 @@ impl Game<'_> {
                 state.sim.spawn_splash_burst(sx, sz, sy, impact);
             }
 
-            // Player wake & step ripple
+            // Player wake & step/transverse ripples
             if let Some((wx, wz, wy, dx, dz, spd, _is_swim)) = wake_sample {
                 state.sim.add_wake_node(wx, wz, wy, dx, dz, spd, false);
             }
-            if let Some((fx, fz, fy)) = step_ring {
-                state.sim.spawn_ring(fx, fz, fy, 0.06, 2.4, 1.15, 0.55, 2.2, false);
+            for (rx, rz, ry, r_amp) in player_rings {
+                state.sim.spawn_ring(rx, rz, ry, 0.08, 2.6, 1.25, r_amp, 2.2, false);
             }
 
             // Boat wakes & oar ripples
@@ -317,7 +353,7 @@ impl Game<'_> {
             // Logcat profiling output every 2 seconds
             if now.duration_since(state.last_log_time) >= std::time::Duration::from_secs(2) {
                 log::info!(
-                    "water_physics v3.1: rings={}, player_wakes={}, boat_wakes={}",
+                    "water_physics v3.2: rings={}, player_wakes={}, boat_wakes={}",
                     state.sim.rings.len(),
                     state.sim.player_wakes.len(),
                     state.sim.boat_wakes.len()

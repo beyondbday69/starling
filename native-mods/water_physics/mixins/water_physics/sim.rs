@@ -109,11 +109,11 @@ impl WakeNode {
         let left_z = dir_x;
 
         let (half_width, spread_speed, amplitude, max_age) = if is_boat {
-            let amp = (speed * 1.8).clamp(0.35, 1.5);
-            (0.55f32, 1.05f32, amp, 3.2f32)
+            let amp = (speed * 0.45).clamp(0.55, 1.8);
+            (0.55f32, 1.10f32, amp, 3.5f32)
         } else {
-            let amp = (speed * 1.3).clamp(0.25, 1.1);
-            (0.28f32, 0.65f32, amp, 2.2f32)
+            let amp = (speed * 0.45).clamp(0.45, 1.4);
+            (0.30f32, 0.75f32, amp, 2.5f32)
         };
 
         Self {
@@ -151,7 +151,7 @@ impl WakeNode {
         }
         let p = (self.age / self.max_age).clamp(0.0, 1.0);
         let decay = (1.0 - p) * (1.0 - p);
-        let attack = (p / 0.08).min(1.0);
+        let attack = (p / 0.05).min(1.0);
         attack * decay
     }
 }
@@ -258,7 +258,7 @@ impl WaterSimulation {
         let (wake_vec, min_dist) = if is_boat {
             (&mut self.boat_wakes, 0.35f64)
         } else {
-            (&mut self.player_wakes, 0.20f64)
+            (&mut self.player_wakes, 0.18f64)
         };
 
         if let Some(last) = wake_vec.last() {
