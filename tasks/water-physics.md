@@ -334,6 +334,48 @@ The v2.x heightfield grid architecture approximated continuous circular ripples 
 - **APK Name:** `starling-preview-0.8.0-arm64-v8a.apk` (inside `starling-apk-arm64-v8a.zip`)
 - **Applied Mods:** `cinematic_interactions v0.12.2`, `skins_3d v1.1.1`, `gyro v1.6.0`, `water_physics v3.2.0`
 
+---
+
+## 12. Water Physics v3.3 (Sleek Single-Ridge 3D V-Wake & Paddle Ripple Removal)
+
+### 12.1. Root Cause Diagnosis of User Feedback
+1. **"On boat there is 6 ribbons very thick fix it":**
+   - In v3.2, each V-arm cross-section was split into 4 strips across 3 separate crest/trough lines: Inner $\to$ Crest 2 $\to$ Trough $\to$ Crest 1 $\to$ Outer.
+   - Because each crest and trough had non-zero alpha and distinct heights, each arm rendered 3 visible parallel bands.
+   - Across both sides (Left arm + Right arm), this appeared as **6 distinct, thick, parallel ribbon tracks** trailing behind the boat!
+   - Furthermore, the arm thickness parameter allowed the wake to grow up to $1.6$m wide on each side, producing a combined wake spanning over $4.6$m wide that looked like giant highway stripes.
+
+2. **"Boat paddles makes circle ripples fix it":**
+   - In `glue.rs:245-250`, `b.paddling[0]` and `b.paddling[1]` were checked every single render frame without stroke timing.
+   - At 60–90 FPS, holding forward in a boat was pushing 60 to 120 circular ripple rings into `oar_rings` per second!
+   - This flooded the ring buffer, evicting player rings and creating a messy explosion of expanding circles alongside the boat.
+
+### 12.2. Engineering Fixes in v3.3
+- **Unitary Sleek Single-Ridge 3D V-Wake (`render.rs`):**
+  - Replaced the multi-strip cross section with a single, continuous, elegant 3D wave ridge on each arm (Left and Right):
+    - Inner Edge: at water surface level ($y = y_{base}$), $\alpha = 0$ (seamless blending)
+    - Crest Peak: elevated in real 3D ($y = y_{base} + 0.001 + \text{crest\_h}$), $\alpha = 0.32 \cdot \text{amp}$ (crisp water reflection glint)
+    - Outer Edge: at water surface level ($y = y_{base}$), $\alpha = 0$ (seamless blending)
+  - Result: Exactly 2 clean, sleek V-arms (one Left, one Right) forming a single, sharp, iconic V-wake. Zero multi-ribbon striping (eliminates the 6-ribbon bug).
+- **Slender Hydrodynamic Arm Thickness (`render.rs`):**
+  - Reduced arm width from $1.6$m down to a realistic $0.24\text{m} - 0.42\text{m}$ for boats and $0.18\text{m} - 0.32\text{m}$ for players.
+  - Crests remain elevated in 3D ($+0.04\text{m}$ to $+0.06\text{m}$) with zero foam and crystal glass reflection `(215, 235, 255)`.
+- **Complete Removal of Paddle Circle Ripples (`glue.rs`):**
+  - Removed `oar_rings` collection and injection entirely.
+  - Boats now produce only their sleek, clean, hydrodynamic V-wake without any paddle circle ripple spam.
+- **Tuned Kelvin Wake Spread Speed (`sim.rs`):**
+  - Boat initial half-width tuned to $0.42$m (matching boat beam ~0.85m), spread speed set to $0.65$ m/s, max age $3.0$s.
+  - Player initial half-width tuned to $0.22$m, spread speed set to $0.50$ m/s, max age $2.2$s.
+
+### 12.3. Build Verification
+- **Run ID:** `#44569997411`
+- **Commit:** `546af9d` (v3.3 sleek single-ridge 3D V-wake & remove paddle circle ripples)
+- **Status:** PASSED (Green)
+- **Artifact:** `starling-apk-arm64-v8a` (ID: `14552884730`, size: 35.2 MB)
+- **Direct Download Link:** [Artifact 14552884730](https://github.com/beyondbday69/starling/actions/runs/44569997411/artifacts/14552884730)
+- **APK Name:** `starling-preview-0.8.0-arm64-v8a.apk` (inside `starling-apk-arm64-v8a.zip`)
+- **Applied Mods:** `cinematic_interactions v0.12.2`, `skins_3d v1.1.1`, `gyro v1.6.0`, `water_physics v3.3.0`
+
 
 
 
