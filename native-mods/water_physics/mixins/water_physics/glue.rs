@@ -357,7 +357,7 @@ impl Game<'_> {
 
         // 4. Spawn boat water particles (bow spray & stern bubble churn)
         if emit_boat_spray {
-            for (bx, bz, water_y, fwd_x, fwd_z, b_speed) in &boat_spray_emitters {
+            for (bx, bz, water_y, fwd_x, fwd_z, b_speed) in boat_spray_emitters {
                 let left_x = -fwd_z;
                 let left_z = fwd_x;
 
@@ -400,7 +400,7 @@ impl Game<'_> {
                     [churn_vx, 0.06, churn_vz],
                 );
 
-                if *b_speed > 2.8 {
+                if b_speed > 2.8 {
                     self.particles.add(
                         &ParticleOptions::simple(ParticleType::Splash),
                         [stern_x, water_y + 0.03, stern_z],
