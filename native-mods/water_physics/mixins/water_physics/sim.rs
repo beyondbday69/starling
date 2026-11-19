@@ -1,15 +1,16 @@
-// Geometric water wave and wake simulation engine (v3.6).
+// Geometric water wave and wake simulation engine (v3.7).
 //
 // Key features:
 // 1. Concentric Ripple Rings: Smooth circular expanding torus waves for footsteps, drops, splashes, and oars.
 //    Mathematically continuous harmonic envelope (smooth attack + cubic decay): ZERO spawn pop, ZERO death pop.
-// 2. Separate Player and Boat Kelvin Wake Channels: Prevents cross-entity ribbon stretching.
-// 3. Extended boat hydrodynamics: 3D hull wash, transverse bridging wavelets, and Kelvin V-arms.
-// 4. Node continuity enforcement: Eliminates random stretched ribbons on pauses, turns, and teleports.
-// 5. Zero-grid architecture: Pure analytical fluid geometry without creases or square edges.
+// 2. Surrounding Water Reaction: Outward-propagating lateral surge waves pushing 8.5m into surrounding water.
+// 3. Separate Player and Boat Kelvin Wake Channels: Prevents cross-entity ribbon stretching.
+// 4. Extended boat hydrodynamics: 3D hull wash, transverse bridging wavelets, and Kelvin V-arms.
+// 5. Node continuity enforcement: Eliminates random stretched ribbons on pauses, turns, and teleports.
+// 6. Zero-grid architecture: Pure analytical fluid geometry without creases or square edges.
 
-pub const DEFAULT_MAX_RINGS: usize = 48;
-pub const DEFAULT_MAX_WAKE_NODES: usize = 48;
+pub const DEFAULT_MAX_RINGS: usize = 96;
+pub const DEFAULT_MAX_WAKE_NODES: usize = 64;
 
 #[derive(Clone, Debug)]
 pub struct RippleRing {
@@ -110,11 +111,11 @@ impl WakeNode {
         let left_z = dir_x;
 
         let (half_width, spread_speed, amplitude, max_age) = if is_boat {
-            let amp = (speed * 0.40).clamp(0.50, 1.6);
-            (0.42f32, 0.60f32, amp, 3.5f32)
+            let amp = (speed * 0.40).clamp(0.50, 1.8);
+            (0.45f32, 1.15f32, amp, 4.2f32)
         } else {
-            let amp = (speed * 0.40).clamp(0.40, 1.3);
-            (0.22f32, 0.50f32, amp, 2.2f32)
+            let amp = (speed * 0.40).clamp(0.40, 1.4);
+            (0.24f32, 0.65f32, amp, 3.0f32)
         };
 
         Self {

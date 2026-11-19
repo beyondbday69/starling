@@ -1,4 +1,4 @@
-// Geometric water wave and wake renderer (v3.6).
+// Geometric water wave and wake renderer (v3.7).
 //
 // Key features:
 // - Shader-Preserving Water Optics: Eliminates artificial body tint overlays. Uses 100% transparent
@@ -104,14 +104,14 @@ impl Game<'_> {
             let light_packed = self.world.light(bx, by + 1, bz);
             let light = horizon_client::block_entity_render::vertex_light(light_packed);
 
-            // Ring geometry parameters: expands smoothly with radius
+            // Ring geometry parameters: expands smoothly with radius into surrounding water
             let r_crest = ring.radius;
-            let width = (0.14 + 0.16 * ring.radius).clamp(0.18, 0.48);
+            let width = (0.22 + 0.16 * ring.radius).clamp(0.24, 0.90);
             let r_inner = (r_crest - width * 0.5).max(0.02);
             let r_outer = r_crest + width * 0.5;
 
-            // Physical 3D crest displacement: elevates smoothly up to +0.070m
-            let crest_h = (0.050 * amp).min(0.070);
+            // Physical 3D crest displacement: elevates smoothly up to +0.080m
+            let crest_h = (0.055 * amp).min(0.080);
             let y_base = ring.water_y as f32 + 0.002 + cam_y;
             let y_crest = ring.water_y as f32 + 0.003 + crest_h + cam_y;
 
@@ -243,14 +243,14 @@ impl Game<'_> {
 
             // Physical 3D wave displacement: realistic undulating 3D open water crests
             let crest_h0 = if n0.is_boat {
-                (0.065 * amp0).min(0.090)
+                (0.070 * amp0).min(0.095)
             } else {
-                (0.042 * amp0).min(0.060)
+                (0.045 * amp0).min(0.065)
             };
             let crest_h1 = if n1.is_boat {
-                (0.065 * amp1).min(0.090)
+                (0.070 * amp1).min(0.095)
             } else {
-                (0.042 * amp1).min(0.060)
+                (0.045 * amp1).min(0.065)
             };
             let y_crest0 = y_base0 + 0.001 + crest_h0;
             let y_crest1 = y_base1 + 0.001 + crest_h1;
@@ -258,16 +258,16 @@ impl Game<'_> {
             let hw0 = n0.half_width;
             let hw1 = n1.half_width;
 
-            // Slender, hydrodynamic arm thickness
+            // Hydrodynamic arm thickness: swells wider as it travels into surrounding water
             let arm_w0 = if n0.is_boat {
-                (0.22 + 0.06 * hw0).clamp(0.24, 0.42)
+                (0.28 + 0.08 * hw0).clamp(0.32, 0.65)
             } else {
-                (0.16 + 0.05 * hw0).clamp(0.18, 0.32)
+                (0.18 + 0.05 * hw0).clamp(0.20, 0.38)
             };
             let arm_w1 = if n1.is_boat {
-                (0.22 + 0.06 * hw1).clamp(0.24, 0.42)
+                (0.28 + 0.08 * hw1).clamp(0.32, 0.65)
             } else {
-                (0.16 + 0.05 * hw1).clamp(0.18, 0.32)
+                (0.18 + 0.05 * hw1).clamp(0.20, 0.38)
             };
 
             let half_w0 = arm_w0 * 0.5;

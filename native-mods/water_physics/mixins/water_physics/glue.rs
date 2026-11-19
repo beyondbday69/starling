@@ -18,8 +18,8 @@ use horizon_client::particles::{ParticleOptions, ParticleType};
 
 pub const ID: &str = "water_physics";
 pub const NAME: &str = "Water Physics";
-pub const VERSION: &str = "3.6.0";
-pub const DESCRIPTION: &str = "Dynamic 3D waves, living Kelvin wake fields with hull wash, boat bow spray & bubble churn, and shader-preserving water optics.";
+pub const VERSION: &str = "3.7.0";
+pub const DESCRIPTION: &str = "Full surrounding water hydrodynamics, wide 8.5m lateral bow surge waves, 3D rolling swells, boat spray & bubble churn, and shader-preserving optics.";
 
 struct WaterPhysicsState {
     sim: sim::WaterSimulation,
@@ -27,6 +27,7 @@ struct WaterPhysicsState {
     last_tick: Instant,
     last_log_time: Instant,
     boat_spray_timer: f32,
+    boat_surge_timer: f32,
     ambient_wavelet_timer: f32,
 }
 
@@ -68,6 +69,7 @@ where
             last_tick: now,
             last_log_time: now,
             boat_spray_timer: 0.0,
+            boat_surge_timer: 0.0,
             ambient_wavelet_timer: 0.0,
         });
     }
@@ -130,8 +132,10 @@ impl Game<'_> {
         let mut wake_sample: Option<(f64, f64, f64, f32, f32, f32, bool)> = None;
         let mut player_rings: Vec<(f64, f64, f64, f32)> = Vec::new();
         let mut ambient_rings: Vec<(f64, f64, f64, f32)> = Vec::new();
+        let mut surrounding_surge_rings: Vec<(f64, f64, f64, f32)> = Vec::new();
         let mut boat_samples: Vec<(f64, f64, f64, f32, f32, f32)> = Vec::new();
         let mut boat_spray_emitters: Vec<(f64, f64, f64, f32, f32, f32)> = Vec::new();
+        let mut boat_surge_emitters: Vec<(f64, f64, f64, f32, f32, f32)> = Vec::new();
         let mut mob_rings: Vec<(f64, f64, f64)> = Vec::new();
 
         // Player disturbance evaluation
@@ -278,6 +282,13 @@ impl Game<'_> {
                 if b_speed > 1.4 {
                     boat_spray_emitters.push((bx, bz, water_y, fwd_x, fwd_z, b_speed));
                 }
+
+                // Surrounding water reaction ("aju baju ka pani"):
+                // When cruising, the bow pushes outward lateral surge wave pulses
+                // that propagate 6m - 9m across the surrounding water on both sides
+                if b_speed > 0.75 {
+                    boat_surge_emitters.push((bx, bz, water_y, fwd_x, fwd_z, b_speed));
+                }
             }
         }
 
@@ -316,12 +327,20 @@ impl Game<'_> {
             }
         }
 
-        // 2. Check timers for boat spray & ambient wavelets
-        let (emit_boat_spray, emit_ambient) = with_state(|state| {
+        // 2. Check timers for boat spray, lateral surge, & ambient wavelets
+        let (emit_boat_spray, emit_boat_surge, emit_ambient) = with_state(|state| {
             let dt = now.duration_since(state.last_tick).as_secs_f32().min(0.10);
             state.boat_spray_timer += dt;
             let spray = if state.boat_spray_timer >= 0.08 {
                 state.boat_spray_timer = 0.0;
+                true
+            } else {
+                false
+            };
+
+            state.boat_surge_timer += dt;
+            let surge = if state.boat_surge_timer >= 0.26 {
+                state.boat_surge_timer = 0.0;
                 true
             } else {
                 false
@@ -335,7 +354,7 @@ impl Game<'_> {
                 false
             };
 
-            (spray, ambient)
+            (spray, surge, ambient)
         });
 
         // 3. Spawn real water splash droplet particles when entering water
@@ -410,7 +429,25 @@ impl Game<'_> {
             }
         }
 
-        // 5. Ambient 3D surface wavelets (gentle water breathing when idling)
+        // 5. Surrounding water reaction ("aju baju ka pani"):
+        // Lateral surge waves shed from the bow shoulders and roll 8.5m across the surrounding water
+        if emit_boat_surge {
+            for (bx, bz, water_y, fwd_x, fwd_z, b_speed) in boat_surge_emitters {
+                let left_x = -fwd_z;
+                let left_z = fwd_x;
+
+                let l_x = bx + (fwd_x as f64) * 0.65 + (left_x as f64) * 0.85;
+                let l_z = bz + (fwd_z as f64) * 0.65 + (left_z as f64) * 0.85;
+                let r_x = bx + (fwd_x as f64) * 0.65 - (left_x as f64) * 0.85;
+                let r_z = bz + (fwd_z as f64) * 0.65 - (left_z as f64) * 0.85;
+
+                let surge_amp = (b_speed * 0.25).clamp(0.40, 1.25);
+                surrounding_surge_rings.push((l_x, l_z, water_y, surge_amp));
+                surrounding_surge_rings.push((r_x, r_z, water_y, surge_amp));
+            }
+        }
+
+        // 6. Ambient 3D surface wavelets (gentle water breathing when idling)
         if emit_ambient {
             for b in &self.boats {
                 let bx = b.position.x as f64;
@@ -443,7 +480,7 @@ impl Game<'_> {
             }
         }
 
-        // 6. Inject geometric waves and step simulation
+        // 7. Inject geometric waves and step simulation
         with_state(|state| {
             let dt = now.duration_since(state.last_tick).as_secs_f32().min(0.10);
             state.last_tick = now;
@@ -473,17 +510,22 @@ impl Game<'_> {
                 state.sim.spawn_splash_burst(sx, sz, sy, impact);
             }
 
-            // Player wake & step/transverse ripples
+            // Surrounding water 3D surge waves (reaches 8.5m into surrounding water on both sides!)
+            for (rx, rz, ry, r_amp) in surrounding_surge_rings {
+                state.sim.spawn_ring(rx, rz, ry, 0.35, 8.5, 2.1, r_amp, 4.0, false);
+            }
+
+            // Player wake & step/transverse ripples (reaches 4.8m into surrounding water)
             if let Some((wx, wz, wy, dx, dz, spd, _is_swim)) = wake_sample {
                 state.sim.add_wake_node(wx, wz, wy, dx, dz, spd, false);
             }
             for (rx, rz, ry, r_amp) in player_rings {
-                state.sim.spawn_ring(rx, rz, ry, 0.08, 2.6, 1.25, r_amp, 2.2, false);
+                state.sim.spawn_ring(rx, rz, ry, 0.10, 4.8, 1.35, r_amp, 2.8, false);
             }
 
-            // Ambient 3D surface wavelets
+            // Ambient 3D surface wavelets (reaches 3.8m around idle entities)
             for (rx, rz, ry, r_amp) in ambient_rings {
-                state.sim.spawn_ring(rx, rz, ry, 0.35, 2.5, 0.45, r_amp, 3.2, false);
+                state.sim.spawn_ring(rx, rz, ry, 0.35, 3.8, 0.50, r_amp, 3.5, false);
             }
 
             // Boat wakes
@@ -502,7 +544,7 @@ impl Game<'_> {
             // Logcat profiling output every 2 seconds
             if now.duration_since(state.last_log_time) >= std::time::Duration::from_secs(2) {
                 log::info!(
-                    "water_physics v3.6: rings={}, player_wakes={}, boat_wakes={}",
+                    "water_physics v3.7: rings={}, player_wakes={}, boat_wakes={}",
                     state.sim.rings.len(),
                     state.sim.player_wakes.len(),
                     state.sim.boat_wakes.len()
