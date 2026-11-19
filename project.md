@@ -3,8 +3,8 @@
 **Repository:** `beyondbday69/starling`  
 **Current Active Branch:** `feat/shader-fsr-upscaling`  
 **Target Platform:** Android (ARM64 `arm64-v8a`)  
-**Latest Commit:** `0faef7a` (`feat(touch): screen-split LMB/RMB controls and on-screen action indicator`)  
-**Latest Successful CI Run:** `#44408523280` (Artifact: `14475234256`, size: 35.2 MB)  
+**Latest Commit:** `dcf4245` (`fix(skins_3d): resolve skin pixels from atlas and own_skin and prevent CEM override`)  
+**Latest Successful CI Run:** `#44464049499` (Artifact: `14501069325`, size: 35.2 MB)  
 **Last Updated:** November 2026  
 
 ---
@@ -143,7 +143,8 @@ graph TD
 
 | Run ID | Commit | Description | Artifact ID / Download | Status |
 |---|---|---|---|---|
-| **#44408523280** | `0faef7a` | **Latest Working Build:** Screen-Split LMB/RMB Controls + Action Text Indicator + Cinematic Interactions + 3D Skins + Gyro | [Artifact 14475234256](https://github.com/beyondbday69/starling/actions/runs/44408523280/artifacts/14475234256) | **PASSED (Green)** |
+| **#44464049499** | `dcf4245` | **Latest Working Build:** 3D Skins Real Voxels Fix (Atlas Extraction + In-Memory Own Skin + CEM Override Prevention) + Screen-Split Touch Controls + Cinematic Interactions + Gyro | [Artifact 14501069325](https://github.com/beyondbday69/starling/actions/runs/44464049499/artifacts/14501069325) | **PASSED (Green)** |
+| **#44408523280** | `0faef7a` | Screen-Split LMB/RMB Controls + Action Text Indicator + Cinematic Interactions + 3D Skins + Gyro | [Artifact 14475234256](https://github.com/beyondbday69/starling/actions/runs/44408523280/artifacts/14475234256) | PASSED |
 | **#44395053407** | `e35ea8e` | Sweep Drag + Cinematic Interactions + 3D Skins + Gyro | [Artifact 14472020982](https://github.com/beyondbday69/starling/actions/runs/44395053407/artifacts/14472020982) | PASSED |
 | **#44389836599** | `e35ea8e` | Option 1 Sweep Drag item collection (plain build) | [Artifact 14469510477](https://github.com/beyondbday69/starling/actions/runs/44389836599/artifacts/14469510477) | PASSED |
 | **#44355584017** | `34a0af2` | Fixed deadlock crash, safe frame tap, trackpad cursor | [Artifact 14452912493](https://github.com/beyondbday69/starling/actions/runs/44355584017/artifacts/14452912493) | PASSED |
