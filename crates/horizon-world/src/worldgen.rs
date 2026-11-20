@@ -217,10 +217,26 @@ fn double_range(
 }
 
 /// Decode Java Edition 26.3's direct normal-noise parameters from strict JSON.
+/// Also accepts vanilla / 1.20+ `{firstOctave, amplitudes}` format transparently.
 /// Numeric tokens retain their decimal text; all rounding occurs at the target
 /// numeric width. Unknown object fields are ignored, as in vanilla's codec.
 pub fn decode_noise(json: &str) -> Result<NormalNoise, DecodeError> {
     let object: Object = serde_json::from_str(json)?;
+    if !object.contains_key("base_octave") {
+        if let Some(first_raw) = object.get("firstOctave").or_else(|| object.get("first_octave")) {
+            let first = int_range(first_raw, "firstOctave", -32, 32)?;
+            let amps_raw = required(&object, "amplitudes")?;
+            let modifiers: Vec<Box<RawValue>> = serde_json::from_str(amps_raw.get())?;
+            if modifiers.is_empty() || modifiers.len() > 32 {
+                return Err(DecodeError::Field("amplitudes"));
+            }
+            let mut amps = Vec::with_capacity(modifiers.len());
+            for modifier in &modifiers {
+                amps.push(double_range(modifier, "amplitudes", 0.0, 1e6)?);
+            }
+            return NormalNoise::create_parity(first, &amps).map_err(DecodeError::from);
+        }
+    }
     let base = int_range(required(&object, "base_octave")?, "base_octave", -32, 32)?;
     let count = optional(&object, "octave_count")
         .map(|raw| int_range(raw, "octave_count", 1, 32))
@@ -297,5 +313,18 @@ mod tests {
             decode_noise(r#"{"base_octave":-7,"octave_count":2,"amplitude_modifiers":[1]}"#)
                 .is_err()
         );
+    }
+    #[test]
+    fn codec_supports_legacy_first_octave_and_amplitudes() {
+        let legacy = decode_noise(r#"{"firstOctave":-8,"amplitudes":[3.0]}"#).unwrap();
+        assert_eq!(legacy.octaves().len(), 1);
+        assert_eq!(legacy.base_octave(), -8);
+
+        let multi = decode_noise(r#"{"firstOctave":-7,"amplitudes":[1.0,1.0,1.0]}"#).unwrap();
+        assert_eq!(multi.octaves().len(), 3);
+        assert_eq!(multi.base_octave(), -7);
+
+        assert!(decode_noise(r#"{"firstOctave":-7,"amplitudes":[]}"#).is_err());
+        assert!(decode_noise(r#"{"firstOctave":-7,"amplitudes":[-1.0]}"#).is_err());
     }
 }
