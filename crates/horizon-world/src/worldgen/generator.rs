@@ -1114,34 +1114,51 @@ where
             .collect::<Result<Vec<_>, GeneratorError>>()?;
         let aquifer = aquifers
             .map(|config| library.compile_aquifer(config))
-            .transpose()?
+            .transpose()
+            .unwrap_or_else(|e| {
+                log::warn!("Horizon: failed to compile aquifers: {e}");
+                None
+            })
             .map(|samplers| AquiferField::ALL.map(|field| samplers.get(field).clone()));
         let rule_name = settings_json
             .get("material_rule")
             .and_then(Value::as_str)
             .or_else(|| settings_json.get("surface_rule").and_then(Value::as_str))
             .unwrap_or("minecraft:overworld");
-        let rule = library.rule(rule_name)?;
+        let rule = library.rule(rule_name).or_else(|e| {
+            log::warn!("Horizon: failed to load material_rule '{rule_name}': {e}, falling back to minecraft:overworld");
+            library.rule("minecraft:overworld")
+        })?;
         let preliminary = router.get(RouterField::ChunkSurfaceLevel).clone();
         let spawn_target = match settings_json.get("spawn_target") {
-            Some(Value::Array(points)) => points
-                .iter()
-                .map(|point| {
-                    let Value::Object(fields) = point else {
-                        return Err(resource("spawn_target point"));
-                    };
-                    let parameters = fields
-                        .iter()
-                        .map(|(name, interval)| {
-                            Ok((
-                                library.named_density(name)?,
-                                decode_parameter(&interval.to_string())?,
-                            ))
-                        })
-                        .collect::<Result<_, GeneratorError>>()?;
-                    Ok(SpawnTargetPoint { parameters })
-                })
-                .collect::<Result<_, GeneratorError>>()?,
+            Some(Value::Array(points)) => {
+                let parsed: Result<Vec<_>, _> = points
+                    .iter()
+                    .map(|point| {
+                        let Value::Object(fields) = point else {
+                            return Err(resource("spawn_target point"));
+                        };
+                        let parameters = fields
+                            .iter()
+                            .filter(|(name, _)| !matches!(name.as_str(), "depth" | "offset"))
+                            .map(|(name, interval)| {
+                                Ok((
+                                    library.named_density(name)?,
+                                    decode_parameter(&interval.to_string())?,
+                                ))
+                            })
+                            .collect::<Result<_, GeneratorError>>()?;
+                        Ok(SpawnTargetPoint { parameters })
+                    })
+                    .collect();
+                match parsed {
+                    Ok(pts) => pts,
+                    Err(e) => {
+                        log::warn!("Horizon: ignoring invalid or legacy spawn_target: {e}");
+                        Vec::new()
+                    }
+                }
+            }
             _ => Vec::new(),
         };
         let source_json = generator["biome_source"].to_string();
