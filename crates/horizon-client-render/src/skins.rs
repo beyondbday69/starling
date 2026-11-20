@@ -989,6 +989,10 @@ impl Downloader {
     pub fn take_drawn(&mut self) -> std::collections::HashSet<String> {
         std::mem::take(&mut self.drawn)
     }
+    /// A remembered skin or cape image in memory.
+    pub fn image(&self, location: &str) -> Option<&Vec<u8>> {
+        self.images.get(location)
+    }
 }
 
 /// Which downloaded skins and capes hold the atlas's skin slots

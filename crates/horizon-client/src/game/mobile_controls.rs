@@ -1520,6 +1520,10 @@ impl Game<'_> {
                             self.settings.horizon.taa,
                             self.settings.horizon.upscaling.ratio(),
                         );
+                        r.set_shader_upscaling(
+                            self.settings.horizon.shader_upscaling,
+                            self.settings.horizon.fsr_sharpness,
+                        );
                     }
                     if changed {
                         let _ = self.mobile.controls.settings.save();

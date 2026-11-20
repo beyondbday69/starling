@@ -1,5 +1,7 @@
 //! The eight terrain-router fields used by Java Edition 26.3.
-use super::{DecodeError, Object, climate::ClimateSampler, density::DensityRegistry, required};
+use super::{
+    DecodeError, Object, climate::ClimateSampler, density::DensityRegistry, optional, required,
+};
 use horizon_core::density::{
     DensitySampler,
     graph::{CompileError, DensityCompiler, FunctionId},
@@ -57,8 +59,18 @@ impl NoiseRouter {
         let object: Object = serde_json::from_str(json)?;
         let inputs = RouterField::ALL
             .iter()
-            .map(|field| required(&object, field.name()).map(|raw| raw.get()))
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(|field| {
+                let raw = optional(&object, field.name())
+                    .or_else(|| match field {
+                        RouterField::ChunkSurfaceLevel => {
+                            optional(&object, "preliminary_surface_level")
+                        }
+                        _ => None,
+                    })
+                    .ok_or(DecodeError::Field(field.name()))?;
+                Ok(raw.get())
+            })
+            .collect::<Result<Vec<_>, DecodeError>>()?;
         let functions = registry
             .decode_functions(&inputs)?
             .try_into()

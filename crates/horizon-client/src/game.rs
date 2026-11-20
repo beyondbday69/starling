@@ -155,6 +155,10 @@ mod glowing;
 mod golems;
 mod growth;
 mod hand;
+pub(crate) mod holdmyitems;
+pub(crate) mod zoom;
+pub(crate) mod elytratrails;
+pub(crate) mod livingmotion;
 mod headless;
 mod ime;
 mod imports;
@@ -215,6 +219,7 @@ mod mod_api_host;
 mod mod_assets;
 #[cfg(target_os = "android")]
 mod mod_catalog;
+mod mod_loader;
 mod mods;
 mod mount_menu;
 mod mounts;
@@ -8415,10 +8420,13 @@ impl Game<'_> {
             let strength = self.hand_strength.scale(0.0, self.main_hand_attack_speed());
             // The 3D crosshair (F3) takes the 2D one's place.
             // Hud.extractCrosshair: a spectator only sees it over something to open.
-            if self.camera_type.first_person()
+            let mod_crosshair = self.camera_type == perspective::CameraType::ThirdPersonBack
+                && mod_loader::camera_offset(self, 0.0)
+                    .is_some_and(|o| o.active != 0 && o.crosshair != 0);
+            if (self.camera_type.first_person() || mod_crosshair)
                 && (!spectator || self.spectator_crosshair())
                 && !self.debug_crosshair()
-                && !self.touch_hides_crosshair()
+                && (mod_crosshair || !self.touch_hides_crosshair())
             {
                 let attack = (indicator == 1).then_some(strength);
                 let full = attack.is_some_and(|a| {

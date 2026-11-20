@@ -1,0 +1,17 @@
+[package]
+name = "horizon-mod-eyemod"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license = "GPL-3.0-or-later"
+description = "Animated eyes, procedural blinking, look tracking, and blushing as a runtime library mod"
+
+[lib]
+name = "eyemod"
+crate-type = ["cdylib"]
+
+[dependencies]
+horizon-mod-abi = { path = "../horizon-mod-abi" }
+
+[lints]
+workspace = true

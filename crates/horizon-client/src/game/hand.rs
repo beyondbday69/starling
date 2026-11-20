@@ -186,6 +186,7 @@ impl Game<'_> {
     }
     /// `LivingEntity.swing` with `getModifiedSwingDuration`.
     pub(super) fn swing_hand(&mut self, hand: Hand, animation: SwingAnimation) {
+        self.holdmyitems_swing_hand(hand);
         let effects = &self.potions.effects;
         let dig_speed = effects
             .amplifier("haste")

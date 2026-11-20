@@ -400,6 +400,7 @@ impl Game<'_> {
             self.map_patches.extend(batch.patches);
         }
         self.text_displays = displays;
+        self.livingmotion_world(camera, partial, normal);
     }
 }
 

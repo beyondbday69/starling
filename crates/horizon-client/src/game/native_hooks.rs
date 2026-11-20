@@ -2033,7 +2033,91 @@ impl Game<'_> {
     }
     /// Once a frame, in a world or not, after Horizon's extras.
     pub(super) fn native_frame(&mut self, elapsed: Duration) {
+        self.holdmyitems_frame(elapsed);
+        self.livingmotion_frame();
         mod_api::dispatch_frame(self, mod_api::mods(), elapsed);
+        let partial = (elapsed.as_secs_f32() * 20.0).clamp(0.0, 1.0);
+        super::mod_loader::frame(self, partial);
+        self.update_mod_player_eyes(partial);
+    }
+
+    fn update_mod_player_eyes(&mut self, partial: f32) {
+        let skin_key = self
+            .player_model
+            .as_ref()
+            .and_then(|m| m.skin.clone())
+            .or_else(|| {
+                if self.gui.atlas.sprites.contains_key("horizon/own_skin") {
+                    Some("horizon/own_skin".to_string())
+                } else if self.gui.atlas.sprites.contains_key("horizon/offline_skin") {
+                    Some("horizon/offline_skin".to_string())
+                } else {
+                    None
+                }
+            });
+        let Some(skin_key) = skin_key else {
+            return;
+        };
+        let Some(rect) = self.gui.atlas.sprites.get(&skin_key).copied() else {
+            return;
+        };
+        let mut base_face = [0u32; 64];
+        let mut has_base = false;
+        if let Some(img) = self.own_skin.image.as_ref()
+            && img.len() >= 64 * 64 * 4
+        {
+            for y in 0..8 {
+                for x in 0..8 {
+                    let idx = ((y + 8) * 64 + (x + 8)) * 4;
+                    let px =
+                        u32::from_le_bytes([img[idx], img[idx + 1], img[idx + 2], img[idx + 3]]);
+                    base_face[y * 8 + x] = px;
+                }
+            }
+            has_base = true;
+        }
+        if !has_base
+            && let Some((img, _)) = horizon_client::skins::offline_skin()
+            && img.len() >= 64 * 64 * 4
+        {
+            for y in 0..8 {
+                for x in 0..8 {
+                    let idx = ((y + 8) * 64 + (x + 8)) * 4;
+                    let px =
+                        u32::from_le_bytes([img[idx], img[idx + 1], img[idx + 2], img[idx + 3]]);
+                    base_face[y * 8 + x] = px;
+                }
+            }
+            has_base = true;
+        }
+
+        let eyes = super::mod_loader::player_eyes(
+            self,
+            partial,
+            if has_base { Some(&base_face) } else { None },
+        );
+        if let Some(eyes) = eyes
+            && eyes.active != 0
+            && eyes.has_face_patch != 0
+        {
+            let (w, h) = (self.gui.atlas.width as f32, self.gui.atlas.height as f32);
+            let skin_x = (rect.u0 * w).round() as u32;
+            let skin_y = (rect.v0 * h).round() as u32;
+            let face_x = skin_x + 8;
+            let face_y = skin_y + 8;
+
+            let mut rgba = Vec::with_capacity(256);
+            for &pixel in &eyes.face_pixels {
+                rgba.extend_from_slice(&pixel.to_le_bytes());
+            }
+            self.map_patches.push(horizon_client::font::Patch {
+                x: face_x,
+                y: face_y,
+                width: 8,
+                height: 8,
+                rgba,
+            });
+        }
     }
     /// The frame rate this window is about to be held to: Max Framerate after the
     /// inactivity throttle and Battery Mode (260 is unlimited). `focused` is whether the
@@ -2085,7 +2169,10 @@ impl Game<'_> {
     /// and on servers), and the server's own (`native_window` is false
     /// there: the single player server thread, a dedicated server).
     pub(super) fn native_tick(&mut self) {
+        self.holdmyitems_tick();
+        self.elytratrails_tick();
         mod_api::dispatch_tick(self, mod_api::mods());
+        super::mod_loader::tick(self);
     }
     /// Before an eligible targeted block's selection outline is built.
     /// Cancel skips only the default block highlight, after normal HUD and game-mode gates.
@@ -2105,6 +2192,7 @@ impl Game<'_> {
         rims: &mut Vec<NativeBlockRim>,
         lights: &mut Vec<NativeColoredLight>,
     ) {
+        self.holdmyitems_visuals(lights);
         mod_api::dispatch_visuals(self, mod_api::mods(), rims, lights);
     }
     /// At most 32 pairs of already-loaded base and transparent overlay sprites.
@@ -2229,6 +2317,7 @@ impl Game<'_> {
         context: &NativeLifecycleContext,
         phase: ServerTickPhase,
     ) {
+        self.elytratrails_net_server_tick();
         mod_api::dispatch_server_tick(self, mod_api::mods(), context, phase);
     }
     /// Before an authoritative server level's tick pass. `dimension` is its ID.
@@ -2244,6 +2333,7 @@ impl Game<'_> {
     /// `native_fill` and `native_text`. Skip a corner `native_corner_shown`
     /// says is taken.
     pub(super) fn native_hud(&mut self, batch: &mut HudBatch, corners: &mut Corners) {
+        self.holdmyitems_hud(batch);
         mod_api::dispatch_hud(self, mod_api::mods(), batch, corners);
     }
     /// Before one of vanilla's HUD layers is drawn (`RenderGuiLayerEvent.Pre`):
@@ -2338,6 +2428,9 @@ impl Game<'_> {
     /// (`key.keyboard.z`, `key.mouse.left`): keys on any screen (check
     /// `native_playing`), mouse buttons while playing. Repeats are left out.
     pub(super) fn native_key(&mut self, key: &str, pressed: bool) {
+        self.holdmyitems_key(key, pressed);
+        self.zoom_key(key, pressed);
+        self.livingmotion_key(key, pressed);
         mod_api::dispatch_key(self, mod_api::mods(), key, pressed);
     }
     /// A real window key event after handling, including repeats and consumed shortcuts.
@@ -2370,6 +2463,7 @@ impl Game<'_> {
     }
     /// Wheel steps while playing: set `claimed` to keep them from the hotbar.
     pub(super) fn native_wheel(&mut self, steps: f32, claimed: &mut bool) {
+        self.zoom_wheel(steps, claimed);
         mod_api::dispatch_wheel(self, mod_api::mods(), steps, claimed);
     }
     /// Gameplay scrolling after whole steps accumulate, before hotbar/spectator handling.
@@ -2427,6 +2521,7 @@ impl Game<'_> {
     /// A command typed or clicked in chat, without its slash, before the
     /// server and Horizon's commands see it: set `ran` when the mod ran it.
     pub(super) fn native_command(&mut self, command: &str, ran: &mut bool) {
+        self.holdmyitems_command(command, ran);
         mod_api::dispatch_command(self, mod_api::mods(), command, ran);
     }
     /// The commands `native_command` runs, by name and without their slash:
@@ -2435,6 +2530,9 @@ impl Game<'_> {
     /// completes and lists them as the game's own; a name the game already
     /// has keeps that command's behaviour. API 35.
     pub(super) fn native_commands(&mut self, commands: &mut Vec<&'static str>) {
+        if !commands.contains(&"hmi") {
+            commands.push("hmi");
+        }
         mod_api::dispatch_commands(self, mod_api::mods(), commands);
     }
     /// Player FOV scale, after vanilla effects and before zoom and easing.
@@ -2466,6 +2564,7 @@ impl Game<'_> {
     /// The zoom a native mod asks for, applied while playing (the spyglass's
     /// own view wins): set `zoom` when it is none yet.
     pub(super) fn native_zoom(&self, zoom: &mut Option<NativeZoom>) {
+        self.zoom_view(zoom);
         mod_api::dispatch_zoom(self, mod_api::mods(), zoom);
     }
     /// Computed world fog RGB, after ordinary effects and before upload. Title panoramas skip it.
@@ -2498,6 +2597,7 @@ impl Game<'_> {
     /// Horizon scales the sum by Distortion Effects and bounds it
     /// (`native_shake_matrix`). API 82.
     pub(super) fn native_camera_shake(&self, partial: f32, shake: &mut NativeShake) {
+        self.holdmyitems_shake(partial, shake);
         mod_api::dispatch_camera_shake(self, mod_api::mods(), partial, shake);
     }
     /// Name tag visibility and optional replacement text. API @API:render_name_tag@.
@@ -2562,6 +2662,7 @@ impl Game<'_> {
         roll: &mut f32,
         scale: &mut f32,
     ) {
+        self.livingmotion_hand_pose(hand, stack, partial, swing, x, y, z, pitch, yaw, roll);
         mod_api::dispatch_render_hand_pose(
             self,
             mod_api::mods(),
@@ -2718,17 +2819,66 @@ impl Game<'_> {
     }
     /// Options > Mods lists the native mods: push yours.
     pub(super) fn native_mods(&mut self, mods: &mut Vec<NativeMod>) {
+        if !mods.iter().any(|m| m.id == "holdmyitems") {
+            mods.push(Self::holdmyitems_mod_entry());
+        }
+        if !mods.iter().any(|m| m.id == "zoom") {
+            Self::zoom_listed(mods);
+        }
+        if !mods.iter().any(|m| m.id == "elytratrails") {
+            self.elytratrails_listed(mods);
+        }
+        if !mods.iter().any(|m| m.id == "livingmotion") {
+            self.livingmotion_listed(mods);
+        }
         mod_api::dispatch_mods(self, mod_api::mods(), mods);
+        // Mods built as shared libraries list themselves the same way, and are only known once
+        // their folder has been read.
+        super::mod_loader::list(self, mods);
     }
     /// The buttons of mod `mod_id`'s settings page, under its keys: push
     /// their labels when it is yours. Asked again each time the page opens
     /// and after each click.
     pub(super) fn native_settings(&mut self, mod_id: &str, buttons: &mut Vec<String>) {
+        if mod_id == "holdmyitems" {
+            buttons.extend(self.holdmyitems_settings());
+            return;
+        }
+        if mod_id == "zoom" {
+            self.zoom_page(mod_id, buttons);
+            return;
+        }
+        if mod_id == "elytratrails" {
+            buttons.extend(self.elytratrails_page_buttons());
+            return;
+        }
+        if mod_id == "livingmotion" {
+            self.livingmotion_settings_page(mod_id, buttons);
+            return;
+        }
         mod_api::dispatch_settings(self, mod_api::mods(), mod_id, buttons);
+        super::mod_loader::settings(self, mod_id, buttons);
     }
     /// Button `button` of mod `mod_id`'s settings page was clicked.
     pub(super) fn native_settings_click(&mut self, mod_id: &str, button: usize) {
+        if mod_id == "holdmyitems" {
+            self.holdmyitems_settings_click(button);
+            return;
+        }
+        if mod_id == "zoom" {
+            self.zoom_click(mod_id, button);
+            return;
+        }
+        if mod_id == "elytratrails" {
+            self.elytratrails_page_click(button);
+            return;
+        }
+        if mod_id == "livingmotion" {
+            self.livingmotion_settings_click(mod_id, button);
+            return;
+        }
         mod_api::dispatch_settings_click(self, mod_api::mods(), mod_id, button);
+        super::mod_loader::settings_click(self, mod_id, button);
     }
     /// The player did `event` on mod `mod_id`'s panel (`native_panel_items`):
     /// act on it when it is yours. API 2.
@@ -6314,11 +6464,13 @@ impl Game<'_> {
     /// player's own bytes, checked by nothing. Runs in the tick after it
     /// arrives, with no player's state swapped in. Server-side. API 40.
     pub(super) fn native_net_from_client(&mut self, player: u128, channel: &str, data: &[u8]) {
+        self.elytratrails_net_from_client(player, channel, data);
         mod_api::dispatch_net_from_client(self, mod_api::mods(), player, channel, data);
     }
     /// A message from the server on `channel` (`mod_id:name`), whose `data`
     /// is the sender's own bytes. The window's game only. API 40.
     pub(super) fn native_net_from_server(&mut self, channel: &str, data: &[u8]) {
+        self.elytratrails_net_from_server(channel, data);
         mod_api::dispatch_net_from_server(self, mod_api::mods(), channel, data);
     }
     /// `dimension`'s level opened on the server (NeoForge's `LevelEvent.Load`,

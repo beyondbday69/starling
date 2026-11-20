@@ -45,6 +45,12 @@ struct Channel {
     world: u32,
     /// The sound file it started and when, to tell another player's copy of it.
     started: Option<(String, std::time::Instant)>,
+    /// The low-pass's high-frequency gain, `0..1`: 1 is open, what a wall lets through is less.
+    cutoff: f32,
+    /// How much of this channel feeds the reverb, `0..1`.
+    send: f32,
+    /// The low-pass's last output (`y += a * (x - y)`).
+    filtered: f32,
 }
 #[derive(Default)]
 struct Mixer {
@@ -62,6 +68,10 @@ struct Mixer {
     /// The callback's cameras (position, basis, world), kept to be refilled without allocating.
     cameras: Vec<([f64; 3], Basis, u32)>,
     limiter_peak: f32,
+    /// The reverb's four comb filter delays, their outputs and their damping memories.
+    reverb: Option<Reverb>,
+    /// The buffer the sends are summed into, reused every callback.
+    send_buf: Vec<f32>,
     /// The output device the stream was opened on (`Library.currentDeviceName`).
     #[cfg(feature = "audio")]
     device_name: String,
@@ -71,6 +81,69 @@ struct Mixer {
 }
 /// A camera's forward, up and right vectors.
 type Basis = ([f64; 3], [f64; 3], [f64; 3]);
+
+/// A small Schroeder reverb: four damped comb filters in parallel into two allpasses, the shape
+/// Freeverb uses. One instance serves every channel's sends, so a room answers the room.
+struct Reverb {
+    /// The rate the delays were sized for; a device that changes rate gets new lines.
+    rate: u32,
+    combs: [Vec<f32>; 4],
+    comb_at: [usize; 4],
+    /// Each comb's damping memory: the low-pass inside the feedback loop.
+    damp: [f32; 4],
+    allpass: [Vec<f32>; 2],
+    allpass_at: [usize; 2],
+}
+
+/// The comb and allpass delays, in samples at 44.1 kHz, from Freeverb's tunings.
+const COMB_DELAY: [usize; 4] = [1116, 1188, 1277, 1356];
+const ALLPASS_DELAY: [usize; 2] = [556, 441];
+/// How loud the reverb's answer is beside the dry path.
+const WET_GAIN: f32 = 0.55;
+/// How much a comb feeds back, and how much of it is damped.
+const COMB_FEEDBACK: f32 = 0.84;
+const COMB_DAMP: f32 = 0.2;
+const ALLPASS_FEEDBACK: f32 = 0.5;
+
+impl Reverb {
+    fn new(rate: u32) -> Self {
+        let scale = |delay: usize| (delay as f64 * f64::from(rate) / 44_100.0).max(1.0) as usize;
+        Self {
+            rate,
+            combs: COMB_DELAY.map(|d| vec![0.0; scale(d)]),
+            comb_at: [0; 4],
+            damp: [0.0; 4],
+            allpass: ALLPASS_DELAY.map(|d| vec![0.0; scale(d)]),
+            allpass_at: [0; 2],
+        }
+    }
+
+    /// One sample through the network, given the buffer's rate.
+    fn sample(&mut self, input: f32, rate: u32) -> f32 {
+        if self.rate != rate {
+            *self = Self::new(rate);
+        }
+        let mut wet = 0.0;
+        for i in 0..4 {
+            let at = self.comb_at[i];
+            let out = self.combs[i][at];
+            self.damp[i] = out * (1.0 - COMB_DAMP) + self.damp[i] * COMB_DAMP;
+            self.combs[i][at] = input + self.damp[i] * COMB_FEEDBACK;
+            self.comb_at[i] = (at + 1) % self.combs[i].len();
+            wet += out;
+        }
+        wet *= 0.25;
+        for i in 0..2 {
+            let at = self.allpass_at[i];
+            let buffered = self.allpass[i][at];
+            let out = -wet + buffered;
+            self.allpass[i][at] = wet + buffered * ALLPASS_FEEDBACK;
+            self.allpass_at[i] = (at + 1) % self.allpass[i].len();
+            wet = out;
+        }
+        wet
+    }
+}
 impl Mixer {
     /// The id of world `name` (1 and up), given once per name.
     fn world_id(&mut self, name: &str) -> u32 {
@@ -367,9 +440,26 @@ impl Backend for MixerBackend {
                 owner: self.owner,
                 world: self.world,
                 started: None,
+                cutoff: 1.0,
+                send: 0.0,
+                filtered: 0.0,
             },
         );
         Some(id)
+    }
+    fn set_lowpass(&mut self, channel: ChannelId, cutoff: f32) {
+        if let Ok(mut m) = self.mixer.lock()
+            && let Some(c) = m.channels.get_mut(&channel)
+        {
+            c.cutoff = cutoff.clamp(0.0, 1.0);
+        }
+    }
+    fn set_send(&mut self, channel: ChannelId, send: f32) {
+        if let Ok(mut m) = self.mixer.lock()
+            && let Some(c) = m.channels.get_mut(&channel)
+        {
+            c.send = send.clamp(0.0, 1.0);
+        }
     }
     fn destroy(&mut self, channel: ChannelId) {
         if let Ok(mut m) = self.mixer.lock() {
@@ -612,6 +702,10 @@ fn mix(mixer: &mut Mixer, data: &mut [f32], channels: usize, rate: u32) {
         voices.push((*id, [left, right, gain], step));
     }
     mixer.cameras = cameras;
+    // The sends are summed here and answered once, below, so a room's answer is the room's.
+    let frames = data.len() / channels.max(1);
+    mixer.send_buf.clear();
+    mixer.send_buf.resize(frames, 0.0);
     for (id, [left, right, gain], step) in voices {
         let Some(c) = mixer.channels.get_mut(&id) else {
             continue;
@@ -619,7 +713,16 @@ fn mix(mixer: &mut Mixer, data: &mut [f32], channels: usize, rate: u32) {
         let Some((samples, _)) = c.samples.clone() else {
             continue;
         };
-        for frame in data.chunks_mut(channels) {
+        let send = c.send;
+        let cutoff = c.cutoff.clamp(0.0, 1.0);
+        // One pole, its corner where a wall's high-frequency gain says it is.
+        let coefficient = if cutoff >= 0.999 {
+            1.0
+        } else {
+            let hz = 120.0 + cutoff * cutoff * 11_000.0;
+            1.0 - (-2.0 * std::f32::consts::PI * hz / rate as f32).exp()
+        };
+        for (n, frame) in data.chunks_mut(channels).enumerate() {
             let mut i = c.position as usize;
             if i + 1 >= samples.len() {
                 if c.looping && samples.len() > 1 {
@@ -631,7 +734,11 @@ fn mix(mixer: &mut Mixer, data: &mut [f32], channels: usize, rate: u32) {
                 }
             }
             let t = (c.position - i as f64) as f32;
-            let s = samples[i] * (1.0 - t) + samples[i + 1] * t;
+            let mut s = samples[i] * (1.0 - t) + samples[i + 1] * t;
+            if coefficient < 1.0 {
+                c.filtered += coefficient * (s - c.filtered);
+                s = c.filtered;
+            }
             if channels >= 2 {
                 frame[0] += s * left;
                 frame[1] += s * right;
@@ -639,7 +746,23 @@ fn mix(mixer: &mut Mixer, data: &mut [f32], channels: usize, rate: u32) {
                 // A mono output has no panning: the source's own gain.
                 frame[0] += s * gain;
             }
+            if send > 0.0 {
+                let into = s * send * gain;
+                mixer.send_buf[n] += into;
+            }
             c.position += step;
+        }
+    }
+    // A room answers: the sends through the network, added back as wet sound (quieter than the
+    // dry path, delayed by the comb lines themselves).
+    if mixer.reverb.is_some() || mixer.send_buf.iter().any(|s| *s != 0.0) {
+        let network = mixer.reverb.get_or_insert_with(|| Reverb::new(rate));
+        for (n, wet) in mixer.send_buf.iter_mut().enumerate() {
+            let out = network.sample(*wet, rate);
+            *wet = out;
+            for c in 0..channels {
+                data[n * channels + c] += out * WET_GAIN;
+            }
         }
     }
     // Limit the whole buffer together, preserving waveform and stereo balance
@@ -1339,6 +1462,9 @@ impl Audio {
                 owner: 0,
                 world: 0,
                 started: None,
+                cutoff: 1.0,
+                send: 0.0,
+                filtered: 0.0,
             },
         );
     }
@@ -1459,6 +1585,24 @@ impl Audio {
     }
     /// `ClientboundStopSoundPacket`: stop the playing sounds of an event
     /// and/or a source.
+    /// The sounds that started since this was last asked, with where they play. A mod shapes
+    /// them before the next frame.
+    pub fn started_since(&mut self) -> Vec<(u64, String, Option<[f64; 3]>)> {
+        self.engine.started_since()
+    }
+    /// How a playing sound sounds: `gain` scales it, `cutoff` closes a low-pass over it (1 open),
+    /// `send` feeds the reverb. False once it has finished.
+    pub fn set_sound_environment(
+        &mut self,
+        instance: u64,
+        gain: f32,
+        cutoff: f32,
+        send: f32,
+    ) -> bool {
+        let engine = &mut self.engine;
+        let backend = &mut self.backend;
+        engine.set_instance_environment(instance, gain, cutoff, send, backend)
+    }
     pub fn stop_sounds(&mut self, event: Option<&str>, source: Option<usize>) {
         let event = event.map(crate::sound_events::normalize);
         let selection = format!(
@@ -1557,6 +1701,9 @@ mod tests {
             owner: 0,
             world: 0,
             started: None,
+            cutoff: 1.0,
+            send: 0.0,
+            filtered: 0.0,
         }
     }
 

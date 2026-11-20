@@ -292,6 +292,7 @@ impl Game<'_> {
             if let Some(renderer) = &mut self.renderer {
                 renderer.drop_shader_packs();
                 renderer.set_world_post(scale, antialias, taa, upscale);
+                renderer.set_shader_upscaling(horizon.shader_upscaling, horizon.fsr_sharpness);
             }
         }
         let Some((name, profile)) = self.shader_choice.clone() else {
@@ -605,7 +606,17 @@ impl Game<'_> {
     /// The world's resolution, of the screen's: the player's, and no more than Auto's while it
     /// runs a pack that isn't a light one.
     pub(super) fn world_scale(&self) -> f32 {
-        let chosen = self.settings.horizon.resolution_scale as f32 / 100.0;
+        let chosen = if self.settings.horizon.shader_upscaling
+            != horizon_client::graphics::ShaderUpscaling::Off
+        {
+            self.settings
+                .horizon
+                .shader_upscale_mode
+                .scale()
+                .unwrap_or(self.settings.horizon.resolution_scale as f32 / 100.0)
+        } else {
+            self.settings.horizon.resolution_scale as f32 / 100.0
+        };
         match &self.shader_choice {
             Some((name, profile))
                 if profile == AUTO_PROFILE

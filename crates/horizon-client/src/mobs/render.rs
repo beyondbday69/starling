@@ -1300,7 +1300,7 @@ fn flip_degrees(m: &Mob) -> f32 {
     }
 }
 fn species_rotations(m: &Mob, alpha: f32) -> glam::Mat4 {
-    match m.species() {
+    let result = match m.species() {
         Species::Cat => super::tame::cat_rotations(m, alpha),
         Species::Panda => super::panda::rotations(m, alpha),
         Species::Shulker => super::shulker::rotations(m),
@@ -1315,7 +1315,8 @@ fn species_rotations(m: &Mob, alpha: f32) -> glam::Mat4 {
             glam::Mat4::from_rotation_x(pitch.to_radians())
         }
         _ => glam::Mat4::IDENTITY,
-    }
+    };
+    super::livingmotion::body(m, alpha, result)
 }
 /// Creeper.getSwelling: the fuse's progress, past 1 in its last two ticks.
 fn creeper_swelling(m: &Mob, alpha: f32) -> f32 {
@@ -1962,9 +1963,10 @@ fn render_visible(
     let cem_key = cem_key(&model_key);
     let custom_body = cem.layer(cem_key);
     let body_animation = custom_body.and_then(|c| c.animation.as_ref());
-    let model = match custom_body {
-        Some(custom) => custom.model.clone(),
-        None => m
+    let model = match (m.skin_3d.as_ref(), custom_body) {
+        (Some(skin_3d), _) => skin_3d.clone(),
+        (None, Some(custom)) => custom.model.clone(),
+        (None, None) => m
             .kind
             .layer(&model_key)
             .cloned()

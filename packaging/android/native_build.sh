@@ -55,6 +55,10 @@ mkdir "$work/source"
 git -C "$source" archive --format=tar HEAD | tar -x -C "$work/source"
 find "$work/source" -type l -delete
 echo "$commit" > "$work/source/.horizon-revision"
+# Preserve native-data across horizon-mixins apply (which rejects workspaces containing staged paths):
+if [ -d "$work/source/native-data" ]; then
+  mv "$work/source/native-data" "$work/preserved-native-data"
+fi
 
 # The game module is compiled by two crates (horizon-client's binary, and horizon-android from
 # android_lib.rs), and horizon-mixins refuses a module destination it reaches under two names:
@@ -99,6 +103,10 @@ echo "native_build: build $key of $commit with $(ls "$work/mods" | tr '\n' ' ')"
 cargo fetch --locked --manifest-path "$work/source/Cargo.toml" > /dev/null
 "$tools/bin/horizon-mixins" apply --workspace "$work/source" --mods "$work/mods" \
   --out "$work/stage"
+if [ -d "$work/preserved-native-data" ]; then
+  mkdir -p "$work/stage/native-data"
+  cp -r "$work/preserved-native-data"/. "$work/stage/native-data/"
+fi
 
 # Into the build folder: a file whose bytes changed gets the time of now (no -t), one that did not
 # keeps its time, so Cargo recompiles what changed even when the commit is older than the last

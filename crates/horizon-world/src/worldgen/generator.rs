@@ -1116,9 +1116,11 @@ where
             .map(|config| library.compile_aquifer(config))
             .transpose()?
             .map(|samplers| AquiferField::ALL.map(|field| samplers.get(field).clone()));
-        let rule_name = settings_json["material_rule"]
-            .as_str()
-            .ok_or_else(|| resource("material_rule"))?;
+        let rule_name = settings_json
+            .get("material_rule")
+            .and_then(Value::as_str)
+            .or_else(|| settings_json.get("surface_rule").and_then(Value::as_str))
+            .unwrap_or("minecraft:overworld");
         let rule = library.rule(rule_name)?;
         let preliminary = router.get(RouterField::ChunkSurfaceLevel).clone();
         let spawn_target = match settings_json.get("spawn_target") {

@@ -18,7 +18,7 @@ Needs the Android SDK (ANDROID_HOME, else the default folder) with the build-too
 NDK pinned below, the aarch64-linux-android Rust target, cargo-ndk and a JDK (javac, keytool,
 apksigner), of the pinned Java major (currently 25). Original exporters are compiled
 on the host against checksum-pinned jars, which are never packaged. Without
-HORIZON_ANDROID_KEYSTORE it signs with a debug key kept in target/android.
+HORIZON_ANDROID_KEYSTORE it signs with the permanent keystore in packaging/android/starling-release.keystore.
 """
 
 import argparse
@@ -274,17 +274,24 @@ def add_code(base, libraries, dex, unsigned, abi=ABI):
 
 def sign(build_tools, aligned, apk, out):
     keystore = os.environ.get("HORIZON_ANDROID_KEYSTORE")
-    alias = os.environ.get("HORIZON_ANDROID_KEY_ALIAS", "horizon-debug")
+    alias = os.environ.get("HORIZON_ANDROID_KEY_ALIAS")
     env = dict(os.environ)
     if not keystore:
-        keystore = out / "debug.keystore"
-        env["HORIZON_ANDROID_STORE_PASSWORD"] = env["HORIZON_ANDROID_KEY_PASSWORD"] = "android"
+        keystore = HERE / "starling-release.keystore"
+        if not alias or alias == "horizon-debug":
+            alias = "starling"
+        env["HORIZON_ANDROID_STORE_PASSWORD"] = env.get("HORIZON_ANDROID_STORE_PASSWORD") or "android"
+        env["HORIZON_ANDROID_KEY_PASSWORD"] = env.get("HORIZON_ANDROID_KEY_PASSWORD") or "android"
         if not keystore.exists():
             run(
                 "keytool", "-genkeypair", "-keystore", keystore, "-storepass", "android",
                 "-keypass", "android", "-alias", alias, "-keyalg", "RSA", "-keysize", "2048",
-                "-validity", "10000", "-dname", "CN=Horizon Android debug",
+                "-validity", "10000", "-dname", "CN=Starling, OU=Starling, O=Starling, C=US",
             )
+    else:
+        alias = alias or "starling"
+        env["HORIZON_ANDROID_STORE_PASSWORD"] = env.get("HORIZON_ANDROID_STORE_PASSWORD") or "android"
+        env["HORIZON_ANDROID_KEY_PASSWORD"] = env.get("HORIZON_ANDROID_KEY_PASSWORD") or "android"
     apksigner = tool(build_tools, "apksigner")
     run(
         apksigner, "sign", "--ks", keystore, "--ks-key-alias", alias,

@@ -1,0 +1,9 @@
+{
+  "game": "26.3",
+  "hooks": 3,
+  "horizon": "e14b35cecb688809822706e033710ad7209d1155",
+  "id": "gyro",
+  "mixins": "e59da9094f0c2fdda6c627fe9eff22dec6a906f0",
+  "schema": 1,
+  "version": "1.6.0"
+}

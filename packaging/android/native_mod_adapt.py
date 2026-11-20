@@ -23,7 +23,11 @@ FOLDERS = ("crates/horizon-client-render/src/", "crates/horizon-client-core/src/
 OLD_FOLDER = "crates/horizon-client/src/"
 OLD_ROOT = OLD_FOLDER + "lib.rs"
 # What Horizon renamed since, and takes the same arguments.
-RENAMED = {"horizon_client::game::titles::Game<'_>::draw_titles": "horizon_client::game::titles::Game<'_>::draw_title"}
+RENAMED = {
+    "horizon_client::game::titles::Game<'_>::draw_titles": "horizon_client::game::titles::Game<'_>::draw_title",
+    "horizon_client::game::pointer_capture::Game<'_>::apply_mouse_look": "horizon_client::game::Game<'_>::apply_mouse_look",
+    "horizon_client::game::frame_geometry::Game<'_>::first_person_arm": "horizon_client::game::Game<'_>::first_person_arm",
+}
 MODULE = re.compile(r"^\s*(?:pub(?:\(crate\))? )?mod (\w+)\s*(?:;|\{)", re.M)
 # Calls with the arguments they took (a call, how many, what the new ones are).
 CALLS = (

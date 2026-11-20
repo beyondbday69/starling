@@ -17,6 +17,7 @@ impl Game<'_> {
         alpha: f64,
         lines: &mut Vec<gizmos::Line>,
     ) -> Vec<dynamic_light::Colored> {
+        self.elytratrails_draw(alpha as f32, lines);
         let mut particle_lights = self
             .renderer
             .as_ref()
