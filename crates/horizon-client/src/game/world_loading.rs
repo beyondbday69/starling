@@ -594,7 +594,7 @@ fn worldgen_overrides_of(
     horizon_world::worldgen::overrides::WorldgenOverrides,
     Vec<String>,
 ) {
-    super::native_hooks::Game::native_before_worldgen_overrides(world_root);
+    super::Game::native_before_worldgen_overrides(world_root);
     let packs = horizon_client::datapack::discover_with_features(world_root, resources);
     let enabled = horizon_client::datapack::enabled_ids(world_root, &packs, enabled_features);
     let enabled: Vec<_> = enabled
