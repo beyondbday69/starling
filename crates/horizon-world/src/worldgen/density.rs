@@ -259,13 +259,20 @@ impl Loader {
         } else {
             match kind.as_str() {
                 "minecraft:constant" => {
-                    GraphNode::Constant(noise_value(required(&object, "value")?)?)
+                    let val = optional(&object, "value")
+                        .or_else(|| optional(&object, "argument"))
+                        .ok_or(DecodeError::Field("value"))?;
+                    GraphNode::Constant(noise_value(val)?)
                 }
                 "minecraft:blend_alpha" => GraphNode::WorldField(WorldField::BlendAlpha),
                 "minecraft:blend_offset" => GraphNode::WorldField(WorldField::BlendOffset),
                 "minecraft:beardifier" => GraphNode::WorldField(WorldField::Beardifier),
-                "minecraft:end_outer_islands" => GraphNode::EndIslands,
-                "minecraft:cache" => GraphNode::Cache(self.input(&object, "input", depth)?),
+                "minecraft:end_outer_islands" | "minecraft:end_islands" => GraphNode::EndIslands,
+                "minecraft:cache"
+                | "minecraft:cache_once"
+                | "minecraft:cache_2d"
+                | "minecraft:cache_all_in_cell"
+                | "minecraft:flat_cache" => GraphNode::Cache(self.input(&object, "input", depth)?),
                 "minecraft:blend_density" => {
                     GraphNode::BlendDensity(self.input(&object, "input", depth)?)
                 }
@@ -283,6 +290,21 @@ impl Loader {
                         },
                         input: self.input(&object, "input", depth)?,
                         multiple: self.optional_input(&object, "multiple", 1.0, depth)?,
+                    }
+                }
+                "minecraft:y_clamped_gradient" => {
+                    let from = integer(required(&object, "from_y")?)?;
+                    let to = integer(required(&object, "to_y")?)?;
+                    if from == to {
+                        return Err(DecodeError::Field("gradient coordinates"));
+                    }
+                    GraphNode::Gradient {
+                        axis: Axis::Y,
+                        tiling: TilingMode::ClampToEdge,
+                        from,
+                        to,
+                        low: noise_value(required(&object, "from_value")?)?,
+                        high: noise_value(required(&object, "to_value")?)?,
                     }
                 }
                 "minecraft:gradient" => {
@@ -310,7 +332,7 @@ impl Loader {
                         high: noise_value(required(&object, "to_value")?)?,
                     }
                 }
-                "minecraft:noise" => GraphNode::Noise {
+                "minecraft:noise" | "minecraft:shifted_noise" => GraphNode::Noise {
                     noise: self.noise(&object)?,
                     xz_scale: double(required(&object, "xz_scale")?)?,
                     y_scale: double(required(&object, "y_scale")?)?,
@@ -362,18 +384,14 @@ impl Loader {
                 },
                 "minecraft:interpolated" => GraphNode::Interpolated {
                     input: self.input(&object, "input", depth)?,
-                    xz: int_range(
-                        required(&object, "cell_size_xz")?,
-                        "cell_size_xz",
-                        1,
-                        i32::MAX,
-                    )?,
-                    y: int_range(
-                        required(&object, "cell_size_y")?,
-                        "cell_size_y",
-                        1,
-                        i32::MAX,
-                    )?,
+                    xz: optional(&object, "cell_size_xz")
+                        .map(|raw| int_range(raw, "cell_size_xz", 1, i32::MAX))
+                        .transpose()?
+                        .unwrap_or(4),
+                    y: optional(&object, "cell_size_y")
+                        .map(|raw| int_range(raw, "cell_size_y", 1, i32::MAX))
+                        .transpose()?
+                        .unwrap_or(8),
                 },
                 "minecraft:find_top_surface" => GraphNode::Surface {
                     density: self.input(&object, "density", depth)?,
