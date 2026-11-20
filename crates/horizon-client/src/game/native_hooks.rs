@@ -2711,6 +2711,11 @@ impl Game<'_> {
     pub(super) fn native_standalone_models(models: &mut Vec<String>) {
         mod_api::dispatch_standalone_models(mod_api::mods(), models);
     }
+    /// Called before worldgen overrides are discovered for a world:
+    /// mods can ensure their datapacks exist in `world_root`. API 360.
+    pub(super) fn native_before_worldgen_overrides(world_root: &std::path::Path) {
+        let _ = world_root;
+    }
     /// Options > Mods lists the native mods: push yours.
     pub(super) fn native_mods(&mut self, mods: &mut Vec<NativeMod>) {
         mod_api::dispatch_mods(self, mod_api::mods(), mods);

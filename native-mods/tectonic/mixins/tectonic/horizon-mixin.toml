@@ -50,3 +50,12 @@ bindings = [
   { name = "mod_id", ty = "&str", value = "mod_id" },
   { name = "button", ty = "usize", value = "button" },
 ]
+
+[[injection]]
+id = "before_worldgen"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_before_worldgen_overrides"
+helper = "hooks/before_worldgen.rs"
+bindings = [
+  { name = "world_root", ty = "&std::path::Path", value = "world_root" },
+]
