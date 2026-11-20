@@ -1,5 +1,3 @@
-#version 130
-
-#define FRAGMENT_SHADER
-
-#include "/program/final.glsl"
+#version 330 compatibility
+#define DIM_OVERWORLD
+#include "/program/final.fsh"

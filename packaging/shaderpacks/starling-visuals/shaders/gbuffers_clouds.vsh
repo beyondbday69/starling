@@ -1,6 +1,4 @@
-#version 130
-
-#define VERTEX_SHADER
+#version 330 compatibility
+#define DIM_OVERWORLD
 #define CLOUDS
-
-#include "/program/lit.glsl"
+#include "/program/basic.vsh"

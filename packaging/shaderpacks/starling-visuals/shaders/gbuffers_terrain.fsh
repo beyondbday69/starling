@@ -1,6 +1,4 @@
-#version 130
-
-#define FRAGMENT_SHADER
+#version 330 compatibility
+#define DIM_OVERWORLD
 #define TERRAIN
-
-#include "/program/lit.glsl"
+#include "/program/lit.fsh"

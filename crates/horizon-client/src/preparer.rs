@@ -272,29 +272,30 @@ pub fn skin() -> Option<PathBuf> {
     }
 }
 
-/// Starling Visuals, the shader pack the app carries (packaging/shaderpacks/starling-visuals, the
-/// APK's `assets/StarlingVisuals.zip`), put in `shaderpacks/` of the game folder: again only when
-/// the app carries another one than it put there last, so a pack the player deleted stays deleted
-/// until an update brings a new one.
+/// Shader packs the app carries (packaging/shaderpacks/starling-visuals, the
+/// APK's `assets/StarlingVisuals.zip` and `Reimagined-UltraFast.zip`), put in `shaderpacks/` of the game folder.
 pub fn put_shader_pack(game_folder: &Path) {
-    let Some(bytes) = crate::platform::asset("StarlingVisuals.zip") else {
-        return;
-    };
-    let stamp = format!("{}-{:08x}", bytes.len(), crc32(&bytes));
-    let marker = crate::logging::private_home().join(".starling-visuals");
-    if std::fs::read_to_string(&marker).ok().as_deref() == Some(&stamp) {
-        return;
-    }
     let dir = game_folder.join("shaderpacks");
-    match std::fs::create_dir_all(&dir)
-        .and_then(|()| std::fs::write(dir.join("StarlingVisuals.zip"), &bytes))
-        .and_then(|()| std::fs::write(&marker, &stamp))
-    {
-        Ok(()) => log::info!("Horizon: Starling Visuals put in {}", dir.display()),
-        Err(e) => log::warn!(
-            "Horizon: Starling Visuals could not be put in {}: {e}",
-            dir.display()
-        ),
+    for name in ["StarlingVisuals.zip", "Reimagined-UltraFast.zip"] {
+        let Some(bytes) = crate::platform::asset(name) else {
+            continue;
+        };
+        let stamp = format!("{}-{:08x}", bytes.len(), crc32(&bytes));
+        let marker_name = format!(".{}", name.replace(".zip", ""));
+        let marker = crate::logging::private_home().join(marker_name);
+        if std::fs::read_to_string(&marker).ok().as_deref() == Some(&stamp) {
+            continue;
+        }
+        match std::fs::create_dir_all(&dir)
+            .and_then(|()| std::fs::write(dir.join(name), &bytes))
+            .and_then(|()| std::fs::write(&marker, &stamp))
+        {
+            Ok(()) => log::info!("Horizon: {name} put in {}", dir.display()),
+            Err(e) => log::warn!(
+                "Horizon: {name} could not be put in {}: {e}",
+                dir.display()
+            ),
+        }
     }
 }
 

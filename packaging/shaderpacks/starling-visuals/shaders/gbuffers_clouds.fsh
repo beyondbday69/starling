@@ -1,6 +1,4 @@
-#version 130
-
-#define FRAGMENT_SHADER
+#version 330 compatibility
+#define DIM_OVERWORLD
 #define CLOUDS
-
-#include "/program/lit.glsl"
+#include "/program/basic.fsh"

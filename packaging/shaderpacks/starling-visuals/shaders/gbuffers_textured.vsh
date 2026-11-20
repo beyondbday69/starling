@@ -1,6 +1,3 @@
-#version 130
-
-#define VERTEX_SHADER
-#define PARTICLES
-
-#include "/program/lit.glsl"
+#version 330 compatibility
+#define DIM_OVERWORLD
+#include "/program/textured.vsh"

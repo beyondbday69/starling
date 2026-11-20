@@ -1,0 +1,261 @@
+profile.POTATO=Potato
+profile.LITE=Lite
+profile.MEDIUM=Medium
+profile.HIGH=High
+profile.comment=Potato: sky shadows only, the most FPS. Lite: real sun shadows and box clouds, made for phones. Medium: soft shadows. High: everything on, including reflections, sun rays, held-item lights and depth of field.
+
+
+screen.QUICK_SCREEN=Quick Settings
+screen.QUICK_SCREEN.comment=The most used options in one place.
+screen.SHADOWS_SCREEN=Shadows
+screen.SHADOWS_SCREEN.comment=Shadow quality, distance and smoothness.
+screen.LIGHT_SCREEN=Lighting
+screen.LIGHT_SCREEN.comment=Sun, torch and night brightness, golden sunrise, held-item light, eye adaptation.
+screen.COLORS_SCREEN=Colors & Tone
+screen.COLORS_SCREEN.comment=Exposure, contrast, saturation and tonemapping.
+screen.WATER_SCREEN=Water
+screen.WATER_SCREEN.comment=Water look, reflections and underwater.
+screen.WATER_LOOK_SCREEN=Water Look
+screen.WATER_LOOK_SCREEN.comment=Color, clarity, waves and foam.
+screen.WATER_REFL_SCREEN=Reflections
+screen.WATER_REFL_SCREEN.comment=Water reflections. Costs fps.
+screen.UNDERWATER_SCREEN=Underwater
+screen.UNDERWATER_SCREEN.comment=Fog, distortion, caustics and light rays under water.
+screen.CLOUDS_SCREEN=Clouds
+screen.CLOUDS_SCREEN.comment=Cloud style, shape and quality.
+screen.FOLIAGE_SCREEN=Grass & Leaves
+screen.FOLIAGE_SCREEN.comment=Grass look, waving and sun glow.
+screen.CAMERA_SCREEN=Camera Effects
+screen.CAMERA_SCREEN.comment=Motion blur, depth of field and bloom.
+screen.ATMOS_SCREEN=Atmosphere
+screen.ATMOS_SCREEN.comment=Fog, mist and sun rays.
+
+screen.TOON_SCREEN=Toon Mode
+screen.TOON_SCREEN.comment=Cartoon look in the style of CazToon: coloured outlines, soft tinted shadows, grass patches and leaf shading.
+screen.TOON_OUTLINE_SCREEN=Outlines
+screen.TOON_OUTLINE_SCREEN.comment=Edge lines around objects.
+screen.TOON_LOOK_SCREEN=Shading & Color
+screen.TOON_LOOK_SCREEN.comment=Shadows, grass, leaves, mobs and colour in toon mode.
+
+option.SHADOWS=Shadows
+option.SHADOWS.comment=Real-time shadows from the sun and moon. Biggest effect on FPS.
+option.SOFT_SHADOWS=Soft Shadows
+option.shadowMapResolution=Shadow Quality
+option.shadowMapResolution.comment=Higher = sharper shadows, lower FPS.
+option.shadowDistance=Shadow Distance
+option.shadowDistance.comment=How far real shadows reach (in blocks). Past this, Sky Shadows take over. 1 = the smallest possible.
+option.sunPathRotation=Sun Angle
+option.sunPathRotation.comment=Tilts the sun's path so shadows fall at a nicer angle.
+
+option.SATURATION=Saturation
+option.VIBRANCE=Vibrance
+option.VIBRANCE.comment=Boosts dull colors more than already-bright ones.
+option.EXPOSURE=Brightness
+option.CONTRAST=Contrast
+option.SUN_BRIGHTNESS=Sunlight
+option.TORCH_BRIGHTNESS=Torchlight
+option.NIGHT_BRIGHTNESS=Night Brightness
+option.VIGNETTE=Vignette
+
+option.REFLECTIONS=Ray-Marched Reflections
+option.REFLECTIONS.comment=Most accurate reflections, but heavy on phones. Off = mirror image + sky.
+option.SSR_STEPS=Reflection Steps
+option.SSR_STEPS.comment=Ray-Marched Reflections only. More steps = reflections reach further, but cost more FPS. 4 is a good phone value.
+option.REFLECTION_STRENGTH=Reflection Strength
+option.SUN_REFLECTION=Sun Glint on Water
+option.UNDERWATER_DISTORTION=Underwater Screen Wobble
+option.UNDERWATER_DISTORTION.comment=Subtle refraction wave distortion when submerged, like Complementary Reimagined.
+option.UNDERWATER_CAUSTICS=Underwater Caustics
+option.UNDERWATER_CAUSTICS.comment=Animated dancing sunlight ripples on the seafloor and riverbeds.
+option.UNDERWATER_FOG_DENSITY=Underwater Fog
+option.WATER_OPACITY=Water Surface Opacity
+
+option.WATER_DEPTH_FADE=Water Depth Tint
+option.WATER_DEPTH_FADE.comment=How quickly water turns deep blue-teal as it gets deeper.
+option.WATER_COLOR_MIX=Water Color
+option.WATER_COLOR_MIX.comment=0 = plain biome color, 1 = the pack's own clean teal-blue.
+option.WATER_TEXTURE_DETAIL=Water Texture Detail
+option.WATER_TEXTURE_DETAIL.comment=How much of the vanilla water texture shows through the color.
+option.WATER_WAVES=Water Ripples
+option.WATER_WAVES.comment=Ripple strength in reflections and sun glints. 0 = perfectly flat.
+option.WATER_PIXELATED=Pixelated Ripples
+option.WATER_PIXELATED.comment=Older look only: snaps ripples to the 16-pixel block grid.
+option.GRADE_STYLE=Color Grade
+option.GRADE_STYLE.comment=Complementary: Complementary Reimagined's tonemap and saturation. Mystique: the original bright ACES grade.
+value.GRADE_STYLE.1=Complementary
+value.GRADE_STYLE.0=Mystique
+option.CLOUD_STYLE=Cloud Style
+option.CLOUD_STYLE.comment=Reimagined: Complementary Reimagined rounded clouds (uses Coverage, Height, Speed, Quality, Distance; Thickness and Size are fixed to match Complementary). Mystique: the box clouds.
+value.CLOUD_STYLE.1=Reimagined
+value.CLOUD_STYLE.0=Mystique
+option.BLUE_TINT=Blue Tint
+option.BLUE_TINT.comment=Cool blue tint over the whole picture, strongest in shadows and haze. 0 = off.
+option.TM_CONTRAST=Tonemap Contrast
+option.TM_CONTRAST.comment=Complementary grade only.
+option.TM_WHITE_PATH=White Path
+option.TM_WHITE_PATH.comment=How fast very bright colors burn out to white. Complementary grade only.
+option.TM_DARK_DESATURATION=Dark Desaturation
+option.TM_DARK_DESATURATION.comment=Drains color from dark areas. Complementary grade only.
+option.WATER_STYLE=Water Style
+option.WATER_STYLE.comment=Reimagined: flat textured water with foam. Reimagined + Waves: same color with ripples and strong reflections. Unbound: smooth rippled water. Classic: the older blocky look.
+value.WATER_STYLE.1=Reimagined
+value.WATER_STYLE.2=Reimagined + Waves
+value.WATER_STYLE.3=Unbound
+value.WATER_STYLE.4=Classic
+option.WATER_BRIGHTNESS=Water Brightness
+option.WATER_BRIGHTNESS.comment=Reimagined styles only. Lower = deeper blue, less milky.
+option.WATER_TINT=Water See-Through Tint
+option.WATER_TINT.comment=Reimagined styles only. Blue tint on the sea floor and everything seen through water.
+option.WATER_FOAM=Shore Foam
+option.WATER_FOAM.comment=White foam where water meets the shore. Reimagined styles only. 0 = off.
+option.MIRROR_REFLECTIONS=Mirror Reflections
+option.MIRROR_REFLECTIONS.comment=Cheap mirror-image reflection of terrain and trees in water. Very light on FPS.
+option.WATER_SPEED=Water Speed
+
+option.BLOOM=Bloom
+option.BLOOM_STRENGTH=Bloom Strength
+option.ATMOSPHERIC_FOG=Distance Haze
+option.MIDNIGHT_MIST=Night Mist
+option.MIDNIGHT_MIST.comment=Low mist in valleys and over water at night, thickest at sunrise. Costs almost no FPS.
+option.MIST_THICKNESS=Mist Height
+option.SHADOW_DEBUG=Shadow Debug
+option.SHADOW_DEBUG.comment=Red = in shadow, blue = outside the shadow map. Turn on only for troubleshooting.
+option.SKY_SHADOWS=Sky Shadows
+option.SKY_SHADOWS.comment=Shades everything under trees, overhangs and cliffs using sky light instead of a shadow map. Works on every device and costs almost no FPS. Set Shadow Distance to 1 too for the most FPS.
+
+option.BLOCKY_CLOUDS=Custom Clouds
+option.BLOCKY_CLOUDS.comment=The pack draws its own clouds (style below) instead of the flat vanilla ones. Off = vanilla clouds.
+option.CLOUD_COVERAGE=Cloud Amount
+option.CLOUD_COVERAGE.comment=How much of the sky is covered. Rain adds more.
+option.CLOUD_OPACITY=Cloud Opacity
+option.CLOUD_HEIGHT=Cloud Height
+option.CLOUD_THICKNESS=Cloud Thickness
+option.CLOUD_SIZE=Cloud Block Size
+option.CLOUD_SIZE.comment=Size of one cloud block in Minecraft blocks. Vanilla is 12.
+option.CLOUD_SPEED=Cloud Speed
+option.CLOUD_STEPS=Cloud Quality
+option.CLOUD_STEPS.comment=Max samples per view ray. Reimagined clouds need 24+ for crisp rounded shapes at distance (32 default, 16 for weak phones).
+option.CLOUD_RENDER=Cloud Distance
+
+option.DYNAMIC_LIGHTS=Dynamic Lights
+option.DYNAMIC_LIGHTS.comment=Holding a torch, lantern or glowstone lights up the area around you.
+option.DYNAMIC_LIGHT_RANGE=Dynamic Light Range
+option.GODRAYS=Sun Rays
+option.GODRAYS.comment=Beams of light through trees, clouds and gaps in buildings.
+option.GODRAYS_STRENGTH=Sun Ray Strength
+option.DEPTH_OF_FIELD=Depth of Field
+option.DEPTH_OF_FIELD.comment=Things far from what you look at get softly blurred, like a camera.
+option.DOF_STRENGTH=Blur Strength
+option.SHADOW_SMOOTH=Shadow Smoothing
+option.SHADOW_SMOOTH.comment=Softens shadow edges, even at low shadow quality. 0 = off, 1 = 2 taps, 2 = 4 taps (smoothest).
+option.LEAF_SOLID_SHADOWS=Solid Leaf Shadows
+option.LEAF_SOLID_SHADOWS.comment=Leaves cast solid shadows with no see-through holes.
+option.GRASS_STYLE=Grass Style
+option.GRASS_STYLE.comment=1 = Complementary Reimagined grass, 0 = old look.
+option.UNDERWATER_RAYS=Underwater Rays
+option.UNDERWATER_RAYS.comment=Sun light shafts when you are underwater. Works even when Godrays is off.
+option.UNDERWATER_RAYS_STRENGTH=Underwater Ray Strength
+option.GOLDEN_HOUR=Golden Hour Tint
+option.GOLDEN_HOUR.comment=Warm golden light on the ground and blocks at sunrise (a little at sunset). 0 = off.
+option.MOTION_BLUR=Motion Blur
+option.MOTION_BLUR.comment=Blurs the picture when you turn or move, so 30 fps feels smoother.
+option.MOTION_BLUR_STRENGTH=Motion Blur Strength
+option.MOTION_BLUR_SAMPLES=Motion Blur Samples
+option.MOTION_BLUR_SAMPLES.comment=More samples = smoother blur, a bit slower. 6 is a good phone value.
+option.EYE_ADAPTATION=Eye Adaptation
+option.EYE_ADAPTATION.comment=Going from a dark cave into sunlight flashes white for a few seconds, then your eyes adjust. Going into a cave looks dark first.
+option.EYE_ADAPT_STRENGTH=Eye Adaptation Strength
+option.SHADOW_DISTORTION_512=Shadow Focus at 512
+option.SHADOW_DISTORTION_512.comment=Only for shadow resolution 512. Higher = sharper shadows close to you, blockier far away.
+option.FOLIAGE_SSS=Light Through Leaves
+option.GRASS_VARIATION=Grass Color Variation
+option.SUN_GLOW=Sun Glow on Grass
+option.SUN_GLOW_STRENGTH=Sun Glow Strength
+option.WAVING_FOLIAGE=Waving Grass & Leaves
+option.WAVING_I=Wave Strength
+option.WAVING_SPEED=Wave Speed
+option.PLAYER_PLANT_INTERACTION=Player Plant Interaction
+option.PLAYER_PLANT_INTERACTION.comment=Grass, flowers and crops physically bend and part away as you walk through them (CazToon style).
+option.PLANT_INTERACTION_RADIUS=Interaction Radius
+option.PLANT_INTERACTION_RADIUS.comment=How far around the player plants begin bending away.
+option.PLANT_INTERACTION_INTENSITY=Interaction Strength
+option.PLANT_INTERACTION_INTENSITY.comment=How strongly plants bend and push away when walked through.
+option.TOON_MODE=Toon Mode
+option.TOON_MODE.comment=Cartoon look in the style of CazToon. Everything below only works while this is on.
+option.TOON_OUTLINES=Outline Style
+option.TOON_OUTLINES.comment=Off, Standard (thin line on both sides of an edge) or Dungeons (CazToon look: line on the nearer object).
+value.TOON_OUTLINES.0=Off
+value.TOON_OUTLINES.1=Standard
+value.TOON_OUTLINES.2=Dungeons
+option.TOON_OUTLINE_PLAYER=Player & Hand Outlines
+option.TOON_OUTLINE_PLAYER.comment=Draws cartoon outlines on the player character, first-person hands, and held weapons/items.
+value.TOON_OUTLINE_PLAYER.0=Off
+value.TOON_OUTLINE_PLAYER.1=On
+option.TOON_OUTLINE_SIZE=Outline Thickness
+option.TOON_OUTLINE_SIZE.comment=Thickness of the outlines in pixels.
+option.TOON_OUTLINE_BRIGHTNESS=Outline Brightness
+option.TOON_OUTLINE_BRIGHTNESS.comment=Positive = light coloured outline (CazToon). Negative = dark ink outline.
+option.TOON_OUTLINE_SATURATION=Outline Saturation
+option.TOON_OUTLINE_SATURATION.comment=How vivid the outline colour is. 1 = same colour as the scene, higher = more vivid.
+option.TOON_SHADOW_STRENGTH=Shadow Strength
+option.TOON_SHADOW_STRENGTH.comment=How dark shadows get. 1 = normal pack shadows, lower = softer and lighter (CazToon uses about 0.75).
+option.TOON_SHADOW_TINT=Cool Shadows
+option.TOON_SHADOW_TINT.comment=Blue tint in shadows and a warm tint in direct sun. 0 = off.
+option.TOON_GRASS_PATCHES=Grass Patches
+option.TOON_GRASS_PATCHES.comment=Blocky light and dark patches on grass that drift slowly. 0 = off.
+option.TOON_LEAF_SHADING=Leaf Shading
+option.TOON_LEAF_SHADING.comment=Leaves are light yellow-green on the outside of a tree and darker blue-green deeper inside. 0 = off.
+option.TOON_FLAT_ENTITIES=Flat Mob Lighting
+option.TOON_FLAT_ENTITIES.comment=Flatter, more even lighting on mobs, players and items. 0 = normal.
+option.TOON_SHARPEN=Sharpen
+option.TOON_SHARPEN.comment=Light picture sharpening. 0 = off.
+option.TOON_BANDS=Hard Brightness Steps
+option.TOON_BANDS.comment=Optional: cut the whole picture into this many brightness steps. 0 = off (CazToon does not use this).
+value.TOON_BANDS.0=Off
+option.TOON_SATURATION=Toon Color Richness
+
+screen.COLOR_GRADING_SCREEN=Color Grading
+screen.COLOR_GRADING_SCREEN.comment=CazToon cinematic color grading system: style presets, color temperature, tint, vibrance, split toning, and tone curves.
+option.COLOR_GRADING_ENABLED=CazToon Color Grading
+option.COLOR_GRADING_ENABLED.comment=Enable CazToon cinematic color grading and tone adjustments.
+option.CG_STYLE_PRESET=Style Preset
+option.CG_STYLE_PRESET.comment=Choose from curated color grading presets. Tropical is the signature CazToon aesthetic.
+value.CG_STYLE_PRESET.0=None (Manual)
+value.CG_STYLE_PRESET.1=Cinematic
+value.CG_STYLE_PRESET.2=Vintage
+value.CG_STYLE_PRESET.3=Cyberpunk
+value.CG_STYLE_PRESET.4=Horror
+value.CG_STYLE_PRESET.5=Fantasy
+value.CG_STYLE_PRESET.6=Nordic
+value.CG_STYLE_PRESET.7=Tropical (CazToon)
+value.CG_STYLE_PRESET.8=Noir
+option.CG_STYLE_INTENSITY=Preset Strength
+option.CG_STYLE_INTENSITY.comment=Blend strength of the selected style preset.
+option.CG_TEMPERATURE=Temperature
+option.CG_TEMPERATURE.comment=Warmer sunlight (positive) or cooler blue tone (negative).
+option.CG_TINT=Tint
+option.CG_TINT.comment=Magenta balance (positive) or green balance (negative).
+option.CG_VIBRANCE=Vibrance
+option.CG_VIBRANCE.comment=Intelligent color saturation boost that protects already vivid colors.
+option.CG_SPLIT_TONING_ENABLED=Split Toning
+option.CG_SPLIT_TONING_ENABLED.comment=Tint shadows cool-blue and highlights warm-gold independently.
+option.CG_SPLIT_TONING_INTENSITY=Split Tone Strength
+option.CG_SPLIT_TONING_INTENSITY.comment=Strength of the split toning effect.
+option.CG_SPLIT_TONING_BALANCE=Split Tone Balance
+option.CG_SPLIT_TONING_BALANCE.comment=Shift balance toward shadows (-1) or highlights (+1).
+option.CG_EXPOSURE=Exposure
+option.CG_EXPOSURE.comment=Fine exposure compensation.
+option.CG_BRIGHTNESS=Brightness
+option.CG_BRIGHTNESS.comment=Linear brightness shift.
+option.CG_CONTRAST=Contrast
+option.CG_CONTRAST.comment=Midtone contrast multiplier.
+option.CG_BLACKS=Blacks
+option.CG_BLACKS.comment=Crush or lift deepest blacks.
+option.CG_WHITES=Whites
+option.CG_WHITES.comment=Compress or boost peak whites.
+option.CG_SHADOWS=Shadows
+option.CG_SHADOWS.comment=Shadow luminance adjustment.
+option.CG_HIGHLIGHTS=Highlights
+option.CG_HIGHLIGHTS.comment=Highlight luminance adjustment.
+
+
