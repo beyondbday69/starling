@@ -1,0 +1,52 @@
+[mod]
+id = "tectonic"
+version = "3.0.25"
+priority = 100
+
+[compatibility]
+horizon_revision = "09fa16c167c4b2f8eb23fddd0faa808d56d0a2f2"
+
+[[module]]
+id = "glue"
+file = "crates/horizon-client/src/game.rs"
+name = "native_tectonic_glue"
+source = "glue.rs"
+visibility = "pub"
+
+[[module]]
+id = "worldgen"
+file = "crates/horizon-client/src/game.rs"
+name = "native_tectonic_worldgen"
+source = "worldgen.rs"
+visibility = "pub"
+
+[[injection]]
+id = "list"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_mods"
+helper = "hooks/list.rs"
+bindings = [
+  { name = "mods", ty = "&mut Vec<crate::mod_api::NativeMod>", value = "&mut *mods" },
+]
+
+[[injection]]
+id = "settings"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_settings"
+helper = "hooks/settings.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "mod_id", ty = "&str", value = "mod_id" },
+  { name = "buttons", ty = "&mut Vec<String>", value = "&mut *buttons" },
+]
+
+[[injection]]
+id = "click"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_settings_click"
+helper = "hooks/click.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "mod_id", ty = "&str", value = "mod_id" },
+  { name = "button", ty = "usize", value = "button" },
+]

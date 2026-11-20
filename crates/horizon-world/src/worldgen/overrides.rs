@@ -18,14 +18,16 @@ pub const DIMENSION_TYPES: &str = "dimension_types";
 
 /// Pack folders (`data/<ns>/<kind>/`) the chunk generator reads, and the
 /// bundle each joins.
-const KINDS: [(&str, &str); 16] = [
+const KINDS: [(&str, &str); 18] = [
     ("dimension", DIMENSIONS),
     ("dimension_type", DIMENSION_TYPES),
     ("worldgen/biome", "biomes"),
     ("worldgen/block_state_provider", "state_providers"),
     // 26.3's names: 26.2 called them configured_carver and configured_feature.
     ("worldgen/carver", "carvers"),
+    ("worldgen/configured_carver", "carvers"),
     ("worldgen/feature", "features"),
+    ("worldgen/configured_feature", "features"),
     ("worldgen/density_function", "densities"),
     ("worldgen/material_condition", "conditions"),
     ("worldgen/material_rule", "rules"),

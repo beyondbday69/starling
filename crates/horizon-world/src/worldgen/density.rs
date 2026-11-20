@@ -177,7 +177,15 @@ impl Loader {
         name: &'static str,
         depth: usize,
     ) -> Result<FunctionId, DecodeError> {
-        self.decode(required(object, name)?, depth + 1)
+        let raw = optional(object, name)
+            .or_else(|| match name {
+                "input" => optional(object, "argument"),
+                "left" => optional(object, "argument1"),
+                "right" => optional(object, "argument2"),
+                _ => None,
+            })
+            .ok_or(DecodeError::Field(name))?;
+        self.decode(raw, depth + 1)
     }
     fn optional_input(
         &mut self,
@@ -221,7 +229,7 @@ impl Loader {
             "minecraft:sqrt" => Some(GraphUnary::Sqrt),
             "minecraft:half_negative" => Some(GraphUnary::HalfNegative),
             "minecraft:quarter_negative" => Some(GraphUnary::QuarterNegative),
-            "minecraft:reciprocal" => Some(GraphUnary::Reciprocal),
+            "minecraft:reciprocal" | "tectonic:invert" => Some(GraphUnary::Reciprocal),
             "minecraft:negate" => Some(GraphUnary::Negate),
             "minecraft:squeeze" => Some(GraphUnary::Squeeze),
             "minecraft:log" => Some(GraphUnary::Log),
@@ -383,7 +391,7 @@ impl Loader {
                         i32::MAX,
                     )?,
                 },
-                "minecraft:clamp" => {
+                "minecraft:clamp" | "tectonic:config_clamp" => {
                     let min = noise_value(required(&object, "min")?)?;
                     let max = noise_value(required(&object, "max")?)?;
                     if max < min {
@@ -394,6 +402,16 @@ impl Loader {
                         min,
                         max,
                     }
+                }
+                "tectonic:config_constant" => {
+                    let val = optional(&object, "value")
+                        .and_then(|r| noise_value(r).ok())
+                        .or_else(|| {
+                            let key = string(optional(&object, "key")?).ok()?;
+                            Some(tectonic_config_constant(&key))
+                        })
+                        .unwrap_or(0.0);
+                    GraphNode::Constant(val)
                 }
                 "minecraft:range_choice" => GraphNode::Choice {
                     input: self.input(&object, "input", depth)?,
@@ -491,6 +509,31 @@ impl Loader {
             .collect::<Result<_, DecodeError>>()?;
         CubicSpline::multipoint(coordinate, points)
             .map_err(|error| DecodeError::Graph(error.into()))
+    }
+}
+
+pub fn tectonic_config_constant(key: &str) -> f32 {
+    match key {
+        "vertical_scale" => 1.125,
+        "elevation_boost" => 0.0,
+        "min_y" => -64.0,
+        "max_y" => 384.0,
+        "lava_tunnels" => 1.0,
+        "ocean_offset" => -0.8,
+        "alternate_erosion_scale" => 1.0,
+        "underground_rivers" => -1.0,
+        "flat_terrain_skew" => 0.1,
+        "rolling_hills" => 1.0,
+        "jungle_pillars" => 1.0,
+        "ocean_depth" => -0.22,
+        "deep_ocean_depth" => -0.45,
+        "depth_cutoff_start" => 0.1,
+        "depth_cutoff_size" => 0.1,
+        "cheese_enabled" => 1.0,
+        "cheese_additive" => 0.27,
+        "noodle_enabled" => 1.0,
+        "noodle_additive" => -0.075,
+        _ => 0.0,
     }
 }
 
