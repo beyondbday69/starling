@@ -3,8 +3,8 @@
 **Repository:** `beyondbday69/starling`  
 **Current Active Branch:** `feat/shader-fsr-upscaling`  
 **Target Platform:** Android (ARM64 `arm64-v8a`)  
-**Latest Commit:** `5cf85b3` (`feat(holdmyitems): align continuous mining cadence with HMI 5.1.3 reference (half-duration restart)`)  
-**Latest Successful CI Run:** `#44924392350` (Artifact: `14715600991`, size: 35.0 MB)  
+**Latest Commit:** `6408c69` (`feat(cinematic_interactions): add left-side LMB and RMB buttons with right-side drag support and enable all native mods`)  
+**Latest Successful CI Run:** `#44928400353` (Artifact: `14716584831`, size: 70.4 MB)  
 **Last Updated:** November 2026  
 
 ---
@@ -143,7 +143,8 @@ graph TD
 
 | Run ID | Commit | Description | Artifact ID / Download | Status |
 |---|---|---|---|---|
-| **#44924392350** | `5cf85b3` | **Latest Working Build:** Hold My Items Mining Cadence (Section 11 HMI 5.1.3 reference: half-duration restart, 6-tick cap, zero idle lag) + Canonical Pickaxe/Bare Hand poses + Enchanted Tool Outlines (GUI & 3D first-person) | [Artifact 14715600991](https://github.com/beyondbday69/starling/actions/runs/44924392350/artifacts/14715600991) | **PASSED (Green)** |
+| **#44928400353** | `6408c69` | **Latest Working Build:** Cinematic Interactions (Left-Side LMB/RMB Hold & Right-Side Drag Buttons) + All Native Mods (`cinematic_interactions`, `skins_3d`, `gyro`, `holdmyitems`, `zoom`, `livingmotion`, `elytratrails`) + Enchanted Tool Outlines & Section 11 Mining Cadence | [Artifact 14716584831](https://github.com/beyondbday69/starling/actions/runs/44928400353/artifacts/14716584831) | **PASSED (Green)** |
+| **#44924392350** | `5cf85b3` | Hold My Items Mining Cadence (Section 11 HMI 5.1.3 reference: half-duration restart, 6-tick cap, zero idle lag) + Canonical Pickaxe/Bare Hand poses + Enchanted Tool Outlines (GUI & 3D first-person) | [Artifact 14715600991](https://github.com/beyondbday69/starling/actions/runs/44924392350/artifacts/14715600991) | PASSED |
 | **#44915271892** | `9b1aa18` | Hold My Items Continuous Mining + Enchanted Tool Outlines (GUI & 3D first-person) | [Artifact 14711966825](https://github.com/beyondbday69/starling/actions/runs/44915271892/artifacts/14711966825) | PASSED |
 | **#44464049499** | `dcf4245` | 3D Skins Real Voxels Fix (Atlas Extraction + In-Memory Own Skin + CEM Override Prevention) + Screen-Split Touch Controls + Cinematic Interactions + Gyro | [Artifact 14501069325](https://github.com/beyondbday69/starling/actions/runs/44464049499/artifacts/14501069325) | PASSED |
 | **#44408523280** | `0faef7a` | Screen-Split LMB/RMB Controls + Action Text Indicator + Cinematic Interactions + 3D Skins + Gyro | [Artifact 14475234256](https://github.com/beyondbday69/starling/actions/runs/44408523280/artifacts/14475234256) | PASSED |
