@@ -326,7 +326,6 @@ impl Game<'_> {
         }
         self.mining.is_some()
             || self.clicks.destroying.active
-            || self.remote.as_ref().is_some_and(|r| r.is_destroying || r.destroying.is_some())
             || (self.left && self.pick().is_some_and(|h| !self.res.facts().is_air(self.world.block(h.pos[0], h.pos[1], h.pos[2]))))
     }
 
