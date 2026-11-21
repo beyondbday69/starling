@@ -3,8 +3,8 @@
 **Repository:** `beyondbday69/starling`  
 **Current Active Branch:** `feat/shader-fsr-upscaling`  
 **Target Platform:** Android (ARM64 `arm64-v8a`)  
-**Latest Commit:** `9b1aa18` (`fix(holdmyitems): remove private Remote field access in breaking block check`)  
-**Latest Successful CI Run:** `#44915271892` (Artifact: `14711966825`, size: 35.0 MB)  
+**Latest Commit:** `5cf85b3` (`feat(holdmyitems): align continuous mining cadence with HMI 5.1.3 reference (half-duration restart)`)  
+**Latest Successful CI Run:** `#44924392350` (Artifact: `14715600991`, size: 35.0 MB)  
 **Last Updated:** November 2026  
 
 ---
@@ -143,7 +143,8 @@ graph TD
 
 | Run ID | Commit | Description | Artifact ID / Download | Status |
 |---|---|---|---|---|
-| **#44915271892** | `9b1aa18` | **Latest Working Build:** Hold My Items Responsive Continuous Mining (4-tick cadence, zero-lag cycling, forward punch/chop) + Enchanted Tool Outlines (GUI & 3D first-person) | [Artifact 14711966825](https://github.com/beyondbday69/starling/actions/runs/44915271892/artifacts/14711966825) | **PASSED (Green)** |
+| **#44924392350** | `5cf85b3` | **Latest Working Build:** Hold My Items Mining Cadence (Section 11 HMI 5.1.3 reference: half-duration restart, 6-tick cap, zero idle lag) + Canonical Pickaxe/Bare Hand poses + Enchanted Tool Outlines (GUI & 3D first-person) | [Artifact 14715600991](https://github.com/beyondbday69/starling/actions/runs/44924392350/artifacts/14715600991) | **PASSED (Green)** |
+| **#44915271892** | `9b1aa18` | Hold My Items Continuous Mining + Enchanted Tool Outlines (GUI & 3D first-person) | [Artifact 14711966825](https://github.com/beyondbday69/starling/actions/runs/44915271892/artifacts/14711966825) | PASSED |
 | **#44464049499** | `dcf4245` | 3D Skins Real Voxels Fix (Atlas Extraction + In-Memory Own Skin + CEM Override Prevention) + Screen-Split Touch Controls + Cinematic Interactions + Gyro | [Artifact 14501069325](https://github.com/beyondbday69/starling/actions/runs/44464049499/artifacts/14501069325) | PASSED |
 | **#44408523280** | `0faef7a` | Screen-Split LMB/RMB Controls + Action Text Indicator + Cinematic Interactions + 3D Skins + Gyro | [Artifact 14475234256](https://github.com/beyondbday69/starling/actions/runs/44408523280/artifacts/14475234256) | PASSED |
 | **#44395053407** | `e35ea8e` | Sweep Drag + Cinematic Interactions + 3D Skins + Gyro | [Artifact 14472020982](https://github.com/beyondbday69/starling/actions/runs/44395053407/artifacts/14472020982) | PASSED |
