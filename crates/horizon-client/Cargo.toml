@@ -142,6 +142,10 @@ windows-segment-heap = []
 name = "horizon-client"
 path = "src/main.rs"
 
+[[example]]
+name = "title_preview"
+path = "examples/title_preview.rs"
+
 [[test]]
 name = "datapack_biome_sync"
 path = "tests/datapack_biome_sync.rs"

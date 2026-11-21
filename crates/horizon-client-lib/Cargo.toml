@@ -194,6 +194,10 @@ path = "../horizon-client/examples/sprite_cache_parity.rs"
 name = "client_probe"
 path = "../horizon-client/examples/probe/main.rs"
 
+[[example]]
+name = "title_preview"
+path = "../horizon-client/examples/title_preview.rs"
+
 [[test]]
 name = "custom_component_api"
 path = "../horizon-client/tests/custom_component_api.rs"

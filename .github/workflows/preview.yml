@@ -1,0 +1,71 @@
+name: Title Screen Preview
+
+on:
+  push:
+    branches:
+      - 'feat/**'
+      - 'fix/**'
+      - 'android'
+      - 'starling'
+      - 'integration'
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: preview-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  render-preview:
+    name: Render Title Screen
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libasound2-dev libudev-dev
+
+      - name: Setup minimal Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: preview
+
+      - name: Build and render title screen preview
+        run: |
+          cargo run --profile fast -p horizon-client-lib --example title_preview -- title_preview.png
+
+      - name: Publish preview to Job Summary
+        run: |
+          IMAGE_SIZE=$(ls -lh title_preview.png | awk '{print $5}')
+          echo "## 🎮 Starling Title Screen Visual Preview" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Property | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Resolution** | 854 × 480 |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **File Size** | $IMAGE_SIZE |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Preset** | Complementary Reimagined Dawn Atmosphere (\`time 23400\`) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Layout** | Style 1: Modern Asymmetric Left Dock (Zero Black Strip) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Branding** | Clean Starling 26.3 |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Render Output" >> "$GITHUB_STEP_SUMMARY"
+          B64_DATA=$(base64 -w 0 title_preview.png)
+          echo "<img src=\"data:image/png;base64,$B64_DATA\" width=\"854\" alt=\"Starling Title Screen Preview\" />" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload PNG Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: title-screen-preview
+          path: title_preview.png
+          retention-days: 14
