@@ -1,3 +1,5 @@
-#version 330 compatibility
-#define DIM_OVERWORLD
-#include "/program/skytextured.vsh"
+#version 130
+
+#define VERTEX_SHADER
+
+#include "/program/skytextured.glsl"

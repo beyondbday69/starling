@@ -1,4 +1,6 @@
-#version 330 compatibility
-#define DIM_OVERWORLD
+#version 130
+
+#define VERTEX_SHADER
 #define TERRAIN
-#include "/program/lit.vsh"
+
+#include "/program/lit.glsl"

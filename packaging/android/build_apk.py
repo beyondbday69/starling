@@ -184,8 +184,8 @@ def assets(out):
     zip_folder(HERE.parent / "lowbudget" / "pack", folder / "lowbudget.zip")
     zip_folder(HERE.parent / "shaderpacks" / "starling-visuals", folder / "StarlingVisuals.zip")
     shutil.copyfile(folder / "StarlingVisuals.zip", out / "StarlingVisuals.zip")
-    shutil.copyfile(folder / "StarlingVisuals.zip", folder / "Reimagined-UltraFast.zip")
-    shutil.copyfile(folder / "StarlingVisuals.zip", out / "Reimagined-UltraFast.zip")
+    zip_folder(HERE.parent / "shaderpacks" / "reimagined-ultrafast", folder / "Reimagined-UltraFast.zip")
+    shutil.copyfile(folder / "Reimagined-UltraFast.zip", out / "Reimagined-UltraFast.zip")
     return folder
 
 

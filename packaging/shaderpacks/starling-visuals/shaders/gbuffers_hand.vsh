@@ -1,5 +1,5 @@
-#version 330 compatibility
-#define DIM_OVERWORLD
-#define ENTITY
-#define NO_SHADOW
-#include "/program/lit.vsh"
+#version 130
+
+#define VERTEX_SHADER
+
+#include "/program/lit.glsl"

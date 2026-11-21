@@ -1,3 +1,5 @@
-#version 330 compatibility
-#define DIM_OVERWORLD
-#include "/program/shadow.fsh"
+#version 130
+
+#define FRAGMENT_SHADER
+
+#include "/program/shadow.glsl"
