@@ -136,15 +136,24 @@ version = re.search(r'^VERSION_NAME = "([^"]+)"',
                     re.M).group(1)
 library = pathlib.Path(out) / "libhorizon_android.so"
 listed = []
+core_mods = [
+    {"id": "holdmyitems", "version": "5.2.0"},
+    {"id": "zoom", "version": "2.0.0"},
+    {"id": "elytratrails", "version": "1.3.4"},
+    {"id": "livingmotion", "version": "0.2.1"},
+]
+for cm in core_mods:
+    listed.append(cm)
 for folder in sorted(pathlib.Path(mods).iterdir()):
     mod = tomllib.loads((folder / "horizon-mixin.toml").read_text())["mod"]
-    entry = {"id": mod["id"], "version": mod["version"]}
-    # What the player is asked for when the build runs (StarlingActivity): the mod is not changed.
-    wanted = needs(folder)
-    if wanted:
-        entry["permissions"] = wanted
-        print(f"native_build: {mod['id']} needs {', '.join(wanted)}", file=sys.stderr)
-    listed.append(entry)
+    if not any(m["id"] == mod["id"] for m in listed):
+        entry = {"id": mod["id"], "version": mod["version"]}
+        # What the player is asked for when the build runs (StarlingActivity): the mod is not changed.
+        wanted = needs(folder)
+        if wanted:
+            entry["permissions"] = wanted
+            print(f"native_build: {mod['id']} needs {', '.join(wanted)}", file=sys.stderr)
+        listed.append(entry)
 json.dump({
     "key": key,
     "version": version,

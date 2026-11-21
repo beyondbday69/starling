@@ -132,7 +132,6 @@ jobs:
           mkdir -p target/android
           for apk in "$RUNNER_TEMP"/native/starling-*.apk; do
             cp "$apk" "target/android/$(basename "$apk")"
-            cp "$apk" "target/android/$(basename "${apk%.apk}")-$(echo $MODS | tr ' ' '-').apk"
           done
       - uses: actions/upload-artifact@v4
         with:
