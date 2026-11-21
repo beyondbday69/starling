@@ -58,7 +58,19 @@ impl Default for TrailConfig {
 }
 
 #[allow(clippy::too_many_arguments)]
-const fn preset(width: f32, lifetime: f32, color: usize, glowing: bool, fade: bool, start_ramp: f32, end_ramp: f32, fade_in: f32, grow: f32, ragged: f32, alpha: f32) -> TrailConfig {
+const fn preset(
+    width: f32,
+    lifetime: f32,
+    color: usize,
+    glowing: bool,
+    fade: bool,
+    start_ramp: f32,
+    end_ramp: f32,
+    fade_in: f32,
+    grow: f32,
+    ragged: f32,
+    alpha: f32,
+) -> TrailConfig {
     TrailConfig {
         enabled: true,
         others: true,
@@ -79,13 +91,34 @@ const fn preset(width: f32, lifetime: f32, color: usize, glowing: bool, fade: bo
 
 /// The mod's presets, by name.
 pub(crate) const PRESETS: [(&str, TrailConfig); 7] = [
-    ("Default", preset(0.05, 2.5, 0, false, true, 4.0, 10.0, 0.0, 1.0, 0.0, 1.0)),
-    ("Subtle", preset(0.075, 2.5, 0, false, true, 4.0, 10.0, 0.0, 1.0, 0.0, 0.78)),
-    ("Jet engine", preset(0.07, 2.5, 0, false, true, 0.0, 0.0, 5.0, 20.0, 1.0, 0.6)),
-    ("Rainbow", preset(0.25, 2.5, 13, true, false, 4.0, 10.0, 0.0, 1.0, 0.0, 1.0)),
-    ("Green glow", preset(0.1, 2.5, 4, true, true, 4.0, 10.0, 0.0, 1.0, 0.0, 1.0)),
-    ("Hackerman", preset(0.5, 2.5, 5, true, false, 4.0, 10.0, 0.0, 1.0, 0.0, 1.0)),
-    ("Action lines", preset(0.07, 0.6, 0, false, false, 0.0, 10.0, 5.0, 1.0, 0.0, 0.6)),
+    (
+        "Default",
+        preset(0.05, 2.5, 0, false, true, 4.0, 10.0, 0.0, 1.0, 0.0, 1.0),
+    ),
+    (
+        "Subtle",
+        preset(0.075, 2.5, 0, false, true, 4.0, 10.0, 0.0, 1.0, 0.0, 0.78),
+    ),
+    (
+        "Jet engine",
+        preset(0.07, 2.5, 0, false, true, 0.0, 0.0, 5.0, 20.0, 1.0, 0.6),
+    ),
+    (
+        "Rainbow",
+        preset(0.25, 2.5, 13, true, false, 4.0, 10.0, 0.0, 1.0, 0.0, 1.0),
+    ),
+    (
+        "Green glow",
+        preset(0.1, 2.5, 4, true, true, 4.0, 10.0, 0.0, 1.0, 0.0, 1.0),
+    ),
+    (
+        "Hackerman",
+        preset(0.5, 2.5, 5, true, false, 4.0, 10.0, 0.0, 1.0, 0.0, 1.0),
+    ),
+    (
+        "Action lines",
+        preset(0.07, 0.6, 0, false, false, 0.0, 10.0, 5.0, 1.0, 0.0, 0.6),
+    ),
 ];
 
 /// Trail colours: plain ones, then the flags (their stripes across the trail, ARGB).
@@ -103,24 +136,156 @@ pub(crate) const COLORS: [(&str, &[u32]); 31] = [
     ("Black", &[0xFF10_1010]),
     ("Gold", &[0xFFFF_C830]),
     ("Sky", &[0xFFA0_D8FF]),
-    ("Rainbow", &[0xFFFF_0018, 0xFFFF_A52C, 0xFFFF_FF41, 0xFF00_8018, 0xFF00_00F9, 0xFF86_007D]),
-    ("Transgender", &[0xFF55_CDFC, 0xFFF7_A8B8, 0xFFFF_FFFF, 0xFFF7_A8B8, 0xFF55_CDFC]),
-    ("Bisexual", &[0xFFD6_0270, 0xFFD6_0270, 0xFF9B_4F96, 0xFF00_38A8, 0xFF00_38A8]),
+    (
+        "Rainbow",
+        &[
+            0xFFFF_0018,
+            0xFFFF_A52C,
+            0xFFFF_FF41,
+            0xFF00_8018,
+            0xFF00_00F9,
+            0xFF86_007D,
+        ],
+    ),
+    (
+        "Transgender",
+        &[
+            0xFF55_CDFC,
+            0xFFF7_A8B8,
+            0xFFFF_FFFF,
+            0xFFF7_A8B8,
+            0xFF55_CDFC,
+        ],
+    ),
+    (
+        "Bisexual",
+        &[
+            0xFFD6_0270,
+            0xFFD6_0270,
+            0xFF9B_4F96,
+            0xFF00_38A8,
+            0xFF00_38A8,
+        ],
+    ),
     ("Pansexual", &[0xFFFF_1B8D, 0xFFFF_DA00, 0xFF1B_B3FF]),
-    ("Lesbian", &[0xFFD6_2900, 0xFFFF_9B55, 0xFFFF_FFFF, 0xFFD4_61A6, 0xFFA5_0062]),
-    ("Gay", &[0xFF07_8D70, 0xFF98_E8C1, 0xFFFF_FFFF, 0xFF7B_ADE2, 0xFF3D_1A78]),
-    ("Nonbinary", &[0xFFFF_F430, 0xFFFF_FFFF, 0xFF9C_59D1, 0xFF00_0000]),
-    ("Asexual", &[0xFF00_0000, 0xFFA3_A3A3, 0xFFFF_FFFF, 0xFF80_0070]),
-    ("Aromantic", &[0xFF3B_A740, 0xFFA8_D47A, 0xFFFF_FFFF, 0xFFAB_ABAB, 0xFF00_0000]),
-    ("Aroace", &[0xFFE3_8D00, 0xFFE7_C601, 0xFFFF_FFFF, 0xFF5F_AAD7, 0xFF1F_3554]),
-    ("Agender", &[0xFF00_0000, 0xFFBA_BABA, 0xFFFF_FFFF, 0xFFBA_F484, 0xFFFF_FFFF, 0xFFBA_BABA, 0xFF00_0000]),
-    ("Genderfluid", &[0xFFFE_76A2, 0xFFFF_FFFF, 0xFFBF_12D7, 0xFF00_0000, 0xFF30_3CBE]),
+    (
+        "Lesbian",
+        &[
+            0xFFD6_2900,
+            0xFFFF_9B55,
+            0xFFFF_FFFF,
+            0xFFD4_61A6,
+            0xFFA5_0062,
+        ],
+    ),
+    (
+        "Gay",
+        &[
+            0xFF07_8D70,
+            0xFF98_E8C1,
+            0xFFFF_FFFF,
+            0xFF7B_ADE2,
+            0xFF3D_1A78,
+        ],
+    ),
+    (
+        "Nonbinary",
+        &[0xFFFF_F430, 0xFFFF_FFFF, 0xFF9C_59D1, 0xFF00_0000],
+    ),
+    (
+        "Asexual",
+        &[0xFF00_0000, 0xFFA3_A3A3, 0xFFFF_FFFF, 0xFF80_0070],
+    ),
+    (
+        "Aromantic",
+        &[
+            0xFF3B_A740,
+            0xFFA8_D47A,
+            0xFFFF_FFFF,
+            0xFFAB_ABAB,
+            0xFF00_0000,
+        ],
+    ),
+    (
+        "Aroace",
+        &[
+            0xFFE3_8D00,
+            0xFFE7_C601,
+            0xFFFF_FFFF,
+            0xFF5F_AAD7,
+            0xFF1F_3554,
+        ],
+    ),
+    (
+        "Agender",
+        &[
+            0xFF00_0000,
+            0xFFBA_BABA,
+            0xFFFF_FFFF,
+            0xFFBA_F484,
+            0xFFFF_FFFF,
+            0xFFBA_BABA,
+            0xFF00_0000,
+        ],
+    ),
+    (
+        "Genderfluid",
+        &[
+            0xFFFE_76A2,
+            0xFFFF_FFFF,
+            0xFFBF_12D7,
+            0xFF00_0000,
+            0xFF30_3CBE,
+        ],
+    ),
     ("Genderqueer", &[0xFFB8_99DD, 0xFFFF_FFFF, 0xFF6B_8E3A]),
-    ("Bigender", &[0xFFC4_79A2, 0xFFEB_A3CB, 0xFFD4_C5E6, 0xFFFF_FFFF, 0xFFD4_C5E6, 0xFF98_C5E6, 0xFF6D_82D1]),
-    ("Demigirl", &[0xFF7E_7E7E, 0xFFC3_C3C3, 0xFFFD_ADC8, 0xFFFF_FFFF, 0xFFFD_ADC8, 0xFFC3_C3C3, 0xFF7E_7E7E]),
-    ("Demiboy", &[0xFF7E_7E7E, 0xFFC3_C3C3, 0xFF9A_D9F2, 0xFFFF_FFFF, 0xFF9A_D9F2, 0xFFC3_C3C3, 0xFF7E_7E7E]),
+    (
+        "Bigender",
+        &[
+            0xFFC4_79A2,
+            0xFFEB_A3CB,
+            0xFFD4_C5E6,
+            0xFFFF_FFFF,
+            0xFFD4_C5E6,
+            0xFF98_C5E6,
+            0xFF6D_82D1,
+        ],
+    ),
+    (
+        "Demigirl",
+        &[
+            0xFF7E_7E7E,
+            0xFFC3_C3C3,
+            0xFFFD_ADC8,
+            0xFFFF_FFFF,
+            0xFFFD_ADC8,
+            0xFFC3_C3C3,
+            0xFF7E_7E7E,
+        ],
+    ),
+    (
+        "Demiboy",
+        &[
+            0xFF7E_7E7E,
+            0xFFC3_C3C3,
+            0xFF9A_D9F2,
+            0xFFFF_FFFF,
+            0xFF9A_D9F2,
+            0xFFC3_C3C3,
+            0xFF7E_7E7E,
+        ],
+    ),
     ("Polysexual", &[0xFFF6_16BA, 0xFF01_D669, 0xFF15_93F6]),
-    ("Omnisexual", &[0xFFF0_A2CC, 0xFFEA_66BC, 0xFF21_0746, 0xFF65_65F7, 0xFF94_A9FA]),
+    (
+        "Omnisexual",
+        &[
+            0xFFF0_A2CC,
+            0xFFEA_66BC,
+            0xFF21_0746,
+            0xFF65_65F7,
+            0xFF94_A9FA,
+        ],
+    ),
 ];
 
 /// Samples a second (`maxSamplePerSecond`).
@@ -165,7 +330,10 @@ static STATE: Mutex<Option<State>> = Mutex::new(None);
 static CONFIG: Mutex<Option<TrailConfig>> = Mutex::new(None);
 
 pub(crate) fn config() -> TrailConfig {
-    CONFIG.lock().unwrap_or_else(|e| e.into_inner()).unwrap_or_default()
+    CONFIG
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .unwrap_or_default()
 }
 pub(crate) fn set_config(c: TrailConfig) {
     *CONFIG.lock().unwrap_or_else(|e| e.into_inner()) = Some(c);
@@ -198,13 +366,23 @@ fn camera_fade(d: f32) -> f32 {
 /// A part's transform as `render_model` builds it (pivot in pixels, ZYX angles, scale).
 fn part_matrix(p: [f32; 9]) -> glam::Mat4 {
     glam::Mat4::from_translation(glam::Vec3::new(p[0], p[1], p[2]) / 16.0)
-        * glam::Mat4::from_quat(glam::Quat::from_euler(glam::EulerRot::ZYX, p[5], p[4], p[3]))
+        * glam::Mat4::from_quat(glam::Quat::from_euler(
+            glam::EulerRot::ZYX,
+            p[5],
+            p[4],
+            p[3],
+        ))
         * glam::Mat4::from_scale(glam::Vec3::new(p[6], p[7], p[8]))
 }
 
 /// The two wingtips of player `m`'s elytra, camera-relative: as the elytra
 /// layer draws it (`wings_geometry`), the point `TIP` across each wing's box.
-fn wingtips(game: &Game<'_>, m: &horizon_client::mobs::Mob, camera: glam::DVec3, partial: f32) -> Option<[glam::Vec3; 2]> {
+fn wingtips(
+    game: &Game<'_>,
+    m: &horizon_client::mobs::Mob,
+    camera: glam::DVec3,
+    partial: f32,
+) -> Option<[glam::Vec3; 2]> {
     let model = game.armor_stand_assets.player.get("elytra")?;
     let base = horizon_client::mobs::render::base_transform(m, partial, camera)
         * glam::Mat4::from_translation(glam::Vec3::new(0.0, 0.0, 0.125));
@@ -243,7 +421,11 @@ fn wingtips(game: &Game<'_>, m: &horizon_client::mobs::Mob, camera: glam::DVec3,
                 }
             }
             if lo.x <= hi.x {
-                let (inner, outer) = if hi.x.abs() >= lo.x.abs() { (lo.x, hi.x) } else { (hi.x, lo.x) };
+                let (inner, outer) = if hi.x.abs() >= lo.x.abs() {
+                    (lo.x, hi.x)
+                } else {
+                    (hi.x, lo.x)
+                };
                 let p = glam::Vec3::new(
                     inner + (outer - inner) * TIP[0],
                     lo.y + (hi.y - lo.y) * TIP[1],
@@ -261,7 +443,9 @@ fn wingtips(game: &Game<'_>, m: &horizon_client::mobs::Mob, camera: glam::DVec3,
 }
 
 fn packed_light(game: &Game<'_>, p: glam::DVec3) -> u32 {
-    let light = game.world.light(p.x.floor() as i32, p.y.floor() as i32, p.z.floor() as i32);
+    let light = game
+        .world
+        .light(p.x.floor() as i32, p.y.floor() as i32, p.z.floor() as i32);
     (u32::from(light >> 4) * 16) | ((u32::from(light & 15) * 16) << 8)
 }
 
@@ -300,9 +484,16 @@ pub(crate) fn world(game: &Game<'_>, camera: glam::DVec3, partial: f64, out: &mu
         let flying = m.extra.fall_flying && m.death_time == 0;
         let w = s.wings.entry(m.id).or_default();
         w.seen = now;
-        let speed = ((m.position.x - m.previous.x).powi(2) + (m.position.y - m.previous.y).powi(2) + (m.position.z - m.previous.z).powi(2)).sqrt() as f32;
+        let speed = ((m.position.x - m.previous.x).powi(2)
+            + (m.position.y - m.previous.y).powi(2)
+            + (m.position.z - m.previous.z).powi(2))
+        .sqrt() as f32;
         let emit = flying && speed >= cfg.min_speed;
-        let tips = if emit { wingtips(game, m, camera, partial) } else { None };
+        let tips = if emit {
+            wingtips(game, m, camera, partial)
+        } else {
+            None
+        };
         for (side, trails) in w.sides.iter_mut().enumerate() {
             match tips {
                 Some(t) => {
@@ -314,10 +505,21 @@ pub(crate) fn world(game: &Game<'_>, camera: glam::DVec3, partial: f64, out: &mu
                         trails.push(t);
                     }
                     let t = trails.last_mut().expect("just pushed");
-                    let due = t.points.back().is_none_or(|p| now - p.time >= 1.0 / SAMPLES_PER_SECOND);
+                    let due = t
+                        .points
+                        .back()
+                        .is_none_or(|p| now - p.time >= 1.0 / SAMPLES_PER_SECOND);
                     if due {
-                        let light = if cfg.glowing { FULL_LIGHT } else { packed_light(game, pos) };
-                        t.points.push_back(Point { pos, time: now, light });
+                        let light = if cfg.glowing {
+                            FULL_LIGHT
+                        } else {
+                            packed_light(game, pos)
+                        };
+                        t.points.push_back(Point {
+                            pos,
+                            time: now,
+                            light,
+                        });
                     }
                     t.head = Some(pos);
                 }
@@ -362,7 +564,8 @@ pub(crate) fn world(game: &Game<'_>, camera: glam::DVec3, partial: f64, out: &mu
             }
         }
     }
-    s.wings.retain(|_, w| now - w.seen < 5.0 || w.sides.iter().any(|t| !t.is_empty()));
+    s.wings
+        .retain(|_, w| now - w.seen < 5.0 || w.sides.iter().any(|t| !t.is_empty()));
     // Draw.
     let white = horizon_client::gfx::lightning::white_uv(&game.gui.atlas.font.white());
     let stripes = COLORS[cfg.color.min(COLORS.len() - 1)].1;
@@ -396,7 +599,8 @@ pub(crate) fn world(game: &Game<'_>, camera: glam::DVec3, partial: f64, out: &mu
                     let (pos, from_tail, _, time, _) = *point;
                     let from_head = total - from_tail;
                     let age = ((now - time) / life).clamp(0.0, 1.0) as f32;
-                    let mut width = cfg.width * ramp(from_head, cfg.start_ramp) * ramp(from_tail, cfg.end_ramp);
+                    let mut width =
+                        cfg.width * ramp(from_head, cfg.start_ramp) * ramp(from_tail, cfg.end_ramp);
                     if cfg.grow > 1.0 {
                         width *= 1.0 + (cfg.grow - 1.0) * age;
                     }
@@ -427,7 +631,13 @@ pub(crate) fn world(game: &Game<'_>, camera: glam::DVec3, partial: f64, out: &mu
 }
 
 /// Ribbon quads between consecutive points, facing the camera, in stripes.
-fn emit(out: &mut Vec<Vertex>, pts: &[(glam::DVec3, f32, f32, f64, u32)], camera: glam::DVec3, stripes: &[u32], white: [f32; 2]) {
+fn emit(
+    out: &mut Vec<Vertex>,
+    pts: &[(glam::DVec3, f32, f32, f64, u32)],
+    camera: glam::DVec3,
+    stripes: &[u32],
+    white: [f32; 2],
+) {
     let n = pts.len();
     let side_at = |i: usize| -> glam::Vec3 {
         let a = pts[i.saturating_sub(1)].0;
@@ -435,7 +645,11 @@ fn emit(out: &mut Vec<Vertex>, pts: &[(glam::DVec3, f32, f32, f64, u32)], camera
         let tangent = (b - a).as_vec3();
         let view = (pts[i].0 - camera).as_vec3();
         let s = tangent.cross(view);
-        if s.length_squared() > 1e-12 { s.normalize() } else { glam::Vec3::Y }
+        if s.length_squared() > 1e-12 {
+            s.normalize()
+        } else {
+            glam::Vec3::Y
+        }
     };
     let k = stripes.len() as f32;
     let mut prev_side = side_at(0);
@@ -472,5 +686,15 @@ fn emit(out: &mut Vec<Vertex>, pts: &[(glam::DVec3, f32, f32, f64, u32)], camera
 
 #[cfg(test)]
 pub(crate) fn test_count() -> usize {
-    STATE.lock().unwrap().as_ref().map_or(0, |s| s.wings.values().map(|w| w.sides.iter().map(|t| t.iter().map(|t| t.points.len()).sum::<usize>()).sum::<usize>()).sum())
+    STATE.lock().unwrap().as_ref().map_or(0, |s| {
+        s.wings
+            .values()
+            .map(|w| {
+                w.sides
+                    .iter()
+                    .map(|t| t.iter().map(|t| t.points.len()).sum::<usize>())
+                    .sum::<usize>()
+            })
+            .sum()
+    })
 }

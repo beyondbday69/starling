@@ -1,7 +1,7 @@
 use std::sync::PoisonError;
 
-use crate::game::Game;
 use super::core as m;
+use crate::game::Game;
 
 impl Game<'_> {
     pub(crate) fn elytratrails_settings(&self) -> m::Settings {
@@ -59,7 +59,10 @@ impl Game<'_> {
         let (key, value) = match button {
             0 => (m::KEYS[8], m::flag(!settings.own_fixed)),
             1 => (m::KEYS[9], m::flag(!settings.others_fixed)),
-            2 => (m::KEYS[10], if settings.half_detail { "full" } else { "half" }),
+            2 => (
+                m::KEYS[10],
+                if settings.half_detail { "full" } else { "half" },
+            ),
             3 => (m::KEYS[11], m::cycle(&m::RANGES, settings.range)),
             4 => (m::KEYS[12], m::flag(!settings.formation)),
             5 => (m::KEYS[13], m::flag(!settings.flash)),

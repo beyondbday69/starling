@@ -8,8 +8,7 @@ use std::collections::HashMap;
 
 pub const ID: &str = "holdmyitems";
 pub const TITLE: &str = "Hold My Items 5.2.0";
-pub const DESCRIPTION: &str =
-    "First-person hand & item physics, 3D block/item poses, per-quad articulation, inspection, and hand lighting.";
+pub const DESCRIPTION: &str = "First-person hand & item physics, 3D block/item poses, per-quad articulation, inspection, and hand lighting.";
 pub const CONFIG_FILE: &str = "config.json";
 pub const INSPECT_KEY: &str = "inspect";
 pub const INSPECT_KEY_LABEL: &str = "Inspect Held Item";
@@ -171,20 +170,14 @@ impl Mat4f {
     #[inline]
     pub fn from_translation(x: f32, y: f32, z: f32) -> Self {
         Self([
-            1.0, 0.0, 0.0, 0.0,
-            0.0, 1.0, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            x,   y,   z,   1.0,
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, x, y, z, 1.0,
         ])
     }
 
     #[inline]
     pub fn from_scale(x: f32, y: f32, z: f32) -> Self {
         Self([
-            x,   0.0, 0.0, 0.0,
-            0.0, y,   0.0, 0.0,
-            0.0, 0.0, z,   0.0,
-            0.0, 0.0, 0.0, 1.0,
+            x, 0.0, 0.0, 0.0, 0.0, y, 0.0, 0.0, 0.0, 0.0, z, 0.0, 0.0, 0.0, 0.0, 1.0,
         ])
     }
 
@@ -192,10 +185,7 @@ impl Mat4f {
     pub fn from_rotation_x_deg(deg: f32) -> Self {
         let (s, c) = deg.to_radians().sin_cos();
         Self([
-            1.0, 0.0, 0.0, 0.0,
-            0.0, c,   s,   0.0,
-            0.0, -s,  c,   0.0,
-            0.0, 0.0, 0.0, 1.0,
+            1.0, 0.0, 0.0, 0.0, 0.0, c, s, 0.0, 0.0, -s, c, 0.0, 0.0, 0.0, 0.0, 1.0,
         ])
     }
 
@@ -203,10 +193,7 @@ impl Mat4f {
     pub fn from_rotation_y_deg(deg: f32) -> Self {
         let (s, c) = deg.to_radians().sin_cos();
         Self([
-            c,   0.0, -s,  0.0,
-            0.0, 1.0, 0.0, 0.0,
-            s,   0.0, c,   0.0,
-            0.0, 0.0, 0.0, 1.0,
+            c, 0.0, -s, 0.0, 0.0, 1.0, 0.0, 0.0, s, 0.0, c, 0.0, 0.0, 0.0, 0.0, 1.0,
         ])
     }
 
@@ -214,10 +201,7 @@ impl Mat4f {
     pub fn from_rotation_z_deg(deg: f32) -> Self {
         let (s, c) = deg.to_radians().sin_cos();
         Self([
-            c,   s,   0.0, 0.0,
-            -s,  c,   0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, 0.0, 0.0, 1.0,
+            c, s, 0.0, 0.0, -s, c, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
         ])
     }
 
@@ -287,10 +271,7 @@ impl Mat4f {
     #[inline]
     pub fn shear(&mut self, sx: f32, sy: f32, sz: f32) {
         let shear = Self([
-            1.0, sx,  sx,  0.0,
-            sy,  1.0, sy,  0.0,
-            sz,  sz,  1.0, 0.0,
-            0.0, 0.0, 0.0, 1.0,
+            1.0, sx, sx, 0.0, sy, 1.0, sy, 0.0, sz, sz, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
         ]);
         *self = self.mul(shear);
     }
@@ -591,7 +572,10 @@ pub fn settings_labels(loaded: &LoadedConfig) -> Vec<String> {
         format!("Dynamic Hand Lighting: {}", on_off(c.dynamic_lights)),
         format!("Eat/Drink/Walk Camera Shake: {}", on_off(c.camera_shake)),
         format!("Hand Switch & Bell Sounds: {}", on_off(c.switch_sounds)),
-        format!("Alternating Sword Combos: {}", on_off(c.sword_counter_attack)),
+        format!(
+            "Alternating Sword Combos: {}",
+            on_off(c.sword_counter_attack)
+        ),
         format!("Enchanted Tool Outlines: {}", on_off(c.enchanted_outlines)),
         format!("Base Swing Speed: {} ticks", c.swing_speed),
         format!(
@@ -677,7 +661,8 @@ impl LuaOverrides {
                 }
             } else if let Some((key, val)) = parse_put_call(line, "itemSwingSpeed:put(") {
                 if let Ok(speed) = val.parse::<u32>() {
-                    self.item_swing_speed.insert(qualify_id(&key), speed.clamp(2, 40));
+                    self.item_swing_speed
+                        .insert(qualify_id(&key), speed.clamp(2, 40));
                 }
             }
         }
@@ -807,7 +792,10 @@ impl ItemFlags {
 
     pub fn is_lantern(&self) -> bool {
         let s = self.short_name();
-        s == "lantern" || s == "soul_lantern" || s.ends_with("_copper_lantern") || s == "copper_lantern"
+        s == "lantern"
+            || s == "soul_lantern"
+            || s.ends_with("_copper_lantern")
+            || s == "copper_lantern"
     }
 
     pub fn is_bell(&self) -> bool {
@@ -1632,8 +1620,7 @@ impl HmiState {
         let min_reclick_progress = (1.0 / (max_ticks as f32)).min(0.08);
         if main_hand {
             let can_start = if continuous_hold {
-                !self.main_hand_swinging
-                    || self.main_hand_swing_progress >= min_continuous_progress
+                !self.main_hand_swinging || self.main_hand_swing_progress >= min_continuous_progress
             } else {
                 !self.main_hand_swinging
                     || self.main_hand_swing_progress >= min_reclick_progress
@@ -1688,11 +1675,8 @@ impl HmiState {
         self.last_haste = dig_speed;
         self.last_fatigue = fatigue;
 
-        let max_main = Self::modify_swing_max(
-            self.swing_base(main_item, config, true),
-            dig_speed,
-            fatigue,
-        );
+        let max_main =
+            Self::modify_swing_max(self.swing_base(main_item, config, true), dig_speed, fatigue);
         self.last_main_hand_swing_progress = self.main_hand_swing_progress;
         if self.main_hand_swinging {
             self.main_hand_swing_ticks += 1;
@@ -1702,8 +1686,7 @@ impl HmiState {
                 self.main_hand_swing_progress = 0.0;
                 self.last_main_hand_swing_progress = 0.0;
             } else {
-                self.main_hand_swing_progress =
-                    self.main_hand_swing_ticks as f32 / max_main as f32;
+                self.main_hand_swing_progress = self.main_hand_swing_ticks as f32 / max_main as f32;
             }
             self.main_swing_ticked_20tps = true;
         } else {
@@ -1727,8 +1710,7 @@ impl HmiState {
                 self.off_hand_swing_progress = 0.0;
                 self.last_off_hand_swing_progress = 0.0;
             } else {
-                self.off_hand_swing_progress =
-                    self.off_hand_swing_ticks as f32 / max_off as f32;
+                self.off_hand_swing_progress = self.off_hand_swing_ticks as f32 / max_off as f32;
             }
             self.off_swing_ticked_20tps = true;
         } else {
@@ -1751,7 +1733,11 @@ impl HmiState {
     ) -> Vec<QueuedSound> {
         let mut sounds = Vec::new();
         self.block_breaking = input.block_breaking;
-        let dt = if dt.is_finite() { dt.clamp(0.0, 0.05) } else { 0.0 };
+        let dt = if dt.is_finite() {
+            dt.clamp(0.0, 0.05)
+        } else {
+            0.0
+        };
         let dt30 = dt * 30.0;
         let dt20 = dt * 20.0;
 
@@ -2094,8 +2080,10 @@ impl HmiState {
             * (1.0 - (self.trident_m_o * 6.0).clamp(0.0, 1.0));
 
         // Spear counters
-        let swing_main_sin = ((easings::ease_custom_sec(main_swing_prog) * 4.78).sin()).clamp(0.0, 1.0);
-        let swing_off_sin = ((easings::ease_custom_sec(off_swing_prog) * 4.78).sin()).clamp(0.0, 1.0);
+        let swing_main_sin =
+            ((easings::ease_custom_sec(main_swing_prog) * 4.78).sin()).clamp(0.0, 1.0);
+        let swing_off_sin =
+            ((easings::ease_custom_sec(off_swing_prog) * 4.78).sin()).clamp(0.0, 1.0);
         let prev_dismount = self.can_dismount_counter;
         let prev_knockback = self.can_knockback_counter;
         if input.using_item
@@ -2373,12 +2361,17 @@ impl HmiState {
             self.pitch_speed += 10.0 * (self.shield_disable * 3.14).sin() * 0.15 * dt30;
             self.pitch_speed += 12.0 * (self.shield_m * 3.14).sin() * 0.15 * dt30;
         }
-        self.pitch_speed += ((-20.0 * (self.can_dismount_counter * 3.14).sin() * self.spear_counter_m)
+        self.pitch_speed += ((-20.0
+            * (self.can_dismount_counter * 3.14).sin()
+            * self.spear_counter_m)
             + (20.0 * (self.can_knockback_counter * 3.14).sin() * self.spear_counter_m)
             + (12.0 * (self.inspection_counter * 3.14).sin())
             + (15.0 * (self.spear_counter_m * 3.14).sin())
-            + (-10.0 * ((easings::ease_in_back(self.hit_impact_counter) * 6.28).sin()).clamp(0.0, 1.0))
-            + (40.0 * (((self.main_hand_switch * 1.5 * sp).clamp(0.0, 1.0) * 6.28).sin()).clamp(0.0, 1.0)))
+            + (-10.0
+                * ((easings::ease_in_back(self.hit_impact_counter) * 6.28).sin()).clamp(0.0, 1.0))
+            + (40.0
+                * (((self.main_hand_switch * 1.5 * sp).clamp(0.0, 1.0) * 6.28).sin())
+                    .clamp(0.0, 1.0)))
             * 0.15
             * dt30;
         self.pitch_speed -= 0.04 * self.pitch_angle * dt30;
@@ -2407,12 +2400,15 @@ impl HmiState {
             self.pitch_speed_o += 10.0 * (self.shield_disable * 3.14).sin() * 0.15 * dt30;
             self.pitch_speed_o += 12.0 * (self.shield_o * 3.14).sin() * 0.15 * dt30;
         }
-        self.pitch_speed_o += ((-20.0 * (self.can_dismount_counter_o * 3.14).sin() * self.spear_counter_o)
-            + (20.0 * (self.can_knockback_counter_o * 3.14).sin() * self.spear_counter_o)
-            + (15.0 * (self.spear_counter_o * 3.14).sin())
-            + (40.0 * (((self.off_hand_switch * 1.5 * spo).clamp(0.0, 1.0) * 6.28).sin()).clamp(0.0, 1.0)))
-            * 0.15
-            * dt30;
+        self.pitch_speed_o +=
+            ((-20.0 * (self.can_dismount_counter_o * 3.14).sin() * self.spear_counter_o)
+                + (20.0 * (self.can_knockback_counter_o * 3.14).sin() * self.spear_counter_o)
+                + (15.0 * (self.spear_counter_o * 3.14).sin())
+                + (40.0
+                    * (((self.off_hand_switch * 1.5 * spo).clamp(0.0, 1.0) * 6.28).sin())
+                        .clamp(0.0, 1.0)))
+                * 0.15
+                * dt30;
         self.pitch_speed_o -= 0.04 * self.pitch_angle_o * dt30;
         self.pitch_speed_o *= 0.85_f32.powf(dt30);
         self.pitch_angle_o += self.pitch_speed_o * dt30;
@@ -2601,7 +2597,11 @@ impl HmiState {
                 || other_item.use_kind == UseKind::Bow
                 || (other_item.use_kind == UseKind::Crossbow && !other_item.is_charged_crossbow));
         let empty_flags = ItemFlags::empty();
-        let item = if empty_override { &empty_flags } else { raw_item };
+        let item = if empty_override {
+            &empty_flags
+        } else {
+            raw_item
+        };
 
         let raw_swing = if main_hand {
             self.main_swing(partial)
@@ -2753,7 +2753,8 @@ impl HmiState {
 
         // Hand switch animation
         if main_hand {
-            let switch_items = easings::ease_in_out_back((self.main_hand_switch.clamp(0.0, 0.5) * 3.14).sin());
+            let switch_items =
+                easings::ease_in_out_back((self.main_hand_switch.clamp(0.0, 0.5) * 3.14).sin());
             let switch_fast = (self.main_hand_switch.clamp(0.0, 0.125) * 12.56).sin();
             if item.use_kind == UseKind::Trident && self.trident_m > 0.9 {
                 mat.translate(0.0, -0.15 * switch_fast, -0.3 * switch_fast);
@@ -2778,7 +2779,8 @@ impl HmiState {
                 mat.translate(0.0, 0.0, 0.2 * switch_items);
             }
         } else if self.food_count_o == 0.0 {
-            let switch_items = easings::ease_in_out_back((self.off_hand_switch.clamp(0.0, 0.5) * 3.14).sin());
+            let switch_items =
+                easings::ease_in_out_back((self.off_hand_switch.clamp(0.0, 0.5) * 3.14).sin());
             let switch_fast = (self.off_hand_switch.clamp(0.0, 0.125) * 12.56).sin();
             if item.use_kind == UseKind::Crossbow {
                 mat.move_y(-0.25 * switch_fast);
@@ -2879,7 +2881,11 @@ impl HmiState {
         }
 
         // Fall & Walk bobbing
-        let fall_mul = if item.is_empty || item.is_block { 0.7 } else { 1.0 };
+        let fall_mul = if item.is_empty || item.is_block {
+            0.7
+        } else {
+            1.0
+        };
         if item.is_empty {
             mat.move_z(0.06 * self.fall * fall_mul);
         }
@@ -2911,7 +2917,11 @@ impl HmiState {
             mat.rotate_y_at(20.0 * l, 0.3 * l, -0.4, 0.0);
         }
         if item.use_kind == UseKind::Block {
-            let sh = if main_hand { self.shield_m } else { self.shield_o };
+            let sh = if main_hand {
+                self.shield_m
+            } else {
+                self.shield_o
+            };
             let eb = easings::ease_in_out_back(sh);
             mat.translate((-x_offset) * l * eb + 0.1 * l * eb, 0.0, 0.0);
             let rot_y = if item.is_sword() { 50.0 } else { 70.0 };
@@ -3006,11 +3016,7 @@ impl HmiState {
             || item.is_spear()
             || item.is_axe()
         {
-            if self.sword_attack
-                && self.sword_attack2
-                && !input.block_breaking
-                && item.is_sword()
-            {
+            if self.sword_attack && self.sword_attack2 && !input.block_breaking && item.is_sword() {
                 // Sword combo slash 2
                 mat.move_z(0.2 * swing_sword_tilt - 0.2 * swing_hit - 0.3 * swing_overall);
                 mat.move_x(
@@ -3139,11 +3145,21 @@ impl HmiState {
 
         // Equip progress & shield disable recoil
         let eq_sin = (equip_progress * equip_progress * equip_progress).sin();
-        let sh_dis_sin = (self.shield_disable * self.shield_disable * self.shield_disable * 3.14).sin();
+        let sh_dis_sin =
+            (self.shield_disable * self.shield_disable * self.shield_disable * 3.14).sin();
         if active_this_hand && item.use_kind == UseKind::Block {
-            let sh = if main_hand { self.shield_m } else { self.shield_o };
+            let sh = if main_hand {
+                self.shield_m
+            } else {
+                self.shield_o
+            };
             mat.move_x(-0.25 * (eq_sin + 4.0 * sh_dis_sin) * l * sh);
-            mat.rotate_z_at(10.0 * l * (eq_sin + 4.0 * sh_dis_sin) * sh, 0.3 * l, -0.4, 0.0);
+            mat.rotate_z_at(
+                10.0 * l * (eq_sin + 4.0 * sh_dis_sin) * sh,
+                0.3 * l,
+                -0.4,
+                0.0,
+            );
         }
         if item.use_kind == UseKind::Crossbow && (self.cross_bow_m + self.cross_bow_o) == 0.0 {
             mat.move_z(0.25 * eq_sin);
@@ -3182,7 +3198,11 @@ impl HmiState {
         mat.move_y(0.003 * input.pitch * self.smoothing);
         mat.move_x(-0.0025 * l * input.pitch * self.smoothing);
         if !item.is_empty {
-            mat.translate(-0.05 * l * self.smoothing, -0.1 * self.smoothing, -0.2 * self.smoothing);
+            mat.translate(
+                -0.05 * l * self.smoothing,
+                -0.1 * self.smoothing,
+                -0.2 * self.smoothing,
+            );
         }
 
         mat.move_z(0.2 * self.smoothing_crawl);
@@ -3195,7 +3215,11 @@ impl HmiState {
                 .clamp(0.0, 20.0),
         );
         if item.is_empty {
-            mat.translate(0.0, 0.3 * self.smoothing_crawl, -0.55 * self.smoothing_crawl);
+            mat.translate(
+                0.0,
+                0.3 * self.smoothing_crawl,
+                -0.55 * self.smoothing_crawl,
+            );
             mat.rotate_x(-45.0 * self.smoothing_crawl);
             mat.rotate_z_at(
                 (16.0 * self.crwl.sin() * self.smoothing_crawl * mult * self.crawl_default_pos)
@@ -3317,13 +3341,30 @@ impl HmiState {
                 mat.translate(0.135 * l * ef, -0.27 * ef, 0.155 * ef);
                 mat.rotate_x(30.0 * ef + 20.0 * self.drink_count);
                 if item.use_kind == UseKind::Eat {
-                    mat.rotate_x(3.0 * easings::ease_in_out_back((self.food_count_sec * 3.0).sin().abs()) * ef);
-                    mat.rotate_y(4.0 * l * easings::ease_in_out_back((self.food_count_sec * 2.0).sin().abs()) * ef);
-                    mat.rotate_z(6.0 * l * easings::ease_in_out_back((self.food_count_sec * 2.0).sin().abs()) * ef);
+                    mat.rotate_x(
+                        3.0 * easings::ease_in_out_back((self.food_count_sec * 3.0).sin().abs())
+                            * ef,
+                    );
+                    mat.rotate_y(
+                        4.0 * l
+                            * easings::ease_in_out_back((self.food_count_sec * 2.0).sin().abs())
+                            * ef,
+                    );
+                    mat.rotate_z(
+                        6.0 * l
+                            * easings::ease_in_out_back((self.food_count_sec * 2.0).sin().abs())
+                            * ef,
+                    );
                 } else {
-                    mat.rotate_x(2.0 * easings::ease_in_out_sine((self.food_count_sec * 2.0).sin()) * ef);
-                    mat.rotate_y(3.0 * l * easings::ease_in_out_sine(self.food_count_sec.sin()) * ef);
-                    mat.rotate_z(5.0 * l * easings::ease_in_out_sine(self.food_count_sec.sin()) * ef);
+                    mat.rotate_x(
+                        2.0 * easings::ease_in_out_sine((self.food_count_sec * 2.0).sin()) * ef,
+                    );
+                    mat.rotate_y(
+                        3.0 * l * easings::ease_in_out_sine(self.food_count_sec.sin()) * ef,
+                    );
+                    mat.rotate_z(
+                        5.0 * l * easings::ease_in_out_sine(self.food_count_sec.sin()) * ef,
+                    );
                 }
                 mat.rotate_y_at(60.0 * ef * l, 0.3 * l, -0.4, 0.0);
                 mat.rotate_x_at(25.0 * (ef * 3.14).sin(), 0.3 * l, -0.4, 0.0);
@@ -3347,13 +3388,30 @@ impl HmiState {
                 mat.translate(0.135 * l * ef, -0.27 * ef, 0.155 * ef);
                 mat.rotate_x(30.0 * ef + 20.0 * self.drink_count_o);
                 if item.use_kind == UseKind::Eat {
-                    mat.rotate_x(3.0 * easings::ease_in_out_back((self.food_count_sec_o * 3.0).sin().abs()) * ef);
-                    mat.rotate_y(4.0 * l * easings::ease_in_out_back((self.food_count_sec_o * 2.0).sin().abs()) * ef);
-                    mat.rotate_z(6.0 * l * easings::ease_in_out_back((self.food_count_sec_o * 2.0).sin().abs()) * ef);
+                    mat.rotate_x(
+                        3.0 * easings::ease_in_out_back((self.food_count_sec_o * 3.0).sin().abs())
+                            * ef,
+                    );
+                    mat.rotate_y(
+                        4.0 * l
+                            * easings::ease_in_out_back((self.food_count_sec_o * 2.0).sin().abs())
+                            * ef,
+                    );
+                    mat.rotate_z(
+                        6.0 * l
+                            * easings::ease_in_out_back((self.food_count_sec_o * 2.0).sin().abs())
+                            * ef,
+                    );
                 } else {
-                    mat.rotate_x(2.0 * easings::ease_in_out_sine((self.food_count_sec_o * 2.0).sin()) * ef);
-                    mat.rotate_y(3.0 * l * easings::ease_in_out_sine(self.food_count_sec_o.sin()) * ef);
-                    mat.rotate_z(5.0 * l * easings::ease_in_out_sine(self.food_count_sec_o.sin()) * ef);
+                    mat.rotate_x(
+                        2.0 * easings::ease_in_out_sine((self.food_count_sec_o * 2.0).sin()) * ef,
+                    );
+                    mat.rotate_y(
+                        3.0 * l * easings::ease_in_out_sine(self.food_count_sec_o.sin()) * ef,
+                    );
+                    mat.rotate_z(
+                        5.0 * l * easings::ease_in_out_sine(self.food_count_sec_o.sin()) * ef,
+                    );
                 }
                 mat.rotate_y_at(60.0 * l * ef, 0.3 * l, -0.4, 0.0);
                 mat.rotate_x_at(25.0 * (ef * 3.14).sin(), 0.3 * l, -0.4, 0.0);
@@ -3373,9 +3431,15 @@ impl HmiState {
         // Brush hand pose
         if item.use_kind == UseKind::Brush {
             let (bc, fc_sec) = if main_hand {
-                (easings::ease_in_out_back(self.brush_counter), self.food_count_sec)
+                (
+                    easings::ease_in_out_back(self.brush_counter),
+                    self.food_count_sec,
+                )
             } else {
-                (easings::ease_in_out_back(self.brush_counter_o), self.food_count_sec_o)
+                (
+                    easings::ease_in_out_back(self.brush_counter_o),
+                    self.food_count_sec_o,
+                )
             };
             let s = (fc_sec * 4.14).sin();
             mat.translate(-0.2 * l * bc * (1.0 + s), -0.3 * bc * (1.0 + s), -0.2 * bc);
@@ -3407,11 +3471,7 @@ impl HmiState {
         if item.is_filled_map() {
             let ems = easings::ease_in_out_back(self.map_smoother);
             let emz = easings::ease_out_back(self.map_zoomer);
-            mat.translate(
-                (0.3 - 0.1 * emz) * l * ems,
-                0.18 * ems,
-                0.12 * emz * ems,
-            );
+            mat.translate((0.3 - 0.1 * emz) * l * ems, 0.18 * ems, 0.12 * emz * ems);
             mat.rotate_x(input.pitch.clamp(0.0, 50.0) * ems - 40.0 * ems);
             mat.rotate_y_at((40.0 + 30.0 * emz) * l * ems, 0.3 * l, -0.4, 0.0);
 
@@ -3507,23 +3567,12 @@ impl HmiState {
                 -0.35,
             );
             let sw2 = (sw * 2.0).clamp(0.0, 1.0);
-            mat.rotate_z_at(
-                -8.0 * (sw2 * 6.28).sin().powi(2) * l,
-                0.5 * l,
-                -0.5,
-                0.0,
-            );
+            mat.rotate_z_at(-8.0 * (sw2 * 6.28).sin().powi(2) * l, 0.5 * l, -0.5, 0.0);
             mat.rotate_x_at(20.0 * (sw2 * 3.14).sin().powi(2), 0.5 * l, -0.5, 0.0);
         }
     }
 
-    fn apply_hand_relative_pose(
-        &self,
-        mat: &mut Mat4f,
-        main_hand: bool,
-        l: f32,
-        item: &ItemFlags,
-    ) {
+    fn apply_hand_relative_pose(&self, mat: &mut Mat4f, main_hand: bool, l: f32, item: &ItemFlags) {
         if item.is_empty && self.drink_count > 0.0 {
             mat.translate(1.5 * l, -0.3, -0.47);
             mat.rotate_x_at(15.0, 0.5 * l, 0.5, 0.5);
@@ -3536,9 +3585,8 @@ impl HmiState {
         } else {
             self.off_hand_switch
         };
-        let switch_anim = easings::ease_in_back(
-            (switch_val.clamp(0.09723, 0.60632) * 3.24 * 1.65 - 0.1).sin(),
-        );
+        let switch_anim =
+            easings::ease_in_back((switch_val.clamp(0.09723, 0.60632) * 3.24 * 1.65 - 0.1).sin());
         if item.has_switch_flip() {
             mat.rotate_x(10.0 * switch_anim);
             mat.rotate_z(6.0 * switch_anim);
@@ -3616,16 +3664,21 @@ impl HmiState {
             };
             let esc = easings::ease_in_out_back(sc * 0.8);
             let escd = easings::ease_in_out_back(scd);
-            mat.rotate_z(180.0 * l - 180.0 * easings::ease_in_out_back((sw * 2.0).clamp(0.0, 1.0)) * l);
+            mat.rotate_z(
+                180.0 * l - 180.0 * easings::ease_in_out_back((sw * 2.0).clamp(0.0, 1.0)) * l,
+            );
             mat.move_z(-0.2 * easings::ease_in_out_sine(esc));
             mat.move_y(-0.05 * escd);
             mat.rotate_x(-70.0 * esc - 8.0 * escd);
             mat.rotate_y(
-                60.0 * esc * l
-                    - 30.0 * escd * l
-                    - 60.0 * easings::ease_out_back(sck) * sck * l,
+                60.0 * esc * l - 30.0 * escd * l - 60.0 * easings::ease_out_back(sck) * sck * l,
             );
-            mat.move_y(-0.25 * (easings::ease_in_out_sine(hic) * 6.28).sin().clamp(0.0, 1.0));
+            mat.move_y(
+                -0.25
+                    * (easings::ease_in_out_sine(hic) * 6.28)
+                        .sin()
+                        .clamp(0.0, 1.0),
+            );
         }
 
         if (item.use_kind != UseKind::Block && item.use_kind != UseKind::Crossbow)
@@ -3656,8 +3709,7 @@ impl HmiState {
             if item.is_shovel() {
                 mat.translate(0.0, 0.12 * swing_sword_tilt, 0.05 * swing_sword_tilt);
                 mat.rotate_x(
-                    10.0 * swing_sword_tilt
-                        - 30.0 * swing_overall
+                    10.0 * swing_sword_tilt - 30.0 * swing_overall
                         + 20.0 * swing_rot
                         + 10.0 * swing_hit_second,
                 );
@@ -3729,17 +3781,32 @@ impl HmiState {
                 );
                 mat.rotate_z_at(-yw_angle, -0.1 * l, 0.4, 0.1);
             } else if item.is_lantern() {
-                mat.rotate_x_at((input.pitch / 2.5).clamp(-20.0, 90.0) + pt_angle, 0.0, 0.4, 0.0);
+                mat.rotate_x_at(
+                    (input.pitch / 2.5).clamp(-20.0, 90.0) + pt_angle,
+                    0.0,
+                    0.4,
+                    0.0,
+                );
                 mat.rotate_z_at(-yw_angle, 0.0, 0.4, 0.0);
             }
             if item.is_hanging_sign() {
-                mat.rotate_x_at((input.pitch / 2.5).clamp(-35.0, 90.0) + pt_angle, 0.0, 0.55, 0.0);
+                mat.rotate_x_at(
+                    (input.pitch / 2.5).clamp(-35.0, 90.0) + pt_angle,
+                    0.0,
+                    0.55,
+                    0.0,
+                );
                 mat.rotate_z_at(-yw_angle, 0.0, 0.55, 0.0);
             }
         } else if item.is_painting_or_frame() {
             mat.rotate_x(-25.0);
             mat.move_y(-0.65);
-            mat.rotate_x_at((input.pitch / 2.5).clamp(-25.0, 90.0) + pt_angle, 0.0, 0.45, 0.0);
+            mat.rotate_x_at(
+                (input.pitch / 2.5).clamp(-25.0, 90.0) + pt_angle,
+                0.0,
+                0.45,
+                0.0,
+            );
             mat.rotate_z_at(-yw_angle, 0.0, 0.55, 0.0);
         } else if item.is_block {
             mat.translate(0.0, -0.025, -0.025);
@@ -3856,9 +3923,8 @@ impl HmiState {
         } else {
             self.off_hand_switch
         };
-        let switch_anim = easings::ease_in_back(
-            (switch_val.clamp(0.09723, 0.60632) * 3.24 * 1.65 - 0.1).sin(),
-        );
+        let switch_anim =
+            easings::ease_in_back((switch_val.clamp(0.09723, 0.60632) * 3.24 * 1.65 - 0.1).sin());
         if item.has_switch_flip() {
             mat.rotate_x(-10.0 * switch_anim);
             mat.move_y(0.62 * switch_anim + (0.1 * self.fall).clamp(0.0, 255.0));
@@ -4141,15 +4207,15 @@ impl HmiState {
             + self.drink_count * self.drink_count * 2.75)
             + (0.25 * (self.food_count_sec_o * 3.0).sin() * self.drink_count_o
                 + self.drink_count_o * self.drink_count_o * 2.75);
-        let pitch = (food_cam + drink_cam + self.fall * 0.35 + self.pitch_angle * 0.015)
-            .clamp(-6.0, 6.0);
+        let pitch =
+            (food_cam + drink_cam + self.fall * 0.35 + self.pitch_angle * 0.015).clamp(-6.0, 6.0);
         let roll = (self.yaw_angle * 0.04
             + 0.15 * (self.food_count_sec * 4.0).cos() * self.drink_count
             + 0.15 * (self.food_count_sec_o * 4.0).cos() * self.drink_count_o)
             .clamp(-4.0, 4.0);
         let ox = (0.0015 * self.yaw_angle * self.walk_smoother).clamp(-0.08, 0.08);
-        let oy = (0.025 * (self.walk * 0.8).sin().powi(3).abs() * self.walk_smoother)
-            .clamp(0.0, 0.08);
+        let oy =
+            (0.025 * (self.walk * 0.8).sin().powi(3).abs() * self.walk_smoother).clamp(0.0, 0.08);
         (pitch, 0.0, roll, [ox, oy, 0.0])
     }
 }
@@ -4158,10 +4224,15 @@ impl HmiState {
 pub fn hand_light_for_item(item_id: &str) -> Option<(u32, f32, f32)> {
     let s = item_id.strip_prefix("minecraft:").unwrap_or(item_id);
     match s {
-        "torch" | "lantern" | "jack_o_lantern" | "campfire" | "glowstone" | "shroomlight"
-        | "ochre_froglight" | "pearlescent_froglight" | "verdant_froglight" => {
-            Some((0xFFB45A, 11.0, 0.85))
-        }
+        "torch"
+        | "lantern"
+        | "jack_o_lantern"
+        | "campfire"
+        | "glowstone"
+        | "shroomlight"
+        | "ochre_froglight"
+        | "pearlescent_froglight"
+        | "verdant_froglight" => Some((0xFFB45A, 11.0, 0.85)),
         "soul_torch" | "soul_lantern" | "soul_campfire" => Some((0x4AD8FF, 9.0, 0.75)),
         "redstone_torch" => Some((0xFF3828, 7.0, 0.55)),
         "lava_bucket" => Some((0xFF7A24, 12.0, 0.95)),
@@ -4372,8 +4443,15 @@ mod tests {
         // A swing that started as a normal click speeds up once mining begins,
         // without the progress jumping backwards or past the end.
         let mut state = HmiState::default();
-        let idle = PlayerFrameInput { on_ground: true, ..Default::default() };
-        let digging = PlayerFrameInput { on_ground: true, block_breaking: true, ..Default::default() };
+        let idle = PlayerFrameInput {
+            on_ground: true,
+            ..Default::default()
+        };
+        let digging = PlayerFrameInput {
+            on_ground: true,
+            block_breaking: true,
+            ..Default::default()
+        };
         state.on_swing_ex(true, &pickaxe, &cfg, false);
         state.step_frame(0.05, 0.5, &pickaxe, &off, &idle, &cfg);
         let before = state.main_hand_swing_progress;

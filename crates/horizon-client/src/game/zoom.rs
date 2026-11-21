@@ -2,9 +2,9 @@
 //! to zoom in, and turn the mouse wheel while holding it to zoom further in or out.
 //! Settings are kept in `Options > Mods > Zoom`.
 
-use std::cell::RefCell;
 use super::Game;
 use crate::mod_api::{NativeMod, NativeZoom};
+use std::cell::RefCell;
 
 /// The mod's id: its settings folder and its key's line.
 pub const ID: &str = "zoom";

@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, PoisonError};
 
-use crate::game::Game;
 use super::core as m;
+use crate::game::Game;
 
 pub const CHANNEL: &str = "elytratrails:color";
 const ENTRY: usize = 18;
@@ -66,12 +66,18 @@ impl Game<'_> {
         }
         self.lan_acting_uuid.unwrap_or_else(|| {
             self.level.player_uuid.map_or(0, |u| {
-                u.iter().fold(0u128, |a, &w| (a << 32) | u128::from(w as u32))
+                u.iter()
+                    .fold(0u128, |a, &w| (a << 32) | u128::from(w as u32))
             })
         })
     }
 
-    pub(crate) fn elytratrails_net_from_client(&mut self, player: u128, channel: &str, data: &[u8]) {
+    pub(crate) fn elytratrails_net_from_client(
+        &mut self,
+        player: u128,
+        channel: &str,
+        data: &[u8],
+    ) {
         if channel != CHANNEL || data.len() < 2 || !valid(data[0], data[1]) {
             return;
         }
@@ -87,7 +93,11 @@ impl Game<'_> {
     }
 
     pub(crate) fn elytratrails_net_server_tick(&mut self) {
-        let active: HashSet<u128> = self.native_server_players().iter().map(|p| p.uuid).collect();
+        let active: HashSet<u128> = self
+            .native_server_players()
+            .iter()
+            .map(|p| p.uuid)
+            .collect();
         let changed = with_net(|net| {
             let dropped = net.server.len();
             net.server.retain(|uuid, _| active.contains(uuid));

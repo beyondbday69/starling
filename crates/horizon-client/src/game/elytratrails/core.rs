@@ -4,11 +4,26 @@ use std::sync::{Mutex, PoisonError};
 pub const ID: &str = "elytratrails";
 pub const NAME: &str = "ElytraTrails";
 pub const VERSION: &str = "0.1.2";
-pub const DESCRIPTION: &str = "Lines from the wingtips of gliding elytra that fade out over time, shared with other players.";
+pub const DESCRIPTION: &str =
+    "Lines from the wingtips of gliding elytra that fade out over time, shared with other players.";
 
 pub const KEYS: [&str; 16] = [
-    "trails", "own", "others", "color", "duration", "width", "pattern", "pulse", "fix_own", "fix_others",
-    "detail", "range", "formation", "flash", "day_night", "first_person",
+    "trails",
+    "own",
+    "others",
+    "color",
+    "duration",
+    "width",
+    "pattern",
+    "pulse",
+    "fix_own",
+    "fix_others",
+    "detail",
+    "range",
+    "formation",
+    "flash",
+    "day_night",
+    "first_person",
 ];
 pub const COLORS: [&str; 7] = ["ice", "gold", "rose", "violet", "white", "rainbow", "speed"];
 pub const WIDTHS: [&str; 3] = ["thin", "normal", "wide"];
@@ -129,7 +144,11 @@ pub fn cycle(names: &[&'static str], current: usize) -> &'static str {
 }
 
 pub fn next_duration(seconds: u64) -> u64 {
-    if seconds >= MAX_DURATION { MIN_DURATION } else { seconds + 1 }
+    if seconds >= MAX_DURATION {
+        MIN_DURATION
+    } else {
+        seconds + 1
+    }
 }
 
 pub fn page() -> usize {
@@ -155,7 +174,10 @@ pub fn labels(settings: Settings) -> Vec<String> {
         format!("Pattern: {}", PATTERNS[settings.pattern]),
         format!("Pulse: {}", flag(settings.pulse)),
         format!("Day/night brightness: {}", flag(settings.day_night)),
-        format!("Your trail in first person: {}", flag(settings.first_person)),
+        format!(
+            "Your trail in first person: {}",
+            flag(settings.first_person)
+        ),
         "Optimization >".to_owned(),
     ]
 }
@@ -163,8 +185,14 @@ pub fn labels(settings: Settings) -> Vec<String> {
 pub fn optimization_labels(settings: Settings) -> Vec<String> {
     vec![
         format!("Your wings: {}", fixed_label(settings.own_fixed)),
-        format!("Other players' wings: {}", fixed_label(settings.others_fixed)),
-        format!("Line detail: {}", if settings.half_detail { "half" } else { "full" }),
+        format!(
+            "Other players' wings: {}",
+            fixed_label(settings.others_fixed)
+        ),
+        format!(
+            "Line detail: {}",
+            if settings.half_detail { "half" } else { "full" }
+        ),
         format!("Other players' range: {} blocks", settings.range_blocks()),
         format!("Formation lines: {}", flag(settings.formation)),
         format!("Boost flash: {}", flag(settings.flash)),

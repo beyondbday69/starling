@@ -5,10 +5,10 @@
 // the page in Options > Mods and the keys. Elytra trails are in
 // `crate::game::livingmotion_trails` (MPL-2.0).
 
-use crate::game::Game;
 use super::trails;
-use crate::mobs::livingmotion as rig;
+use crate::game::Game;
 use crate::game::native_hooks::NativeMod;
+use crate::mobs::livingmotion as rig;
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::sync::Mutex;
@@ -20,8 +20,10 @@ const VERSION: &str = "1.2.0";
 const DESCRIPTION: &str = "Livelier players in third and first person: lean, bank, bounce, landing squash, jump poses, swings that follow through, mining, eating and drinking to the mouth, maps in both hands, compasses, lanterns, climbing hand over hand, item inspect, elytra rolls, twirls and contrails, swim strokes.";
 const KEY_TOGGLE: (&str, &str, &str) = ("toggle", "Toggle Living Motion", "key.keyboard.y");
 const KEY_INSPECT: (&str, &str, &str) = ("inspect", "Inspect held item", "key.keyboard.i");
-const KEY_TWIRL_LEFT: (&str, &str, &str) = ("twirl_left", "Elytra twirl left", "key.keyboard.comma");
-const KEY_TWIRL_RIGHT: (&str, &str, &str) = ("twirl_right", "Elytra twirl right", "key.keyboard.period");
+const KEY_TWIRL_LEFT: (&str, &str, &str) =
+    ("twirl_left", "Elytra twirl left", "key.keyboard.comma");
+const KEY_TWIRL_RIGHT: (&str, &str, &str) =
+    ("twirl_right", "Elytra twirl right", "key.keyboard.period");
 const KEYS: [(&str, &str, &str); 4] = [KEY_TOGGLE, KEY_INSPECT, KEY_TWIRL_LEFT, KEY_TWIRL_RIGHT];
 
 /// `config.json`.
@@ -50,7 +52,11 @@ struct Config {
 }
 impl Default for Config {
     fn default() -> Self {
-        Self::from((rig::Settings::default(), true, trails::TrailConfig::default()))
+        Self::from((
+            rig::Settings::default(),
+            true,
+            trails::TrailConfig::default(),
+        ))
     }
 }
 impl From<(rig::Settings, bool, trails::TrailConfig)> for Config {
@@ -80,7 +86,13 @@ impl From<(rig::Settings, bool, trails::TrailConfig)> for Config {
 }
 impl Config {
     fn settings(self) -> rig::Settings {
-        let a = |v: f32| if v.is_finite() { v.clamp(0.0, 2.0) } else { 1.0 };
+        let a = |v: f32| {
+            if v.is_finite() {
+                v.clamp(0.0, 2.0)
+            } else {
+                1.0
+            }
+        };
         rig::Settings {
             enabled: self.enabled,
             others: self.others,
@@ -222,8 +234,9 @@ pub(crate) fn frame(game: &mut Game<'_>) {
         let mut inputs = cell.borrow_mut();
         inputs.clear();
         if let Some(m) = g.player_model.as_ref() {
-            let (busy, gliding, swimming) =
-                g.player.as_ref().map_or((false, false, false), |p| (p.sleeping, p.fall_flying, p.swimming));
+            let (busy, gliding, swimming) = g.player.as_ref().map_or((false, false, false), |p| {
+                (p.sleeping, p.fall_flying, p.swimming)
+            });
             let mut input = rig::Input::with(m, busy, gliding, swimming);
             input.mining = g.mining.is_some();
             input.inspect = inspect;
@@ -231,7 +244,9 @@ pub(crate) fn frame(game: &mut Game<'_>) {
             inputs.push(input);
         }
         for m in g.mobs.iter() {
-            if &*m.kind.id == "minecraft:player" && g.player_model.as_ref().is_none_or(|p| p.id != m.id) {
+            if &*m.kind.id == "minecraft:player"
+                && g.player_model.as_ref().is_none_or(|p| p.id != m.id)
+            {
                 inputs.push(rig::Input::of(m, false));
             }
         }
@@ -246,7 +261,10 @@ pub(crate) fn frame(game: &mut Game<'_>) {
     };
     s.look = Some((yaw, pitch));
     let per_second = |d: f32| if dt > 0.0 { d / dt } else { 0.0 };
-    let lag = [(-per_second(dyaw) * 0.025).clamp(-9.0, 9.0), (-per_second(dpitch) * 0.025).clamp(-7.0, 7.0)];
+    let lag = [
+        (-per_second(dyaw) * 0.025).clamp(-9.0, 9.0),
+        (-per_second(dpitch) * 0.025).clamp(-7.0, 7.0),
+    ];
     for (spring, target) in s.sway.iter_mut().zip(lag) {
         spring.step(target, 90.0, 14.0, dt.clamp(0.0, 0.1));
     }
@@ -276,7 +294,9 @@ pub(crate) fn hand_pose(
     if !set.enabled || !set.first_person || !game.native_on(ID) {
         return;
     }
-    let Some(m) = game.player_model.as_ref() else { return };
+    let Some(m) = game.player_model.as_ref() else {
+        return;
+    };
     let Some(o) = rig::current(m.id) else { return };
     let main = hand == horizon_client::first_person::Hand::Main;
     // Which side of the screen: the main hand on the main arm.
@@ -285,9 +305,13 @@ pub(crate) fn hand_pose(
     let k = set.first_person_amount * o.weight.max(o.glide.max(o.swim));
     let (sway, age) = {
         let st = state();
-        ([st.sway[0].x, st.sway[1].x], st.start.map_or(0.0, |t| t.elapsed().as_secs_f32()))
+        (
+            [st.sway[0].x, st.sway[1].x],
+            st.start.map_or(0.0, |t| t.elapsed().as_secs_f32()),
+        )
     };
-    let (mut dx, mut dy, mut dz, mut dp, mut dyw, mut dr) = (0.0f32, 0.0f32, 0.0f32, 0.0f32, 0.0f32, 0.0f32);
+    let (mut dx, mut dy, mut dz, mut dp, mut dyw, mut dr) =
+        (0.0f32, 0.0f32, 0.0f32, 0.0f32, 0.0f32, 0.0f32);
     // Sway: behind the view as it turns.
     dyw += sway[0];
     dp += sway[1];
@@ -295,7 +319,9 @@ pub(crate) fn hand_pose(
     dy -= sway[1] * 0.002;
     // Stride: a small figure eight, and a roll with each step.
     let pos = horizon_client::mobs::anim::walk_position(m, partial) * 0.6662;
-    let speed = (m.previous_limb_speed + (m.limb_speed - m.previous_limb_speed) * partial).clamp(0.0, 1.0) * (1.0 - o.glide);
+    let speed = (m.previous_limb_speed + (m.limb_speed - m.previous_limb_speed) * partial)
+        .clamp(0.0, 1.0)
+        * (1.0 - o.glide);
     dx += s * pos.sin() * 0.014 * speed;
     dy -= pos.cos().abs() * 0.02 * speed;
     dr += s * pos.sin() * 1.6 * speed;
@@ -357,7 +383,12 @@ pub(crate) fn hand_pose(
 
 // ---------------------------------------------------------------- the world: trails
 
-pub(crate) fn world(game: &Game<'_>, camera: glam::DVec3, partial: f64, out: &mut Vec<horizon_client::mesher::Vertex>) {
+pub(crate) fn world(
+    game: &Game<'_>,
+    camera: glam::DVec3,
+    partial: f64,
+    out: &mut Vec<horizon_client::mesher::Vertex>,
+) {
     if !game.native_window() {
         return;
     }
@@ -372,7 +403,10 @@ pub(crate) fn listed(mods: &mut Vec<NativeMod>) {
         id: ID.into(),
         title: format!("{NAME} {VERSION}"),
         description: DESCRIPTION.into(),
-        keys: KEYS.iter().map(|(n, l, d)| [(*n).to_owned(), (*l).to_owned(), (*d).to_owned()]).collect(),
+        keys: KEYS
+            .iter()
+            .map(|(n, l, d)| [(*n).to_owned(), (*l).to_owned(), (*d).to_owned()])
+            .collect(),
     });
 }
 
@@ -443,7 +477,11 @@ const SPEEDS: [f32; 5] = [0.0, 0.5, 0.75, 0.8, 1.2];
 
 /// The next value after `v` in `steps`, round again.
 fn next(v: f32, steps: &[f32]) -> f32 {
-    steps.iter().copied().find(|s| *s > v + 1e-4).unwrap_or(steps[0])
+    steps
+        .iter()
+        .copied()
+        .find(|s| *s > v + 1e-4)
+        .unwrap_or(steps[0])
 }
 
 pub(crate) fn settings_page(game: &mut Game<'_>, mod_id: &str, out: &mut Vec<String>) {
@@ -472,7 +510,10 @@ pub(crate) fn settings_page(game: &mut Game<'_>, mod_id: &str, out: &mut Vec<Str
             Button::Trails => format!("Elytra trails: {}", on_off(t.enabled)),
             Button::TrailsOthers => format!("Other players' trails: {}", on_off(t.others)),
             Button::TrailPreset => format!("Trail preset: {}", preset.map_or("Custom", |p| p.0)),
-            Button::TrailColor => format!("Trail colour: {}", trails::COLORS[t.color.min(trails::COLORS.len() - 1)].0),
+            Button::TrailColor => format!(
+                "Trail colour: {}",
+                trails::COLORS[t.color.min(trails::COLORS.len() - 1)].0
+            ),
             Button::TrailWidth => format!("Trail width: {:.2} blocks", t.width),
             Button::TrailLength => format!("Trail duration: {:.1} s", t.lifetime),
             Button::TrailSpeed => format!("Trail minimum speed: {:.2}", t.min_speed),
@@ -488,7 +529,9 @@ pub(crate) fn settings_click(game: &mut Game<'_>, mod_id: &str, button: usize) {
         return;
     }
     ensure_loaded(game);
-    let Some(b) = buttons().into_iter().nth(button) else { return };
+    let Some(b) = buttons().into_iter().nth(button) else {
+        return;
+    };
     let mut s = rig::settings();
     let mut t = trails::config();
     match b {
@@ -498,7 +541,11 @@ pub(crate) fn settings_click(game: &mut Game<'_>, mod_id: &str, button: usize) {
         Button::Amount(i) => {
             // 0% to 200% in steps of 25%, round again.
             let v = AMOUNTS[i].1(&mut s);
-            *v = if *v >= 1.999 { 0.0 } else { ((*v / 0.25).round() + 1.0) * 0.25 };
+            *v = if *v >= 1.999 {
+                0.0
+            } else {
+                ((*v / 0.25).round() + 1.0) * 0.25
+            };
         }
         Button::SteadyHead => s.steady_head = !s.steady_head,
         Button::Twirls => {
@@ -508,7 +555,9 @@ pub(crate) fn settings_click(game: &mut Game<'_>, mod_id: &str, button: usize) {
         Button::Trails => t.enabled = !t.enabled,
         Button::TrailsOthers => t.others = !t.others,
         Button::TrailPreset => {
-            let i = trails::PRESETS.iter().position(|(_, p)| p.width == t.width && p.color == t.color && p.lifetime == t.lifetime);
+            let i = trails::PRESETS.iter().position(|(_, p)| {
+                p.width == t.width && p.color == t.color && p.lifetime == t.lifetime
+            });
             let (enabled, others, min_speed) = (t.enabled, t.others, t.min_speed);
             t = trails::PRESETS[i.map_or(0, |i| (i + 1) % trails::PRESETS.len())].1;
             (t.enabled, t.others, t.min_speed) = (enabled, others, min_speed);
@@ -544,7 +593,11 @@ pub(crate) fn key(game: &mut Game<'_>, key: &str, pressed: bool) {
         s.enabled = !s.enabled;
         rig::set_settings(s);
         save();
-        game.native_chat(if s.enabled { "[Living Motion] On." } else { "[Living Motion] Off: vanilla animations." });
+        game.native_chat(if s.enabled {
+            "[Living Motion] On."
+        } else {
+            "[Living Motion] Off: vanilla animations."
+        });
     } else if bound(game, KEY_INSPECT, key) {
         state().inspect = true;
     } else if bound(game, KEY_TWIRL_LEFT, key) {

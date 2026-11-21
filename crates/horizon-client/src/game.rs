@@ -124,6 +124,7 @@ mod dispense_fixture;
 mod dispenser;
 mod dragon;
 mod dynamic_lights;
+pub(crate) mod elytratrails;
 mod enchant_effects;
 mod end;
 mod entity;
@@ -155,11 +156,8 @@ mod glowing;
 mod golems;
 mod growth;
 mod hand;
-pub(crate) mod holdmyitems;
-pub(crate) mod zoom;
-pub(crate) mod elytratrails;
-pub(crate) mod livingmotion;
 mod headless;
+pub(crate) mod holdmyitems;
 mod ime;
 mod imports;
 mod initial_spawn;
@@ -199,6 +197,7 @@ mod leads;
 mod level_particles;
 mod levels;
 mod lightning;
+pub(crate) mod livingmotion;
 mod llamas;
 mod locator_bar;
 mod loom;
@@ -380,6 +379,7 @@ mod world_content;
 mod world_loading;
 mod zombie_reinforcements;
 mod zombie_villagers;
+pub(crate) mod zoom;
 use event_loop::EventLoopCtl;
 use horizon_client::spans::startup;
 use horizon_client::{
@@ -11986,6 +11986,7 @@ impl Game<'_> {
             Action::Quit if self.options.split_guest => {}
             Action::Quit => event_loop.exit(),
             Action::Options => self.open_options(true),
+            Action::Mods => self.open_options_at(true, horizon_client::options_ui::Page::Mods),
             Action::Accessibility => {
                 self.open_options_at(true, horizon_client::options_ui::Page::Accessibility)
             }

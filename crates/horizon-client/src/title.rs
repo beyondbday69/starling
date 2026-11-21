@@ -90,12 +90,21 @@ fn recover_issues(dir: &Path) -> [Option<crate::save::DatIssue>; 2] {
         crate::save::level_dat_issue(dir, true),
     ]
 }
+/// Whether the modern asymmetric left dock layout should be used (default on mobile/Android).
+pub(crate) fn is_modern_dock(w: f32, h: f32) -> bool {
+    cfg!(target_os = "android")
+        || (w / h > 1.3 && !cfg!(test) && std::env::var("HORIZON_CLASSIC_TITLE").is_err())
+}
+
 /// The SafetyScreen's column (WarningScreen: title, 12 px around the message
 /// box of its lines and 4 px padding, the checkbox, then the buttons, 8 px
 /// apart): the title's top.
 /// `LogoRenderer.extractRenderState`: the logo's top 44 of 64 rows, then the
 /// edition banner's top 14 of 16 rows overlapping its bottom by 7.
 fn draw_logo(atlas: &HudAtlas, batch: &mut HudBatch, w: f32) {
+    if is_modern_dock(w, batch.height) {
+        return;
+    }
     batch.sprite_region(
         atlas,
         "gui/title/minecraft",
@@ -367,6 +376,7 @@ pub enum Action {
     None,
     Quit,
     Options,
+    Mods,
     Accessibility,
     Language,
     /// AccessibilityOnboardingScreen's Music & Sounds button.
@@ -1682,6 +1692,93 @@ impl Title {
         }
         folder
     }
+    fn modern_dock_buttons(&self, w: f32, h: f32) -> Vec<Button> {
+        let b = |x: f32, y: f32, bw: f32, label: &str, enabled: bool, id: u8| Button {
+            x,
+            y,
+            w: bw,
+            label: label.into(),
+            enabled,
+            id,
+            icon: None,
+            trailing: None,
+        };
+        let dock_x = 20.0;
+        let bw = 150.0;
+        let start_y = (h / 2.0 - 54.0).max(46.0);
+        let mut buttons = vec![
+            b(
+                dock_x,
+                start_y,
+                bw,
+                &lang::get_or("menu.singleplayer", "Play"),
+                true,
+                1,
+            ),
+            b(
+                dock_x,
+                start_y + 24.0,
+                bw,
+                &lang::get_or("menu.multiplayer", "Servers"),
+                self.allows_multiplayer,
+                4,
+            ),
+            b(
+                dock_x,
+                start_y + 48.0,
+                bw,
+                &lang::get_or("menu.options", "Options..."),
+                true,
+                3,
+            ),
+            b(
+                dock_x,
+                start_y + 72.0,
+                bw,
+                &lang::get_or("gui.mods", "Mods"),
+                true,
+                9,
+            ),
+            b(
+                dock_x,
+                start_y + 96.0,
+                bw,
+                &lang::get_or("menu.quit", "Quit Game"),
+                true,
+                2,
+            ),
+        ];
+        // Clean icon buttons: language, accessibility, friends (Minecraft sprites, no emojis)
+        for (i, (key, plain, id, icon)) in [
+            ("options.language", "Language...", 6, "icon/language"),
+            (
+                "options.accessibility",
+                "Accessibility Settings...",
+                7,
+                "icon/accessibility",
+            ),
+            ("gui.friends.open", "Friends", 5, "friends/friends"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let mut button = b(
+                dock_x + i as f32 * 24.0,
+                start_y + 122.0,
+                20.0,
+                &lang::get_or(key, plain),
+                true,
+                id,
+            );
+            button.icon = Some((icon, 15.0));
+            buttons.push(button);
+        }
+        if crate::accounts::in_game() {
+            buttons.push(b(w - 124.0, 8.0, 116.0, &account::main_label(), true, 8));
+        }
+        buttons
+    }
+
     fn buttons(&self, w: f32, h: f32) -> Vec<Button> {
         // The game rules draw and press their own.
         if self.rules.borrow().is_some() {
@@ -1700,6 +1797,9 @@ impl Title {
         };
         match &self.mode {
             Mode::Main => {
+                if is_modern_dock(w, h) {
+                    return self.modern_dock_buttons(w, h);
+                }
                 let cx = (w / 2.0).floor();
                 let y = (h / 4.0).floor() + 48.0;
                 let mut buttons = vec![
@@ -2449,62 +2549,118 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
         }
         match &self.mode {
             Mode::Main => {
-                draw_logo(atlas, batch, w);
-                if !hide_splash && let Some(splash) = self.splash.as_deref() {
-                    let tw = HudBatch::text_width(atlas, splash);
+                if is_modern_dock(w, h) {
+                    let dock_x = 20.0;
+                    let dock_w = 150.0;
+                    let panel_w = dock_x + dock_w + 16.0;
+
+                    // Frosted dark acrylic backdrop plate for left dock
+                    batch.fill(atlas, 0.0, 0.0, panel_w, h, rgba(12, 16, 22, 160));
+                    batch.fill(atlas, panel_w - 1.0, 0.0, 1.0, h, rgba(255, 255, 255, 20));
+
+                    // Sleek Starling title (clean, bold, no cringe text)
                     let start = batch.vertices.len();
+                    batch.text(atlas, "STARLING", 0.0, 0.0, 0xFFFFFFFF, true);
+                    let scale = 1.4;
+                    for v in &mut batch.vertices[start..] {
+                        let [vx, vy] = v.pos;
+                        v.pos = [dock_x + vx * scale, 20.0 + vy * scale];
+                    }
+
+                    // Clean Starling version at dock bottom (no cringe developer boasts)
+                    let version = format!("Starling {}", horizon_core::VANILLA_VERSION);
                     batch.text(
                         atlas,
-                        splash,
-                        -(tw / 2.0).floor(),
-                        -8.0,
-                        rgba(255, 255, 0, 255),
+                        &version,
+                        dock_x,
+                        h - 14.0,
+                        rgba(150, 155, 165, 180),
                         true,
                     );
-                    let scale = (1.8
-                        - (self.started.elapsed().as_secs_f32() * std::f32::consts::TAU)
-                            .sin()
-                            .abs()
-                            * 0.1)
-                        * 100.0
-                        / (tw + 32.0);
-                    let (sin, cos) = (-20.0f32).to_radians().sin_cos();
-                    for v in &mut batch.vertices[start..] {
-                        let [x, y] = v.pos;
-                        v.pos = [
-                            w / 2.0 + 123.0 + scale * (x * cos - y * sin),
-                            69.0 + scale * (x * sin + y * cos),
-                        ];
+
+                    let notice = &lang::get_or(
+                        "horizon.title.not_affiliated",
+                        "Not affiliated with Mojang or Microsoft",
+                    );
+                    let tw = HudBatch::text_width(atlas, notice).ceil();
+                    let rect = [w - tw - 6.0, h - 14.0, tw, 10.0];
+                    self.credits_button.set(rect);
+                    crate::widgets::record(notice, rect, true);
+                    let inside = cursor.0 >= rect[0]
+                        && cursor.0 < rect[0] + rect[2]
+                        && cursor.1 >= rect[1]
+                        && cursor.1 < rect[1] + rect[3];
+                    crate::widgets::widget_cursor(inside, true);
+                    let mut text = Text::literal(notice);
+                    if inside {
+                        text = text.underlined();
                     }
+                    batch.text_styled(
+                        atlas,
+                        &text,
+                        rect[0],
+                        rect[1],
+                        rgba(150, 155, 165, 180),
+                        true,
+                    );
+                } else {
+                    draw_logo(atlas, batch, w);
+                    if !hide_splash && let Some(splash) = self.splash.as_deref() {
+                        let tw = HudBatch::text_width(atlas, splash);
+                        let start = batch.vertices.len();
+                        batch.text(
+                            atlas,
+                            splash,
+                            -(tw / 2.0).floor(),
+                            -8.0,
+                            rgba(255, 255, 0, 255),
+                            true,
+                        );
+                        let scale = (1.8
+                            - (self.started.elapsed().as_secs_f32() * std::f32::consts::TAU)
+                                .sin()
+                                .abs()
+                                * 0.1)
+                            * 100.0
+                            / (tw + 32.0);
+                        let (sin, cos) = (-20.0f32).to_radians().sin_cos();
+                        for v in &mut batch.vertices[start..] {
+                            let [x, y] = v.pos;
+                            v.pos = [
+                                w / 2.0 + 123.0 + scale * (x * cos - y * sin),
+                                69.0 + scale * (x * sin + y * cos),
+                            ];
+                        }
+                    }
+                    let version = format!("Horizon {} (Rust)", horizon_core::VANILLA_VERSION);
+                    batch.text(atlas, &version, 2.0, h - 10.0, u32::MAX, true);
+                    // A nightly names its build in the top-left corner, the one spot no button reaches at any GUI
+                    // scale, so screenshots and reports say which build they come from.
+                    if let Some(nightly) = horizon_core::release::nightly_label() {
+                        batch.text(atlas, &nightly, 2.0, 2.0, u32::MAX, true);
+                    }
+                    let notice = &lang::get_or(
+                        "horizon.title.not_affiliated",
+                        "Not affiliated with Mojang or Microsoft",
+                    );
+                    // TitleScreen.init's `PlainTextButton`: the text's width wide, 10
+                    // high at `height - 10`; `extractContents` underlines it while
+                    // hovered or focused, and its press opens the credits.
+                    let tw = HudBatch::text_width(atlas, notice).ceil();
+                    let rect = [w - tw - 2.0, h - 10.0, tw, 10.0];
+                    self.credits_button.set(rect);
+                    crate::widgets::record(notice, rect, true);
+                    let inside = cursor.0 >= rect[0]
+                        && cursor.0 < rect[0] + rect[2]
+                        && cursor.1 >= rect[1]
+                        && cursor.1 < rect[1] + rect[3];
+                    crate::widgets::widget_cursor(inside, true);
+                    let mut text = Text::literal(notice);
+                    if inside {
+                        text = text.underlined();
+                    }
+                    batch.text_styled(atlas, &text, rect[0], rect[1], u32::MAX, true);
                 }
-                let version = format!("Horizon {} (Rust)", horizon_core::VANILLA_VERSION);
-                batch.text(atlas, &version, 2.0, h - 10.0, u32::MAX, true);
-                // A nightly names its build in the top-left corner, the one spot no button reaches at any GUI
-                // scale, so screenshots and reports say which build they come from.
-                if let Some(nightly) = horizon_core::release::nightly_label() {
-                    batch.text(atlas, &nightly, 2.0, 2.0, u32::MAX, true);
-                }
-                let notice = &lang::get_or(
-                    "horizon.title.not_affiliated",
-                    "Not affiliated with Mojang or Microsoft",
-                );
-                // TitleScreen.init's `PlainTextButton`: the text's width wide, 10
-                // high at `height - 10`; `extractContents` underlines it while
-                // hovered or focused, and its press opens the credits.
-                let tw = HudBatch::text_width(atlas, notice).ceil();
-                let rect = [w - tw - 2.0, h - 10.0, tw, 10.0];
-                self.credits_button.set(rect);
-                crate::widgets::record(notice, rect, true);
-                let inside = cursor.0 >= rect[0]
-                    && cursor.0 < rect[0] + rect[2]
-                    && cursor.1 >= rect[1]
-                    && cursor.1 < rect[1] + rect[3];
-                crate::widgets::widget_cursor(inside, true);
-                let mut text = Text::literal(notice);
-                if inside {
-                    text = text.underlined();
-                }
-                batch.text_styled(atlas, &text, rect[0], rect[1], u32::MAX, true);
             }
             Mode::Select { worlds, selected } => {
                 crate::ui::menu_background(batch, atlas, 0.0, 0.0, w, h, false);
@@ -3469,6 +3625,7 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
                 Action::None
             }
             (Mode::Main, Some(3)) => Action::Options,
+            (Mode::Main, Some(9)) => Action::Mods,
             (Mode::Main, Some(7)) => Action::Accessibility,
             (Mode::Main, Some(6)) => Action::Language,
             (Mode::Select { worlds, selected }, Some(10)) => {
@@ -5005,5 +5162,36 @@ mod classic_tests {
                     .any(|v| v.color == rgba(255, 255, 0, 255))
             );
         }
+    }
+
+    #[test]
+    fn modern_dock_layout_provides_thumb_docked_buttons() {
+        let title = Title::new(
+            PathBuf::new(),
+            Path::new("/nonexistent/horizon-test-resources"),
+        );
+        let buttons = title.modern_dock_buttons(480.0, 240.0);
+        // Play, Servers, Options, Mods, Quit
+        assert!(buttons.iter().any(|b| b.id == 1 && b.x == 20.0));
+        assert!(buttons.iter().any(|b| b.id == 4 && b.x == 20.0));
+        assert!(buttons.iter().any(|b| b.id == 3 && b.x == 20.0));
+        assert!(buttons.iter().any(|b| b.id == 9 && b.x == 20.0));
+        assert!(buttons.iter().any(|b| b.id == 2 && b.x == 20.0));
+        // Icon buttons: language, accessibility, friends
+        assert!(
+            buttons
+                .iter()
+                .any(|b| b.id == 6 && b.icon == Some(("icon/language", 15.0)))
+        );
+        assert!(
+            buttons
+                .iter()
+                .any(|b| b.id == 7 && b.icon == Some(("icon/accessibility", 15.0)))
+        );
+        assert!(
+            buttons
+                .iter()
+                .any(|b| b.id == 5 && b.icon == Some(("friends/friends", 15.0)))
+        );
     }
 }

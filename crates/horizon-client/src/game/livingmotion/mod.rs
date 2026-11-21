@@ -1,9 +1,9 @@
 pub(crate) mod glue;
 pub(crate) mod trails;
 
+use crate::first_person::Hand;
 use crate::game::Game;
 use crate::game::native_hooks::NativeMod;
-use crate::first_person::Hand;
 use crate::items::ItemStack;
 use crate::mesher::Vertex;
 
@@ -41,7 +41,19 @@ impl Game<'_> {
         yaw: &mut f32,
         roll: &mut f32,
     ) {
-        glue::hand_pose(self, hand, stack.is_some(), partial, swing, x, y, z, pitch, yaw, roll);
+        glue::hand_pose(
+            self,
+            hand,
+            stack.is_some(),
+            partial,
+            swing,
+            x,
+            y,
+            z,
+            pitch,
+            yaw,
+            roll,
+        );
     }
 
     pub(crate) fn livingmotion_world(

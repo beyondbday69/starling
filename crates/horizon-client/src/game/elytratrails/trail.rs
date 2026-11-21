@@ -1,9 +1,9 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Mutex, OnceLock, PoisonError};
 
-use crate::game::Game;
 use super::core as m;
 use super::net;
+use crate::game::Game;
 use crate::gizmos::Line;
 use crate::mobs::{Mob, Part};
 
@@ -55,7 +55,11 @@ struct Anchor {
 
 impl Anchor {
     fn shifted(&self, at: [f64; 3]) -> [[f64; 3]; 2] {
-        let d = [at[0] - self.body[0], at[1] - self.body[1], at[2] - self.body[2]];
+        let d = [
+            at[0] - self.body[0],
+            at[1] - self.body[1],
+            at[2] - self.body[2],
+        ];
         self.tips.map(|t| [t[0] + d[0], t[1] + d[1], t[2] + d[2]])
     }
 }
@@ -173,7 +177,9 @@ fn find_part<'a>(part: &'a Part, name: &str) -> Option<&'a Part> {
     if part.name == name {
         return Some(part);
     }
-    part.children.iter().find_map(|child| find_part(child, name))
+    part.children
+        .iter()
+        .find_map(|child| find_part(child, name))
 }
 
 fn part_matrix(
@@ -185,7 +191,12 @@ fn part_matrix(
     let p = pose(part);
     let mat = parent
         * glam::Mat4::from_translation(glam::Vec3::new(p[0], p[1], p[2]) / 16.0)
-        * glam::Mat4::from_quat(glam::Quat::from_euler(glam::EulerRot::ZYX, p[5], p[4], p[3]))
+        * glam::Mat4::from_quat(glam::Quat::from_euler(
+            glam::EulerRot::ZYX,
+            p[5],
+            p[4],
+            p[3],
+        ))
         * glam::Mat4::from_scale(glam::Vec3::new(p[6], p[7], p[8]));
     if part.name == target {
         return Some(mat);
@@ -238,7 +249,16 @@ impl Look {
         (rgb, width)
     }
 
-    fn emit(&self, lines: &mut Vec<Line>, from: [f64; 3], to: [f64; 3], born: u64, speed: f64, alpha: f32, taper: f32) {
+    fn emit(
+        &self,
+        lines: &mut Vec<Line>,
+        from: [f64; 3],
+        to: [f64; 3],
+        born: u64,
+        speed: f64,
+        alpha: f32,
+        taper: f32,
+    ) {
         let (rgb, width) = self.paint(born, speed);
         lines.push(Line {
             start: from,
@@ -248,7 +268,15 @@ impl Look {
         });
     }
 
-    fn glow(&self, lines: &mut Vec<Line>, from: [f64; 3], to: [f64; 3], born: u64, speed: f64, alpha: f32) {
+    fn glow(
+        &self,
+        lines: &mut Vec<Line>,
+        from: [f64; 3],
+        to: [f64; 3],
+        born: u64,
+        speed: f64,
+        alpha: f32,
+    ) {
         let (rgb, width) = self.paint(born, speed);
         lines.push(Line {
             start: from,
@@ -334,7 +362,11 @@ impl Game<'_> {
             }
             _ => 0.0,
         };
-        let speed = if id == OWN { velocity } else { velocity.max(moved) };
+        let speed = if id == OWN {
+            velocity
+        } else {
+            velocity.max(moved)
+        };
         trail.last_at = Some(at);
         trail.last_tick = tick;
         let fast_enough = id != OWN || speed >= MIN_SPEED;
@@ -394,14 +426,7 @@ impl Game<'_> {
         });
         *now += 1;
         let tick = *now;
-        trails.retain(|id, _| {
-            settings.trails
-                && if *id == OWN {
-                    own_shown
-                } else {
-                    others_shown
-                }
-        });
+        trails.retain(|id, _| settings.trails && if *id == OWN { own_shown } else { others_shown });
         if !settings.trails {
             return;
         }
@@ -418,7 +443,15 @@ impl Game<'_> {
                 .filter(|mob| &*mob.kind.id == "minecraft:player")
             {
                 let style = net::style_of(mob.id).unwrap_or((0, 0));
-                self.elytratrails_sample(trails, u64::from(mob.id), mob, origin, tick, style, &settings);
+                self.elytratrails_sample(
+                    trails,
+                    u64::from(mob.id),
+                    mob,
+                    origin,
+                    tick,
+                    style,
+                    &settings,
+                );
             }
         }
         let life = settings.life();
@@ -454,15 +487,16 @@ impl Game<'_> {
             1.0
         };
         let pulse = pulse_factor(settings.pulse, state.now as f64 + f64::from(partial));
-        let players: HashMap<u64, &Mob> = if settings.others && (self.remote.is_some() || self.lan.is_some()) {
-            self.mobs
-                .iter()
-                .filter(|mob| &*mob.kind.id == "minecraft:player")
-                .map(|mob| (u64::from(mob.id), mob))
-                .collect()
-        } else {
-            HashMap::new()
-        };
+        let players: HashMap<u64, &Mob> =
+            if settings.others && (self.remote.is_some() || self.lan.is_some()) {
+                self.mobs
+                    .iter()
+                    .filter(|mob| &*mob.kind.id == "minecraft:player")
+                    .map(|mob| (u64::from(mob.id), mob))
+                    .collect()
+            } else {
+                HashMap::new()
+            };
         let mut heads: Vec<[[f64; 3]; 2]> = Vec::new();
         for (id, trail) in &state.trails {
             let mob = if *id == OWN {
@@ -470,10 +504,14 @@ impl Game<'_> {
             } else {
                 players.get(id).copied()
             };
-            let tips = mob.filter(|mob| mob.extra.fall_flying).and_then(|mob| match trail.anchor {
-                Some(anchor) => Some(anchor.shifted([mob.position.x, mob.position.y, mob.position.z])),
-                None => self.elytratrails_tips(mob, partial),
-            });
+            let tips = mob
+                .filter(|mob| mob.extra.fall_flying)
+                .and_then(|mob| match trail.anchor {
+                    Some(anchor) => {
+                        Some(anchor.shifted([mob.position.x, mob.position.y, mob.position.z]))
+                    }
+                    None => self.elytratrails_tips(mob, partial),
+                });
             let look = Look {
                 colour: trail.colour,
                 wavy: trail.pattern == m::WAVY,
@@ -499,7 +537,9 @@ impl Game<'_> {
                     }
                     previous = Some(point);
                 }
-                if let (Some(last), Some(tips), true) = (wing.points.back(), tips, wing.last.is_some()) {
+                if let (Some(last), Some(tips), true) =
+                    (wing.points.back(), tips, wing.last.is_some())
+                {
                     if dist(last.pos, tips[slot]) <= MAX_JUMP {
                         let from = lift(last.pos, last.born, look.wavy);
                         let to = lift(tips[slot], last.born, look.wavy);

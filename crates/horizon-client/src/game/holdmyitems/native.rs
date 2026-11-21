@@ -9,12 +9,11 @@ use super::runtime::{
     self as hmi, Config, HmiParticle, HmiState, ItemFlags, LoadedConfig, Mat4f, ModelPartAnimator,
     ParticleBlend, ParticleSpace, PlayerFrameInput, SettingsEffect, UseKind,
 };
+use crate::block_entity_render::{diffuse_lights, vertex_light};
+use crate::first_person::{self, Hand};
 use crate::game::maps;
 use crate::game::native_hooks::{NativeColoredLight, NativeMod, NativeShake};
 use crate::game::{Dim, Game, Screen};
-use horizon_assets::item_model::{DisplayContext, FoilType};
-use crate::block_entity_render::{diffuse_lights, vertex_light};
-use crate::first_person::{self, Hand};
 use crate::hud::HudBatch;
 use crate::item_render::{
     self, ItemQuad, ItemRenderState, ItemSink, LayerGeometry, WorldSink, transform_normal,
@@ -22,12 +21,12 @@ use crate::item_render::{
 use crate::items::ItemStack;
 use crate::mesher::Vertex;
 use crate::spear::Kinetic;
+use horizon_assets::item_model::{DisplayContext, FoilType};
 use horizon_world::consumable::UseAnimation;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
-const BUNDLED_RESOURCEPACK: &[u8] =
-    crate::native_data!("holdmyitems", "holdmyitems-pack.zip");
+const BUNDLED_RESOURCEPACK: &[u8] = crate::native_data!("holdmyitems", "holdmyitems-pack.zip");
 const BUNDLED_PACK_FILENAME: &str = "holdmyitems-pack.zip";
 const BUNDLED_PACK_ID: &str = "file/holdmyitems-pack.zip";
 
@@ -199,33 +198,32 @@ impl Game<'_> {
         let is_charged_crossbow = stack.data().is_some_and(|d| !d.charged.is_empty());
 
         let short = id.strip_prefix("minecraft:").unwrap_or(&id);
-        let use_kind = if Kinetic::of(&id).is_some()
-            || components.get("minecraft:kinetic_weapon").is_some()
-        {
-            UseKind::Spear
-        } else if short == "bow" {
-            UseKind::Bow
-        } else if short == "crossbow" {
-            UseKind::Crossbow
-        } else if short == "trident" {
-            UseKind::Trident
-        } else if short == "brush" {
-            UseKind::Brush
-        } else if short == "spyglass" {
-            UseKind::Spyglass
-        } else if short == "goat_horn" {
-            UseKind::TootHorn
-        } else if components.get("minecraft:blocks_attacks").is_some() || short == "shield" {
-            UseKind::Block
-        } else if let Some(consumable) = components.get("minecraft:consumable") {
-            match first_person::consumable_animation(consumable) {
-                UseAnimation::Drink => UseKind::Drink,
-                UseAnimation::TootHorn => UseKind::TootHorn,
-                _ => UseKind::Eat,
-            }
-        } else {
-            UseKind::None
-        };
+        let use_kind =
+            if Kinetic::of(&id).is_some() || components.get("minecraft:kinetic_weapon").is_some() {
+                UseKind::Spear
+            } else if short == "bow" {
+                UseKind::Bow
+            } else if short == "crossbow" {
+                UseKind::Crossbow
+            } else if short == "trident" {
+                UseKind::Trident
+            } else if short == "brush" {
+                UseKind::Brush
+            } else if short == "spyglass" {
+                UseKind::Spyglass
+            } else if short == "goat_horn" {
+                UseKind::TootHorn
+            } else if components.get("minecraft:blocks_attacks").is_some() || short == "shield" {
+                UseKind::Block
+            } else if let Some(consumable) = components.get("minecraft:consumable") {
+                match first_person::consumable_animation(consumable) {
+                    UseAnimation::Drink => UseKind::Drink,
+                    UseAnimation::TootHorn => UseKind::TootHorn,
+                    _ => UseKind::Eat,
+                }
+            } else {
+                UseKind::None
+            };
 
         let is_cooling_down = use_kind == UseKind::Block && self.shield_cooldown > 0;
 
@@ -266,8 +264,7 @@ impl Game<'_> {
         let vy = p.velocity.y as f32;
         let vz = p.velocity.z as f32;
         let speed = (vx * vx + vz * vz).sqrt();
-        let crawling =
-            p.pose == crate::pose::Pose::Swimming && !p.fluids.was_touching_water;
+        let crawling = p.pose == crate::pose::Pose::Swimming && !p.fluids.was_touching_water;
         let heights = self.heights.interpolated(partial);
         let vis = self.visible_hand_items();
         let main_scale = vis[0].as_ref().map_or(1.0, |s| {
@@ -326,7 +323,13 @@ impl Game<'_> {
         }
         self.mining.is_some()
             || self.clicks.destroying.active
-            || (self.left && self.pick().is_some_and(|h| !self.res.facts().is_air(self.world.block(h.pos[0], h.pos[1], h.pos[2]))))
+            || (self.left
+                && self.pick().is_some_and(|h| {
+                    !self
+                        .res
+                        .facts()
+                        .is_air(self.world.block(h.pos[0], h.pos[1], h.pos[2]))
+                }))
     }
 
     /// Sanitizes continuous animation hold state when screens, dialogs, or pause occur.
@@ -709,8 +712,8 @@ impl Game<'_> {
 
                 let mut particle_mat = block_mat;
                 if !right_arm {
-                    particle_mat = particle_mat
-                        * glam::Mat4::from_translation(glam::Vec3::new(1.0, 0.0, 0.0));
+                    particle_mat =
+                        particle_mat * glam::Mat4::from_translation(glam::Vec3::new(1.0, 0.0, 0.0));
                 }
                 self.emit_hmi_particles(
                     main_hand,
@@ -797,7 +800,10 @@ impl Game<'_> {
                 self.submit_item_hmi(&state, world_pose, packed_light, &eval.animator, out);
                 let after_item = out.len();
 
-                if this_flags.is_enchanted_tool() && cfg.enchanted_outlines && after_item > before_item {
+                if this_flags.is_enchanted_tool()
+                    && cfg.enchanted_outlines
+                    && after_item > before_item
+                {
                     let quad_count = (after_item - before_item) / 4;
                     let mut outline_verts = Vec::with_capacity(after_item - before_item);
                     for q in 0..quad_count {
@@ -1001,9 +1007,7 @@ impl Game<'_> {
         let Some(eye) = self.eye_position() else {
             return;
         };
-        let main_light = self
-            .held()
-            .and_then(|s| hmi::hand_light_for_item(&s.item));
+        let main_light = self.held().and_then(|s| hmi::hand_light_for_item(&s.item));
         let off_light = self
             .offhand
             .as_ref()
@@ -1036,7 +1040,13 @@ impl Game<'_> {
         }
         let lines = with_state(|s| std::mem::take(&mut s.hmi.debug_lines));
         for (idx, line) in lines.iter().enumerate() {
-            self.native_text(batch, line, [10.0, 10.0 + (idx as f32) * 10.0], 0xFFFFFF, true);
+            self.native_text(
+                batch,
+                line,
+                [10.0, 10.0 + (idx as f32) * 10.0],
+                0xFFFFFF,
+                true,
+            );
         }
     }
 
