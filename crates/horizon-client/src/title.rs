@@ -2551,12 +2551,6 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
             Mode::Main => {
                 if is_modern_dock(w, h) {
                     let dock_x = 20.0;
-                    let dock_w = 150.0;
-                    let panel_w = dock_x + dock_w + 16.0;
-
-                    // Frosted dark acrylic backdrop plate for left dock
-                    batch.fill(atlas, 0.0, 0.0, panel_w, h, rgba(12, 16, 22, 160));
-                    batch.fill(atlas, panel_w - 1.0, 0.0, 1.0, h, rgba(255, 255, 255, 20));
 
                     // Sleek Starling title (clean, bold, no cringe text)
                     let start = batch.vertices.len();
