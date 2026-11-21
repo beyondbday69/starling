@@ -1799,23 +1799,24 @@ pub fn draw_mobile_controls(batch: &mut HudBatch, atlas: &HudAtlas, cursor: (f32
     // 5. Persistent + crosshair cursor
     draw_crosshair_cursor(batch, atlas, cursor.0, cursor.1, is_rmb_dragging() || rmb_held);
 
-    // 6. Action text indicator badge (top-center pill, visible for 2.0s with smooth fadeout)
+    // 6. Action text indicator badge (bottom-center pill, completely clear of top inventory)
     let ind = state().indicator.clone();
     if let Some((text, color, time)) = ind {
         let elapsed = time.elapsed().as_secs_f32();
-        if elapsed < 2.0 {
-            let alpha = if elapsed < 1.5 {
+        if elapsed < 1.4 {
+            let alpha = if elapsed < 1.0 {
                 1.0
             } else {
-                ((2.0 - elapsed) / 0.5).clamp(0.0, 1.0)
+                ((1.4 - elapsed) / 0.4).clamp(0.0, 1.0)
             };
             let cx = w * 0.5;
             let tw = HudBatch::text_width(atlas, &text);
             let bg = rgba(16, 20, 28, (200.0 * alpha) as u8);
             let border = rgba(color[0], color[1], color[2], (220.0 * alpha) as u8);
             let text_color = rgba(color[0], color[1], color[2], (color[3] as f32 * alpha) as u8);
-            rim(batch, atlas, [cx - tw * 0.5 - 6.0, 18.0, tw + 12.0, 16.0], bg, border);
-            batch.text(atlas, &text, cx - tw * 0.5, 22.0, text_color, true);
+            let iy = h - 36.0;
+            rim(batch, atlas, [cx - tw * 0.5 - 6.0, iy, tw + 12.0, 16.0], bg, border);
+            batch.text(atlas, &text, cx - tw * 0.5, iy + 4.0, text_color, true);
         }
     }
 }
@@ -1836,13 +1837,13 @@ pub fn on_panel(w: f32, x: f32, y: f32) -> bool {
     inside(panel(w, expanded()), x, y)
 }
 
-/// The recipe book button at the top left.
-pub fn recipe_button(_h: f32) -> [f32; 4] {
-    [8.0, 8.0, 24.0, 20.0]
+/// The recipe book button in the top-right toolbar (next to Shift and Exit).
+pub fn recipe_button(w: f32, _h: f32) -> [f32; 4] {
+    [w - 76.0, 8.0, 20.0, 20.0]
 }
 
-pub fn on_recipe(h: f32, x: f32, y: f32) -> bool {
-    inside(recipe_button(h), x, y)
+pub fn on_recipe(w: f32, h: f32, x: f32, y: f32) -> bool {
+    inside(recipe_button(w, h), x, y)
 }
 
 /// The panel's slot under the cursor.
@@ -1866,7 +1867,7 @@ pub fn slot_at(w: f32, h: f32, x: f32, y: f32, seconds: f64) -> Option<usize> {
     if inside(panel(w, e), x, y) {
         return panel_slot(w, x, y, e);
     }
-    if on_recipe(h, x, y) {
+    if on_recipe(w, h, x, y) {
         return None;
     }
     match hover(ndc((x, y), w, h), seconds)? {
@@ -1915,7 +1916,7 @@ pub fn draw_panel(batch: &mut HudBatch, atlas: &HudAtlas, expanded: bool, select
 }
 
 pub fn draw_recipe_button(batch: &mut HudBatch, atlas: &HudAtlas, hover: bool) {
-    let [x, y, w, h] = recipe_button(batch.height);
+    let [x, y, w, h] = recipe_button(batch.width, batch.height);
     batch.fill(atlas, x, y, w, h, if hover { rgba(90, 90, 96, 190) } else { rgba(56, 56, 60, 170) });
     batch.fill(atlas, x, y, w, 1.0, rgba(130, 130, 136, 150));
     batch.fill(atlas, x, y + h - 1.0, w, 1.0, rgba(24, 24, 26, 170));
@@ -2037,11 +2038,13 @@ pub fn book_scale() -> f32 {
     (h / 300.0).min(w / 530.0).min(1.0)
 }
 
-/// The panel on screen: x, y, w, h.
+/// The panel on screen: x, y, w, h. Positioned on the right side of the screen to keep the left thumb buttons and center inventory clear.
 pub fn book_rect() -> [f32; 4] {
     let (w, h) = state().gui;
     let s = (h / 300.0).min(w / 530.0).min(1.0);
-    [(8.0 * s).round(), (h * 0.15).round(), BOOK_W * s, BOOK_H * s]
+    let bw = BOOK_W * s;
+    let bh = BOOK_H * s;
+    [(w - bw - 8.0 * s).round(), (h * 0.15).round(), bw, bh]
 }
 
 /// A rectangle in the panel's own units, on screen.

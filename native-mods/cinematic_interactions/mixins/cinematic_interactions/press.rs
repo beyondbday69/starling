@@ -184,7 +184,7 @@ fn cinematic_press(game: &mut crate::game::Game<'_>, right: bool) -> ::core::ops
     };
     let batch = HudBatch::new(size);
     let (x, y) = game.cursor;
-    let on_book = if ci::book_open() { ci::book_hit(x, y, ci::selected().is_some()).is_some() } else { ci::on_recipe(batch.height, x, y) };
+    let on_book = if ci::book_open() { ci::book_hit(x, y, ci::selected().is_some()).is_some() } else { ci::on_recipe(batch.width, batch.height, x, y) };
     if game.recipe_book_click(right) || on_book {
         game.inv_clicks.skip_release();
         return ::core::ops::ControlFlow::Break(());

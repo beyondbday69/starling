@@ -15,7 +15,7 @@ fn cinematic_book_click(game: &mut crate::game::Game<'_>, right: bool) -> ::core
     let book = BookType::Crafting;
     let click = |game: &mut crate::game::Game<'_>| game.audio.play("minecraft:ui.button.click", None, 0.25, 1.0);
     if !game.book_open(book) {
-        if !right && ci::on_recipe(batch.height, x, y) {
+        if !right && ci::on_recipe(batch.width, batch.height, x, y) {
             game.level.recipe_book.open[book.index()] = true;
             game.send_book_settings(book);
             ci::set_book_open(true);

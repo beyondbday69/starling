@@ -289,7 +289,6 @@ fn cinematic_touch(
                 if let Some(key) = game.container {
                     game.container_changed(key);
                 }
-                ci::set_indicator("LMB: Released", [100, 220, 255, 255]);
                 return ::core::ops::ControlFlow::Break(());
             }
 
@@ -300,7 +299,6 @@ fn cinematic_touch(
                 if let Some(key) = game.container {
                     game.container_changed(key);
                 }
-                ci::set_indicator("RMB: Released", [255, 215, 60, 255]);
                 return ::core::ops::ControlFlow::Break(());
             }
 

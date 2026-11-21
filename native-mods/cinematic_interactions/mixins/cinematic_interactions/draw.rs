@@ -699,9 +699,9 @@ fn cinematic_draw(game: &mut crate::game::Game<'_>, batch: &mut HudBatch) -> ::c
         }
     }
     if !ci::book_open() {
-        let on_book = ci::on_recipe(batch.height, x, y);
+        let on_book = ci::on_recipe(batch.width, batch.height, x, y);
         ci::draw_recipe_button(batch, &game.gui.atlas, on_book);
-        let [bx, by, bw, bh] = ci::recipe_button(batch.height);
+        let [bx, by, bw, bh] = ci::recipe_button(batch.width, batch.height);
         let start = batch.vertices.len();
         game.draw_item(batch, &ItemStack::new("minecraft:book", 1), bx + (bw - 16.0) * 0.5, by + (bh - 16.0) * 0.5);
         batch.scale_since(start, bx + bw * 0.5, by + bh * 0.5, 1.2, 1.2);
