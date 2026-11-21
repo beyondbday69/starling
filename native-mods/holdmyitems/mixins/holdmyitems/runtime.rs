@@ -29,8 +29,8 @@ const BED_ARM_CLEARANCE_X: f32 = -0.15;
 const BED_ARM_CLEARANCE_Z: f32 = -0.10;
 
 /// Longest one main-hand swing may take while a block is being broken, in ticks.
-/// Synchronized with vanilla Minecraft's 4-tick continuous mining swing / block cracking cadence.
-const MINING_SWING_TICKS: u32 = 4;
+/// The Horizon Rust port caps mining swings at 6 ticks while normal swings keep the item's own length.
+const MINING_SWING_TICKS: u32 = 6;
 
 // ---------------------------------------------------------------------------
 // Easing functions (1:1 port of com.holdmylua.source.scripting.script_wrappers.Easings)
@@ -1623,13 +1623,9 @@ impl HmiState {
             self.last_haste,
             self.last_fatigue,
         );
-        // When holding the mouse button down continuously (`continuous_hold`), allow the swing
-        // to smoothly cycle once it passes its impact point (`progress >= 0.70` during block breaking)
-        // so mining feels immediate, responsive, and continuous without dead frames or hitches.
-        // For discrete mouse clicks (`!continuous_hold`), allow immediate re-swing after a brief
-        // debounce (`progress >= 0.08`) so fast clicks are always registered without double-firing
-        // within the same frame.
-        let min_continuous_progress = if self.block_breaking { 0.70 } else { 0.95 };
+        // While blockBreaking is true, the main-hand swing restarts at half its duration
+        // (mainHandSwingTicks >= duration / 2), so continuous mining repeats the swing twice as fast.
+        let min_continuous_progress = if self.block_breaking { 0.50 } else { 0.95 };
         let min_reclick_progress = (1.0 / (max_ticks as f32)).min(0.08);
         if main_hand {
             let can_start = if continuous_hold {
@@ -2966,15 +2962,10 @@ impl HmiState {
         let swing_rise_s = (swing_progress * 6.28).sin();
 
         if item.is_empty {
-            let (empty_y_mul, empty_z_mul) = if input.block_breaking {
-                (0.5, 1.3)
-            } else {
-                (1.0, 1.0)
-            };
             mat.translate(
                 -0.15 * l * swing,
-                (0.1 * swing_rise_s + 0.33 * swing + 0.05 * swing_rot + 0.14 * swing_rise) * empty_y_mul,
-                (-0.1 * swing_rise_s - 0.4 * swing_hit - 0.2 * swing) * empty_z_mul,
+                0.1 * swing_rise_s + 0.33 * swing + 0.05 * swing_rot + 0.14 * swing_rise,
+                -0.1 * swing_rise_s - 0.4 * swing_hit - 0.2 * swing,
             );
             mat.rotate_x(-10.0 * swing_rise);
             mat.move_z(0.15 * swing_rot);
@@ -2988,22 +2979,17 @@ impl HmiState {
             mat.rotate_y_at(5.0 * l * swing_rise_s, 0.3 * l, -0.4, 0.0);
             mat.rotate_y_at(15.0 * l * swing_hit, 0.3 * l, -0.4, 0.0);
         } else if item.is_pickaxe() {
-            let (tilt_mul, overall_mul) = if input.block_breaking {
-                (0.20, 1.25)
-            } else {
-                (1.0, 1.0)
-            };
-            mat.move_z(-0.1 * swing_sword_tilt * tilt_mul - 0.3 * swing_overall * overall_mul);
+            mat.move_z(-0.1 * swing_sword_tilt - 0.3 * swing_overall);
             mat.move_y(-0.1 * swing_rise_s + 0.2 * swing_overall);
             mat.move_x(
                 -0.15 * l * swing_hit + 0.15 * l * swing_hit_second - 0.15 * l * swing_overall,
             );
-            mat.rotate_x_at(60.0 * swing_sword_tilt * tilt_mul, 0.3 * l, -0.4, 0.0);
+            mat.rotate_x_at(60.0 * swing_sword_tilt, 0.3 * l, -0.4, 0.0);
             mat.rotate_x_at(10.0 * swing_rise, 0.3 * l, -0.4, 0.0);
             mat.rotate_x_at(10.0 * swing_rot, 0.3 * l, -0.4, 0.0);
             mat.rotate_x_at(-45.0 * swing_hit, 0.3 * l, -0.4, 0.0);
             mat.rotate_x_at(-10.0 * swing_hit_second, 0.3 * l, -0.4, 0.0);
-            mat.rotate_x_at(-95.0 * swing_overall * overall_mul, 0.3 * l, -0.4, 0.0);
+            mat.rotate_x_at(-95.0 * swing_overall, 0.3 * l, -0.4, 0.0);
             mat.rotate_y_at(20.0 * swing_overall * l, 0.3 * l, -0.4, 0.0);
             mat.rotate_z_at(
                 (20.0 * l * self.tilting.sin() * swing).clamp(-60.0, 60.0),
