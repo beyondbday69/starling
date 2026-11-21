@@ -26,6 +26,8 @@ fn cinematic_touch(
     struct TouchState {
         id: u64,
         is_left: bool,
+        is_lmb_btn: bool,
+        is_rmb_btn: bool,
         start_time: Instant,
         last_move_time: Instant,
         start_pos: (f32, f32),
@@ -59,33 +61,54 @@ fn cinematic_touch(
 
     match t.phase {
         TouchPhase::Started => {
+            let btns = ci::mobile_button_rects(bw, bh);
+            let is_lmb_btn = ci::inside(btns.lmb, gui_pos.0, gui_pos.1);
+            let is_rmb_btn = ci::inside(btns.rmb, gui_pos.0, gui_pos.1);
+
+            if is_lmb_btn {
+                ci::set_lmb_held(true);
+                game.audio.play_button_click();
+                game.inventory_press(false);
+                ci::set_indicator("LMB: Held (Drag to Take/Move)", [100, 220, 255, 255]);
+            } else if is_rmb_btn {
+                ci::set_rmb_held(true);
+                ci::set_rmb_dragging(true);
+                game.audio.play_button_click();
+                game.inventory_press(true);
+                ci::set_indicator("RMB: Held (Drag to Paint 1)", [255, 215, 60, 255]);
+            }
+
             let is_left = gui_pos.0 < bw * 0.5;
 
             // Check if this tap started within double-tap window of previous tap on this screen half
-            let is_double_tap = if is_left {
-                let mut last = LAST_TAP_LEFT.lock().unwrap();
-                if let Some((prev_time, prev_pos)) = *last {
-                    let dt = now.duration_since(prev_time).as_millis();
-                    let dx = gui_pos.0 - prev_pos.0;
-                    let dy = gui_pos.1 - prev_pos.1;
-                    let dist = (dx * dx + dy * dy).sqrt();
-                    *last = None;
-                    dt < 320 && dist < 60.0
+            let is_double_tap = if !is_lmb_btn && !is_rmb_btn {
+                if is_left {
+                    let mut last = LAST_TAP_LEFT.lock().unwrap();
+                    if let Some((prev_time, prev_pos)) = *last {
+                        let dt = now.duration_since(prev_time).as_millis();
+                        let dx = gui_pos.0 - prev_pos.0;
+                        let dy = gui_pos.1 - prev_pos.1;
+                        let dist = (dx * dx + dy * dy).sqrt();
+                        *last = None;
+                        dt < 320 && dist < 60.0
+                    } else {
+                        false
+                    }
                 } else {
-                    false
+                    let mut last = LAST_TAP_RIGHT.lock().unwrap();
+                    if let Some((prev_time, prev_pos)) = *last {
+                        let dt = now.duration_since(prev_time).as_millis();
+                        let dx = gui_pos.0 - prev_pos.0;
+                        let dy = gui_pos.1 - prev_pos.1;
+                        let dist = (dx * dx + dy * dy).sqrt();
+                        *last = None;
+                        dt < 320 && dist < 60.0
+                    } else {
+                        false
+                    }
                 }
             } else {
-                let mut last = LAST_TAP_RIGHT.lock().unwrap();
-                if let Some((prev_time, prev_pos)) = *last {
-                    let dt = now.duration_since(prev_time).as_millis();
-                    let dx = gui_pos.0 - prev_pos.0;
-                    let dy = gui_pos.1 - prev_pos.1;
-                    let dist = (dx * dx + dy * dy).sqrt();
-                    *last = None;
-                    dt < 320 && dist < 60.0
-                } else {
-                    false
-                }
+                false
             };
 
             // Cancel any pending tap if one was scheduled
@@ -94,6 +117,8 @@ fn cinematic_touch(
             let new_state = TouchState {
                 id: t.id,
                 is_left,
+                is_lmb_btn,
+                is_rmb_btn,
                 start_time: now,
                 last_move_time: now,
                 start_pos: gui_pos,
@@ -158,15 +183,22 @@ fn cinematic_touch(
             state.last_pos = gui_pos;
             state.last_move_time = now;
 
-            if !state.is_left {
+            if state.is_lmb_btn || state.is_rmb_btn {
+                // Button finger is holding down LMB/RMB on the left side — do not move cursor
+            } else if !state.is_left {
                 // Right Half of Screen (Cursor Aim + RMB / 1-Item):
                 // Touch Moved on Right Half moves the virtual cursor
                 const SENSITIVITY: f32 = 1.15;
                 let new_cursor = ci::move_vcursor(dx * SENSITIVITY, dy * SENSITIVITY, bw, bh);
                 game.cursor = new_cursor;
 
-                // Option 1: 'Mouse Tweaks' Sweep Drag to collect matching items into player's cursor
-                if game.carried.is_some() && !state.is_rmb_drag {
+                // When holding LMB button on left and dragging on right:
+                if ci::is_lmb_held() {
+                    game.inventory_drag_move();
+                } else if ci::is_rmb_held() {
+                    // When holding RMB button on left and dragging on right:
+                    game.inventory_drag_move();
+                } else if game.carried.is_some() && !state.is_rmb_drag {
                     let (slot, outside) = game.inventory_target();
                     if let Some(slot) = slot
                         && !outside
@@ -207,8 +239,10 @@ fn cinematic_touch(
                 }
             }
 
-            // Long press check (> 350ms with little motion): Quick-Move / Shift+Click
-            if !state.long_press_done
+            // Long press check (> 350ms with little motion on non-button touch): Quick-Move / Shift+Click
+            if !state.is_lmb_btn
+                && !state.is_rmb_btn
+                && !state.long_press_done
                 && state.total_motion < 12.0
                 && now.duration_since(state.start_time).as_millis() >= 350
             {
@@ -247,6 +281,28 @@ fn cinematic_touch(
             let Some(state) = state else {
                 return ::core::ops::ControlFlow::Break(());
             };
+
+            // 0. Finish button holds
+            if state.is_lmb_btn {
+                ci::set_lmb_held(false);
+                game.inventory_mouse_release(false);
+                if let Some(key) = game.container {
+                    game.container_changed(key);
+                }
+                ci::set_indicator("LMB: Released", [100, 220, 255, 255]);
+                return ::core::ops::ControlFlow::Break(());
+            }
+
+            if state.is_rmb_btn {
+                ci::set_rmb_held(false);
+                ci::set_rmb_dragging(false);
+                game.inventory_mouse_release(true);
+                if let Some(key) = game.container {
+                    game.container_changed(key);
+                }
+                ci::set_indicator("RMB: Released", [255, 215, 60, 255]);
+                return ::core::ops::ControlFlow::Break(());
+            }
 
             // 1. Finish active RMB drag
             if state.is_rmb_drag {
@@ -369,6 +425,15 @@ fn cinematic_touch(
                     if s.id == t.id {
                         let state = slot.take();
                         if let Some(st) = state {
+                            if st.is_lmb_btn {
+                                ci::set_lmb_held(false);
+                                game.inventory_mouse_release(false);
+                            }
+                            if st.is_rmb_btn {
+                                ci::set_rmb_held(false);
+                                ci::set_rmb_dragging(false);
+                                game.inventory_mouse_release(true);
+                            }
                             if st.is_rmb_drag {
                                 ci::set_rmb_dragging(false);
                                 game.inventory_mouse_release(true);

@@ -300,6 +300,8 @@ struct State {
     stone_page: usize,
     mobile_shift: bool,
     mobile_rmb: bool,
+    lmb_held: bool,
+    rmb_held: bool,
     last_target: Option<(f32, f32)>,
     vcursor: Option<(f32, f32)>,
     rmb_dragging: bool,
@@ -358,6 +360,8 @@ static STATE: Mutex<State> = Mutex::new(State {
     stone_page: 0,
     mobile_shift: false,
     mobile_rmb: false,
+    lmb_held: false,
+    rmb_held: false,
     last_target: None,
     vcursor: None,
     rmb_dragging: false,
@@ -1561,7 +1565,29 @@ pub fn shift_button_rect(w: f32, _h: f32) -> [f32; 4] {
 pub fn mobile_button_rects(w: f32, h: f32) -> MobileButtons {
     let exit = exit_button_rect(w, h);
     let shift = shift_button_rect(w, h);
-    MobileButtons { exit, shift, rmb: [0.0; 4], lmb: [0.0; 4] }
+    let bw = 54.0;
+    let bh = 38.0;
+    let bx = 12.0;
+    let cy = h * 0.5;
+    let lmb = [bx, (cy - bh - 6.0).max(34.0), bw, bh];
+    let rmb = [bx, (cy + 6.0).min(h - bh - 10.0), bw, bh];
+    MobileButtons { exit, shift, rmb, lmb }
+}
+
+pub fn is_lmb_held() -> bool {
+    state().lmb_held
+}
+
+pub fn set_lmb_held(held: bool) {
+    state().lmb_held = held;
+}
+
+pub fn is_rmb_held() -> bool {
+    state().rmb_held
+}
+
+pub fn set_rmb_held(held: bool) {
+    state().rmb_held = held;
 }
 
 fn aim_point_from_state(s: &State, w: f32, h: f32) -> (f32, f32) {
@@ -1743,10 +1769,37 @@ pub fn draw_mobile_controls(batch: &mut HudBatch, atlas: &HudAtlas, cursor: (f32
     let tw = HudBatch::text_width(atlas, shift_text);
     batch.text(atlas, shift_text, shift_r[0] + (shift_r[2] - tw) * 0.5, shift_r[1] + (shift_r[3] - 8.0) * 0.5, shift_col, !shift_on);
 
-    // 3. Persistent + crosshair cursor
-    draw_crosshair_cursor(batch, atlas, cursor.0, cursor.1, is_rmb_dragging());
+    // 3. [ LMB ] Button (Left side, thumb friendly)
+    let btns = mobile_button_rects(w, h);
+    let lmb_held = is_lmb_held();
+    let (lmb_bg, lmb_border, lmb_text_col) = if lmb_held {
+        (rgba(40, 110, 200, 240), rgba(130, 225, 255, 255), rgba(255, 255, 255, 255))
+    } else {
+        (rgba(28, 42, 65, 195), rgba(90, 155, 230, 215), rgba(220, 235, 255, 240))
+    };
+    rim(batch, atlas, btns.lmb, lmb_bg, lmb_border);
+    let lmb_label = "LMB";
+    let tw = HudBatch::text_width(atlas, lmb_label);
+    batch.text(atlas, lmb_label, btns.lmb[0] + (btns.lmb[2] - tw) * 0.5, btns.lmb[1] + 5.0, lmb_text_col, true);
+    text_scaled(batch, atlas, if lmb_held { "HELD" } else { "Take/Put" }, btns.lmb[0] + btns.lmb[2] * 0.5, btns.lmb[1] + 20.0, 0.72, rgba(185, 220, 255, 230));
 
-    // 4. Action text indicator badge (top-center pill, visible for 2.0s with smooth fadeout)
+    // 4. [ RMB ] Button (Left side, thumb friendly)
+    let rmb_held = is_rmb_held();
+    let (rmb_bg, rmb_border, rmb_text_col) = if rmb_held {
+        (rgba(175, 125, 25, 240), rgba(255, 235, 110, 255), rgba(255, 255, 255, 255))
+    } else {
+        (rgba(65, 50, 24, 195), rgba(215, 175, 75, 215), rgba(255, 235, 180, 240))
+    };
+    rim(batch, atlas, btns.rmb, rmb_bg, rmb_border);
+    let rmb_label = "RMB";
+    let tw = HudBatch::text_width(atlas, rmb_label);
+    batch.text(atlas, rmb_label, btns.rmb[0] + (btns.rmb[2] - tw) * 0.5, btns.rmb[1] + 5.0, rmb_text_col, true);
+    text_scaled(batch, atlas, if rmb_held { "PAINT" } else { "1/Split" }, btns.rmb[0] + btns.rmb[2] * 0.5, btns.rmb[1] + 20.0, 0.72, rgba(255, 225, 150, 230));
+
+    // 5. Persistent + crosshair cursor
+    draw_crosshair_cursor(batch, atlas, cursor.0, cursor.1, is_rmb_dragging() || rmb_held);
+
+    // 6. Action text indicator badge (top-center pill, visible for 2.0s with smooth fadeout)
     let ind = state().indicator.clone();
     if let Some((text, color, time)) = ind {
         let elapsed = time.elapsed().as_secs_f32();
@@ -1783,9 +1836,9 @@ pub fn on_panel(w: f32, x: f32, y: f32) -> bool {
     inside(panel(w, expanded()), x, y)
 }
 
-/// The recipe book button at the left.
-pub fn recipe_button(h: f32) -> [f32; 4] {
-    [6.0, (h * 0.466).floor(), 24.0, 20.0]
+/// The recipe book button at the top left.
+pub fn recipe_button(_h: f32) -> [f32; 4] {
+    [8.0, 8.0, 24.0, 20.0]
 }
 
 pub fn on_recipe(h: f32, x: f32, y: f32) -> bool {
@@ -3005,6 +3058,8 @@ pub fn stand_up() {
     s.sitting = false;
     s.mobile_shift = false;
     s.mobile_rmb = false;
+    s.lmb_held = false;
+    s.rmb_held = false;
     s.last_target = None;
     s.vcursor = None;
     s.rmb_dragging = false;
