@@ -3,8 +3,8 @@
 // ============================================================
 
 // ---------- Shadows ----------
-const int shadowMapResolution = 1024;   // [512 1024 2048 4096]
-const float shadowDistance = 48.0;      // [1.0 2.0 4.0 8.0 16.0 24.0 32.0 40.0 48.0 56.0 64.0 80.0 96.0 128.0]
+const int shadowMapResolution = 512;   // [512 1024 2048 4096] 512 is optimal for mobile Snapdragon
+const float shadowDistance = 32.0;      // [1.0 2.0 4.0 8.0 16.0 24.0 32.0 40.0 48.0 56.0 64.0 80.0 96.0 128.0]
 const float sunPathRotation = -25.0;    // [-40.0 -30.0 -25.0 -20.0 -10.0 0.0 10.0 20.0 30.0]
 const float shadowDistanceRenderMul = 1.0;
 const bool shadowHardwareFiltering = true;
@@ -13,7 +13,7 @@ const float shadowIntervalSize = 0.0;   // no grid snapping: shadows slide smoot
 #define SHADOW_SMOOTH 1           // [0 1 2] Shadow edge smoothing: 0 = off, 1 = 2 taps, 2 = 4 taps (smoothest, a bit slower)
 #define LEAF_SOLID_SHADOWS        // Leaves cast solid block shadows (no see-through holes)
 #define SHADOWS                          // Real-time shadows from the sun and moon
-#define SOFT_SHADOWS                   // Smoother shadow edges (2 filtered samples instead of 1)
+//#define SOFT_SHADOWS                   // Smoother shadow edges (2 filtered samples instead of 1)
 //#define SKY_SHADOWS                    // Shade everything from how much sky it sees. Works on every device, almost free
 //#define SHADOW_DEBUG                   // Red = in shadow, blue = outside the shadow map. For troubleshooting.
 
@@ -73,8 +73,8 @@ const float shadowIntervalSize = 0.0;   // no grid snapping: shadows slide smoot
 
 // ---------- Water ----------
 #define MIRROR_REFLECTIONS             // Cheap mirror-image reflection of terrain and trees (1 depth + 1 color read per water pixel)
-#define REFLECTIONS                    // Full ray-marched reflections (heavy on phones). Off = mirror image + sky
-#define SSR_STEPS 8            // [3 4 5 6 8] Steps for ray-marched reflections (only used when Ray-Marched Reflections is on)
+//#define REFLECTIONS                    // Full ray-marched reflections (heavy on phones). Off = mirror image + sky
+#define SSR_STEPS 4            // [3 4 5 6 8] Steps for ray-marched reflections (only used when Ray-Marched Reflections is on)
 #define REFLECTION_STRENGTH 0.75 // [0.5 0.75 1.0]
 #define SUN_REFLECTION             // Bright sun / moon glint on water
 #define UNDERWATER_DISTORTION      // Subtle refraction wave wobble when submerged (Complementary Reimagined)
@@ -121,8 +121,8 @@ const float shadowIntervalSize = 0.0;   // no grid snapping: shadows slide smoot
 #define CLOUD_COVERAGE 0.48    // [0.30 0.38 0.44 0.48 0.52 0.58]
 #define CLOUD_OPACITY 0.88     // [0.6 0.75 0.88 1.0]
 #define CLOUD_SPEED 1.0        // [0.0 0.5 1.0 2.0 4.0]
-#define CLOUD_STEPS 16         // [8 10 12 16 24 32 48 64]
-#define CLOUD_RENDER 500.0      // [250.0 350.0 400.0 500.0 600.0 750.0 900.0 1000.0 1200.0]
+#define CLOUD_STEPS 8         // [8 10 12 16 24 32 48 64]
+#define CLOUD_RENDER 350.0      // [250.0 350.0 400.0 500.0 600.0 750.0 900.0 1000.0 1200.0]
 
 // ------------------------------------------------------------ extras (off by default, on in High)
 //#define DYNAMIC_LIGHTS        // Torches and glowing items light up the area around you while held
@@ -147,7 +147,7 @@ const float shadowIntervalSize = 0.0;   // no grid snapping: shadows slide smoot
 #define TOON_SHARPEN 0.15          // [0.0 0.1 0.15 0.25 0.4 0.6] Picture sharpening (CazToon uses a light touch). 0 = off
 #define TOON_BANDS 0               // [0 3 4 5 6] Optional hard brightness steps over the whole picture. 0 = off (CazToon has none)
 #define TOON_SATURATION 1.15       // [1.0 1.1 1.15 1.25 1.4] Color richness in toon mode
-#define MOTION_BLUR                // Camera motion blur: makes 30 fps feel smoother
+//#define MOTION_BLUR                // Camera motion blur: makes 30 fps feel smoother
 #define MOTION_BLUR_STRENGTH 1.0   // [0.5 0.75 1.0 1.5 2.0]
 #define MOTION_BLUR_SAMPLES 6      // [4 6 8 12] More samples = smoother blur, a bit slower
 //#define DEPTH_OF_FIELD        // Blurs things away from what you're looking at
