@@ -629,10 +629,14 @@ pub fn rows() -> Vec<(Page, Vec<(&'static str, Vec<Setting>)>)> {
 /// BlueMap download radii, in chunks.
 const BLUE_MAP_RADII: [u32; 5] = [16, 32, 64, 128, 256];
 const UPLOAD_STEPS: [u32; 8] = [0, 256, 512, 1024, 2048, 4096, 8192, 16384];
-/// What the LOD Distance slider stops at, in chunks: off, then each doubling
-/// up to the whole world.
-const LOD_STEPS: [u32; 18] = [
+/// What the LOD Distance slider stops at, in chunks: off, mobile options (16, 24, 32, 48),
+/// then each doubling up to the whole world.
+const LOD_STEPS: [u32; 22] = [
     0,
+    16,
+    24,
+    32,
+    48,
     64,
     128,
     256,
@@ -761,6 +765,7 @@ impl H {
         match self {
             H::ChunkUpdates => Some(64),
             H::UploadBudget => Some((UPLOAD_STEPS.len() - 1) as u32),
+            H::LodDistance => Some((LOD_STEPS.len() - 1) as u32),
             H::Workers => Some(max_workers()),
             H::ResolutionScale => Some(35),
             H::HdrPaperWhite => Some(41),
