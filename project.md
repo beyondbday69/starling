@@ -3,8 +3,8 @@
 **Repository:** `beyondbday69/starling`  
 **Current Active Branch:** `feat/shader-fsr-upscaling`  
 **Target Platform:** Android (ARM64 `arm64-v8a`)  
-**Latest Commit:** `6408c69` (`feat(cinematic_interactions): add left-side LMB and RMB buttons with right-side drag support and enable all native mods`)  
-**Latest Successful CI Run:** `#44928400353` (Artifact: `14716584831`, size: 70.4 MB)  
+**Latest Commit:** `72e3db2` (`fix(android): produce single ~33MB APK artifact and include all core mods in build manifest`)  
+**Latest Successful CI Run:** `#44931937290` (Artifact: `14717714264`, size: 33.57 MB / 35.2 MB)  
 **Last Updated:** November 2026  
 
 ---
@@ -143,7 +143,8 @@ graph TD
 
 | Run ID | Commit | Description | Artifact ID / Download | Status |
 |---|---|---|---|---|
-| **#44928400353** | `6408c69` | **Latest Working Build:** Cinematic Interactions (Left-Side LMB/RMB Hold & Right-Side Drag Buttons) + All Native Mods (`cinematic_interactions`, `skins_3d`, `gyro`, `holdmyitems`, `zoom`, `livingmotion`, `elytratrails`) + Enchanted Tool Outlines & Section 11 Mining Cadence | [Artifact 14716584831](https://github.com/beyondbday69/starling/actions/runs/44928400353/artifacts/14716584831) | **PASSED (Green)** |
+| **#44931937290** | `72e3db2` | **Latest 33MB Single APK Build:** Single APK Output (~33MB zip / 35MB APK) + All Core Mods in Manifest (`holdmyitems`, `zoom`, `elytratrails`, `livingmotion`) + Mixin Mods (`cinematic_interactions`, `skins_3d`, `gyro`) + Left-Side [LMB]/[RMB] Hold & Right-Side Drag Buttons | [Artifact 14717714264](https://github.com/beyondbday69/starling/actions/runs/44931937290/artifacts/14717714264) | **PASSED (Green)** |
+| **#44928400353** | `6408c69` | Cinematic Interactions (Left-Side LMB/RMB Hold & Right-Side Drag Buttons) + All Native Mods (`cinematic_interactions`, `skins_3d`, `gyro`, `holdmyitems`, `zoom`, `livingmotion`, `elytratrails`) + Enchanted Tool Outlines & Section 11 Mining Cadence (Duplicated APK in artifact: 70.4 MB) | [Artifact 14716584831](https://github.com/beyondbday69/starling/actions/runs/44928400353/artifacts/14716584831) | PASSED |
 | **#44924392350** | `5cf85b3` | Hold My Items Mining Cadence (Section 11 HMI 5.1.3 reference: half-duration restart, 6-tick cap, zero idle lag) + Canonical Pickaxe/Bare Hand poses + Enchanted Tool Outlines (GUI & 3D first-person) | [Artifact 14715600991](https://github.com/beyondbday69/starling/actions/runs/44924392350/artifacts/14715600991) | PASSED |
 | **#44915271892** | `9b1aa18` | Hold My Items Continuous Mining + Enchanted Tool Outlines (GUI & 3D first-person) | [Artifact 14711966825](https://github.com/beyondbday69/starling/actions/runs/44915271892/artifacts/14711966825) | PASSED |
 | **#44464049499** | `dcf4245` | 3D Skins Real Voxels Fix (Atlas Extraction + In-Memory Own Skin + CEM Override Prevention) + Screen-Split Touch Controls + Cinematic Interactions + Gyro | [Artifact 14501069325](https://github.com/beyondbday69/starling/actions/runs/44464049499/artifacts/14501069325) | PASSED |
