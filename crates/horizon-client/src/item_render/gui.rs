@@ -394,9 +394,47 @@ fn draw_quads_with(
     glint: Option<&Glint>,
     cit: Option<CitDraw>,
 ) {
+    let sorted_faces = depth::sort(quads);
+    let is_enchanted = quads.iter().any(|q| q.foil != Foil::None) || cit.is_some();
+    if is_enchanted {
+        // Enchantment Outlines: vibrant glowing additive outline around enchanted tools and items
+        let alpha = ((batch.glint_alpha * 190.0).clamp(60.0, 220.0)) as u8;
+        let outline_col = crate::hud::rgba(185, 85, 255, alpha);
+        let start_outline = batch.vertices.len();
+        for face in &sorted_faces {
+            let q = &quads[face.quad];
+            if q.foil == Foil::None && cit.is_none() {
+                continue;
+            }
+            let points: Vec<_> = face
+                .corners
+                .iter()
+                .map(|v| Point {
+                    p: v.pos.truncate(),
+                    uv: v.uv,
+                    glint_uv: v.glint_uv,
+                })
+                .collect();
+            for i in 1..points.len().saturating_sub(1) {
+                let tri = [points[0], points[i], points[i + 1]];
+                for [ox, oy] in [[-0.85, 0.0], [0.85, 0.0], [0.0, -0.85], [0.0, 0.85]] {
+                    let shifted = [
+                        Point { p: tri[0].p + Vec2::new(ox, oy), uv: tri[0].uv, glint_uv: tri[0].glint_uv },
+                        Point { p: tri[1].p + Vec2::new(ox, oy), uv: tri[1].uv, glint_uv: tri[1].glint_uv },
+                        Point { p: tri[2].p + Vec2::new(ox, oy), uv: tri[2].uv, glint_uv: tri[2].glint_uv },
+                    ];
+                    let fan = clip_triangle(shifted, rect);
+                    if fan.len() >= 3 {
+                        emit(batch, &fan, |_| outline_col, None);
+                    }
+                }
+            }
+        }
+        batch.blend_since(start_outline, crate::hud::Blend::Additive);
+    }
     // The faces the CIT layers go over once the item is drawn.
     let mut fans = Vec::new();
-    for face in depth::sort(quads) {
+    for face in sorted_faces {
         let q = &quads[face.quad];
         let points: Vec<_> = face
             .corners

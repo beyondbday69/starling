@@ -190,6 +190,7 @@ impl Game<'_> {
         }
         let registry = self.pack.assets.registry;
         let is_block = registry.default_state(&id).is_some();
+        let is_enchanted = stack.has_foil(true) || stack.has_any_enchantments();
         let view = item_render::stack_view(stack);
         let components = self.pack.item_renderer.models.components(&view);
         let is_charged_crossbow = stack.data().is_some_and(|d| !d.charged.is_empty());
@@ -243,6 +244,7 @@ impl Game<'_> {
             id,
             is_empty: false,
             is_block,
+            is_enchanted,
             use_kind,
             is_charged_crossbow,
             is_cooling_down,
@@ -319,7 +321,10 @@ impl Game<'_> {
         if self.creative && !self.res.items().can_destroy_block(self.held(), true) {
             return false;
         }
-        self.mining.is_some() || self.clicks.destroying.active
+        self.mining.is_some()
+            || self.clicks.destroying.active
+            || self.remote.as_ref().is_some_and(|r| r.is_destroying || r.destroying.is_some())
+            || (self.left && self.pick().is_some_and(|h| !self.res.facts().is_air(self.world.block(h.pos[0], h.pos[1], h.pos[2]))))
     }
 
     /// Sanitizes continuous animation hold state when screens, dialogs, or pause occur.
@@ -348,7 +353,7 @@ impl Game<'_> {
         let flags = self.classify_stack(stack, 0.0);
         let is_main = hand == Hand::Main;
         let breaking = self.is_hmi_breaking_block();
-        let left_now = self.left || (is_main && self.clicks.destroying.active);
+        let left_now = self.left || breaking || (is_main && self.clicks.destroying.active);
         let right_now = self.right;
         with_state(|s| {
             let continuous_hold = if is_main {
@@ -375,7 +380,8 @@ impl Game<'_> {
             return;
         }
         self.sanitize_hmi_mouse_state();
-        let left_now = self.left || self.clicks.destroying.active;
+        let breaking = self.is_hmi_breaking_block();
+        let left_now = self.left || breaking || self.clicks.destroying.active;
         let right_now = self.right;
         let effects = &self.potions.effects;
         let haste = effects
@@ -427,7 +433,8 @@ impl Game<'_> {
         self.sanitize_hmi_mouse_state();
 
         let actively_playing = self.is_hmi_actively_playing();
-        let left_now = self.left || self.clicks.destroying.active;
+        let breaking = self.is_hmi_breaking_block();
+        let left_now = self.left || breaking || self.clicks.destroying.active;
         let right_now = self.right;
         let dt = if self.pause {
             0.0
@@ -784,7 +791,38 @@ impl Game<'_> {
                 };
                 let state = self.resolve_item(stack, context, Some(&owner), seed);
                 let world_pose = to_world * item_view_mat;
+                let before_item = out.len();
                 self.submit_item_hmi(&state, world_pose, packed_light, &eval.animator, out);
+                let after_item = out.len();
+
+                if this_flags.is_enchanted_tool() && cfg.enchanted_outlines && after_item > before_item {
+                    let quad_count = (after_item - before_item) / 4;
+                    let mut outline_verts = Vec::with_capacity(after_item - before_item);
+                    for q in 0..quad_count {
+                        let base = before_item + q * 4;
+                        let p0 = glam::Vec3::from_array(out[base].pos);
+                        let p1 = glam::Vec3::from_array(out[base + 1].pos);
+                        let p2 = glam::Vec3::from_array(out[base + 2].pos);
+                        let p3 = glam::Vec3::from_array(out[base + 3].pos);
+                        let center = (p0 + p1 + p2 + p3) * 0.25;
+                        let normal = (p1 - p0).cross(p2 - p0).normalize_or_zero();
+                        let outline_color = 0x90_FF_50_B8;
+                        let outline_light = vertex_light(0xFF);
+                        for idx in 0..4 {
+                            let mut v = out[base + idx];
+                            let p = glam::Vec3::from_array(v.pos);
+                            let outward = p - center;
+                            let dilated = p + outward * 0.06 + normal * 0.002;
+                            v.pos = dilated.to_array();
+                            v.color = outline_color;
+                            v.light = outline_light;
+                            v.layer = crate::gfx::TRANSLUCENT_ITEM_OVERLAY;
+                            v.normal = [0, 0, 0, 0];
+                            outline_verts.push(v);
+                        }
+                    }
+                    out.extend(outline_verts);
+                }
 
                 self.emit_hmi_particles(
                     main_hand,
@@ -1051,6 +1089,16 @@ impl Game<'_> {
                     self.native_chat("§cUsage: /hmi speed <4..24>");
                 }
             }
+            "outline" => {
+                let mut cfg = active_config(self).unwrap_or_default();
+                cfg.enchanted_outlines = !cfg.enchanted_outlines;
+                self.native_set_setting(hmi::ID, hmi::CONFIG_FILE, &cfg.to_json());
+                apply_config(Ok(cfg.clone()));
+                self.native_chat(&format!(
+                    "§e[Hold My Items] Enchanted tool outlines toggled {}.",
+                    if cfg.enchanted_outlines { "ON" } else { "OFF" }
+                ));
+            }
             "offset" => {
                 let x = parts.next().and_then(|v| v.parse::<f32>().ok());
                 let y = parts.next().and_then(|v| v.parse::<f32>().ok());
@@ -1073,10 +1121,11 @@ impl Game<'_> {
             _ => {
                 let cfg = active_config(self).unwrap_or_default();
                 self.native_chat(&format!(
-                    "§b[Hold My Items 5.2.0] §73D Blocks: {} | Particles: {} | Lights: {} | Speed: {}t | Commands: /hmi reload, /hmi inspect, /hmi speed <ticks>, /hmi offset <x> <y> <z>, /hmi reset",
+                    "§b[Hold My Items 5.2.0] §73D Blocks: {} | Particles: {} | Lights: {} | Outlines: {} | Speed: {}t | Commands: /hmi reload, /hmi inspect, /hmi outline, /hmi speed <ticks>, /hmi offset <x> <y> <z>, /hmi reset",
                     if cfg.block_render_3d { "ON" } else { "OFF" },
                     if cfg.hand_particles { "ON" } else { "OFF" },
                     if cfg.dynamic_lights { "ON" } else { "OFF" },
+                    if cfg.enchanted_outlines { "ON" } else { "OFF" },
                     cfg.swing_speed,
                 ));
             }

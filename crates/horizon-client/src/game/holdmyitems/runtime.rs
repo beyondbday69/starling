@@ -31,10 +31,9 @@ const TRIDENT_DRAW_ROLL_DEG: f32 = -10.0;
 const BED_ARM_CLEARANCE_X: f32 = -0.15;
 const BED_ARM_CLEARANCE_Z: f32 = -0.10;
 
-/// Longest one main-hand swing may take while a block is being broken, in ticks (vanilla's swing
-/// length). The item's normal swing (10 ticks by default) is made for attacks; mining with it
-/// finishes the block long before one swing ends, so the hand looks stuck on one slow swing.
-const MINING_SWING_TICKS: u32 = 6;
+/// Longest one main-hand swing may take while a block is being broken, in ticks.
+/// Synchronized with vanilla Minecraft's 4-tick continuous mining swing / block cracking cadence.
+const MINING_SWING_TICKS: u32 = 4;
 
 // ---------------------------------------------------------------------------
 // Easing functions (1:1 port of com.holdmylua.source.scripting.script_wrappers.Easings)
@@ -436,6 +435,7 @@ pub struct Config {
     pub camera_shake: bool,
     pub switch_sounds: bool,
     pub sword_counter_attack: bool,
+    pub enchanted_outlines: bool,
 }
 
 impl Default for Config {
@@ -451,6 +451,7 @@ impl Default for Config {
             camera_shake: true,
             switch_sounds: true,
             sword_counter_attack: true,
+            enchanted_outlines: true,
         }
     }
 }
@@ -477,7 +478,8 @@ impl Config {
                 "  \"dynamic_lights\": {},\n",
                 "  \"camera_shake\": {},\n",
                 "  \"switch_sounds\": {},\n",
-                "  \"sword_counter_attack\": {}\n",
+                "  \"sword_counter_attack\": {},\n",
+                "  \"enchanted_outlines\": {}\n",
                 "}}\n"
             ),
             self.x_offset,
@@ -490,6 +492,7 @@ impl Config {
             self.camera_shake,
             self.switch_sounds,
             self.sword_counter_attack,
+            self.enchanted_outlines,
         )
     }
 
@@ -556,6 +559,9 @@ impl Config {
                 "sword_counter_attack" | "swordCounterAttack" => {
                     cfg.sword_counter_attack = parse_bool(v)?;
                 }
+                "enchanted_outlines" | "enchantedOutlines" => {
+                    cfg.enchanted_outlines = parse_bool(v)?;
+                }
                 _ => {}
             }
         }
@@ -586,6 +592,7 @@ pub fn settings_labels(loaded: &LoadedConfig) -> Vec<String> {
         format!("Eat/Drink/Walk Camera Shake: {}", on_off(c.camera_shake)),
         format!("Hand Switch & Bell Sounds: {}", on_off(c.switch_sounds)),
         format!("Alternating Sword Combos: {}", on_off(c.sword_counter_attack)),
+        format!("Enchanted Tool Outlines: {}", on_off(c.enchanted_outlines)),
         format!("Base Swing Speed: {} ticks", c.swing_speed),
         format!(
             "Viewmodel Offset: X {:+.2} / Y {:+.2} / Z {:+.2}",
@@ -606,7 +613,8 @@ pub fn settings_click(loaded: &LoadedConfig, button: usize) -> Option<SettingsEf
         3 => c.camera_shake = !c.camera_shake,
         4 => c.switch_sounds = !c.switch_sounds,
         5 => c.sword_counter_attack = !c.sword_counter_attack,
-        6 => {
+        6 => c.enchanted_outlines = !c.enchanted_outlines,
+        7 => {
             c.swing_speed = match c.swing_speed {
                 6 => 8,
                 8 => 10,
@@ -615,7 +623,7 @@ pub fn settings_click(loaded: &LoadedConfig, button: usize) -> Option<SettingsEf
                 _ => 6,
             };
         }
-        7 => {
+        8 => {
             if c.x_offset == 0.0 && c.y_offset == 0.0 && c.z_offset == 0.0 {
                 c.x_offset = 0.05;
                 c.y_offset = -0.03;
@@ -630,7 +638,7 @@ pub fn settings_click(loaded: &LoadedConfig, button: usize) -> Option<SettingsEf
                 c.z_offset = 0.0;
             }
         }
-        8 => c = Config::default(),
+        9 => c = Config::default(),
         _ => return None,
     }
     Some(SettingsEffect::Save(c))
@@ -720,6 +728,7 @@ pub struct ItemFlags {
     pub id: String,
     pub is_empty: bool,
     pub is_block: bool,
+    pub is_enchanted: bool,
     pub use_kind: UseKind,
     pub is_charged_crossbow: bool,
     pub is_cooling_down: bool,
@@ -741,6 +750,7 @@ impl ItemFlags {
             id: "minecraft:air".to_owned(),
             is_empty: true,
             is_block: false,
+            is_enchanted: false,
             use_kind: UseKind::None,
             is_charged_crossbow: false,
             is_cooling_down: false,
@@ -1061,8 +1071,16 @@ impl ItemFlags {
             || self.is_mace()
             || self.is_shears()
             || self.is_rod()
+            || self.is_spear()
+            || self.is_trident()
+            || self.use_kind == UseKind::Bow
+            || self.use_kind == UseKind::Crossbow
             || self.use_kind == UseKind::Brush
             || self.short_name() == "flint_and_steel"
+    }
+
+    pub fn is_enchanted_tool(&self) -> bool {
+        self.is_enchanted && self.is_tool_or_weapon()
     }
 
     pub fn is_custom_translate(&self, overrides: &LuaOverrides) -> bool {
@@ -1608,16 +1626,18 @@ impl HmiState {
             self.last_haste,
             self.last_fatigue,
         );
-        // When holding the mouse button down continuously (`continuous_hold`), let the current
-        // swing complete all the way to 1.0 (`!self.main_hand_swinging`) before starting the next
-        // cycle so mining animations never cut off mid-swing or jitter.
+        // When holding the mouse button down continuously (`continuous_hold`), allow the swing
+        // to smoothly cycle once it passes its impact point (`progress >= 0.70` during block breaking)
+        // so mining feels immediate, responsive, and continuous without dead frames or hitches.
         // For discrete mouse clicks (`!continuous_hold`), allow immediate re-swing after a brief
         // debounce (`progress >= 0.08`) so fast clicks are always registered without double-firing
         // within the same frame.
+        let min_continuous_progress = if self.block_breaking { 0.70 } else { 0.95 };
         let min_reclick_progress = (1.0 / (max_ticks as f32)).min(0.08);
         if main_hand {
             let can_start = if continuous_hold {
                 !self.main_hand_swinging
+                    || self.main_hand_swing_progress >= min_continuous_progress
             } else {
                 !self.main_hand_swinging
                     || self.main_hand_swing_progress >= min_reclick_progress
@@ -2949,10 +2969,15 @@ impl HmiState {
         let swing_rise_s = (swing_progress * 6.28).sin();
 
         if item.is_empty {
+            let (empty_y_mul, empty_z_mul) = if input.block_breaking {
+                (0.5, 1.3)
+            } else {
+                (1.0, 1.0)
+            };
             mat.translate(
                 -0.15 * l * swing,
-                0.1 * swing_rise_s + 0.33 * swing + 0.05 * swing_rot + 0.14 * swing_rise,
-                -0.1 * swing_rise_s - 0.4 * swing_hit - 0.2 * swing,
+                (0.1 * swing_rise_s + 0.33 * swing + 0.05 * swing_rot + 0.14 * swing_rise) * empty_y_mul,
+                (-0.1 * swing_rise_s - 0.4 * swing_hit - 0.2 * swing) * empty_z_mul,
             );
             mat.rotate_x(-10.0 * swing_rise);
             mat.move_z(0.15 * swing_rot);
@@ -2966,17 +2991,22 @@ impl HmiState {
             mat.rotate_y_at(5.0 * l * swing_rise_s, 0.3 * l, -0.4, 0.0);
             mat.rotate_y_at(15.0 * l * swing_hit, 0.3 * l, -0.4, 0.0);
         } else if item.is_pickaxe() {
-            mat.move_z(-0.1 * swing_sword_tilt - 0.3 * swing_overall);
+            let (tilt_mul, overall_mul) = if input.block_breaking {
+                (0.20, 1.25)
+            } else {
+                (1.0, 1.0)
+            };
+            mat.move_z(-0.1 * swing_sword_tilt * tilt_mul - 0.3 * swing_overall * overall_mul);
             mat.move_y(-0.1 * swing_rise_s + 0.2 * swing_overall);
             mat.move_x(
                 -0.15 * l * swing_hit + 0.15 * l * swing_hit_second - 0.15 * l * swing_overall,
             );
-            mat.rotate_x_at(60.0 * swing_sword_tilt, 0.3 * l, -0.4, 0.0);
+            mat.rotate_x_at(60.0 * swing_sword_tilt * tilt_mul, 0.3 * l, -0.4, 0.0);
             mat.rotate_x_at(10.0 * swing_rise, 0.3 * l, -0.4, 0.0);
             mat.rotate_x_at(10.0 * swing_rot, 0.3 * l, -0.4, 0.0);
             mat.rotate_x_at(-45.0 * swing_hit, 0.3 * l, -0.4, 0.0);
             mat.rotate_x_at(-10.0 * swing_hit_second, 0.3 * l, -0.4, 0.0);
-            mat.rotate_x_at(-95.0 * swing_overall, 0.3 * l, -0.4, 0.0);
+            mat.rotate_x_at(-95.0 * swing_overall * overall_mul, 0.3 * l, -0.4, 0.0);
             mat.rotate_y_at(20.0 * swing_overall * l, 0.3 * l, -0.4, 0.0);
             mat.rotate_z_at(
                 (20.0 * l * self.tilting.sin() * swing).clamp(-60.0, 60.0),
@@ -4187,7 +4217,7 @@ mod tests {
         assert_eq!(parsed, cfg);
 
         let labels = settings_labels(&Ok(cfg.clone()));
-        assert_eq!(labels.len(), 9);
+        assert_eq!(labels.len(), 10);
         if let Some(SettingsEffect::Save(updated)) = settings_click(&Ok(cfg), 2) {
             assert!(updated.dynamic_lights);
         } else {
@@ -4223,6 +4253,7 @@ mod tests {
             id: "minecraft:axolotl_bucket".to_owned(),
             is_empty: false,
             is_block: false,
+            is_enchanted: false,
             use_kind: UseKind::None,
             is_charged_crossbow: false,
             is_cooling_down: false,
@@ -4259,6 +4290,7 @@ mod tests {
             id: "minecraft:diamond_sword".to_owned(),
             is_empty: false,
             is_block: false,
+            is_enchanted: false,
             use_kind: UseKind::None,
             is_charged_crossbow: false,
             is_cooling_down: false,
@@ -4312,6 +4344,7 @@ mod tests {
             id: "minecraft:iron_pickaxe".to_owned(),
             is_empty: false,
             is_block: false,
+            is_enchanted: false,
             use_kind: UseKind::None,
             is_charged_crossbow: false,
             is_cooling_down: false,
@@ -4320,6 +4353,11 @@ mod tests {
             spear_can_knockback: false,
             spear_hit_impact: false,
         };
+        let enchanted_pick = ItemFlags {
+            is_enchanted: true,
+            ..pickaxe.clone()
+        };
+        assert!(enchanted_pick.is_enchanted_tool());
         let off = ItemFlags::empty();
 
         // Frames (50 ms each, i.e. one tick) one swing takes to finish.
