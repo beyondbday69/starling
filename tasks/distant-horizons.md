@@ -30,10 +30,11 @@
   - Horizontal Quality: Lowest, Low, Medium, High, Extreme
   - Distant Generation: On / Off
   - Cave Culling: On / Off
+  - Generation Shape: Circle / Square
   - Progress Bar: While Loading / Always / Off
   - Debug Detail Colors: On / Off
-- **Chat Commands & Autocompletion:** Supports `/dh` commands (`distance`, `quality`, `generation`, `caves`, `bar`, `startgen`, `stopgen`, `debug`, `on|off`, `save`, `clear`) using Horizon's modern `chat_tree` and `native_commands`.
-- **Unit Tests:** 15/15 unit tests passing (quadtree propagation, section meshing, LOD save/load, pre-generation queue/cancel).
+- **Chat Commands & Autocompletion:** Supports `/dh` commands (`distance`, `quality`, `generation`, `caves`, `shape`, `bar`, `startgen`, `stopgen`, `debug`, `on|off`, `save`, `clear`) using Horizon's modern `chat_tree` and `native_commands`.
+- **Unit Tests:** 15/15 unit and engine integration tests passing (quadtree propagation, section meshing, LOD save/load, pre-generation queue/cancel, circle vs square shape filtering).
 
 ### 2.4. Shader Pack Support & Environmental Fog Scaling
 - **Uniform `far` / `detail_distance`:** In `game.rs:16107`, scaled `detail_distance` from near streaming radius `(self.streaming.radius * 16)` to the full LOD boundary `(self.terrain_distance() * 16) as f32`. Shader packs (e.g. Complementary Reimagined) using uniform `far` for atmospheric fog and depth reconstruction now shade distant LOD terrain across the full 1024m–2048m horizon without premature clipping or fog drowning.
@@ -47,19 +48,25 @@
   - `/dh stopgen`: Cancels and drains pending pre-generation section jobs from the queue.
   - `/dh status`: Reports live loaded percentage `{pct:.1}%`.
 
+### 2.6. Concentric Generation Shape System (`Circle` vs `Square`)
+- **Player-Centered Origin:** Generation and section filtering dynamically center on the player's exact coordinates `(player[0], player[1])`.
+- **GenerationShape Enum:** Offers strictly 2 options (`GenerationShape::Circle` default, `GenerationShape::Square`).
+- **Euclidean SDF Filtering:** In `runtime.rs`, implemented `pos::euclidean_signed_block_distance` calculating exact box-to-point signed Euclidean distance from player coordinates to section bounding boxes. `DetailPlan::sections` and `walk` filter sections outside the radius, rendering a smooth circular perimeter for `Circle` and Chebyshev boundary for `Square`.
+- **Concentric Outward Pre-Generation (Zero Randomness):** `start_pregen` sorts unmeshed sections strictly by `closest_distance_to_player(s, px, pz)`. Worker threads generate sections in concentric waves expanding outward from the player's feet, completely eliminating erratic cross-quadrant jumping.
+
 ---
 
 ## 3. Build & CI Verification
 
-### Run #45044632777 (Latest: Shader Support, Live Progress Bar & Pre-Gen)
-- **Workflow Run:** [#45044632777](https://github.com/beyondbday69/starling/actions/runs/45044632777)
-- **Commit:** `2a128259450fb0473344b68ae921102a61204986` (`feat(distant_horizons): add shader far distance, HUD progress bar, and pre-generation commands`)
+### Run #45051072729 (Latest: Concentric Generation Shape System)
+- **Workflow Run:** [#45051072729](https://github.com/beyondbday69/starling/actions/runs/45051072729)
+- **Commit:** `76f4ccd741ad9163e8bfb04bfe8511b38848d05a` (`feat(distant_horizons): add concentric circle and square generation shapes centered on player`)
 - **Branch:** `feat/shader-fsr-upscaling`
-- **Status:** **PASSED (Green)** (Duration: 8m 27s)
-- **Artifact:** `starling-apk-arm64-v8a` (ID: `14762698492`, size: 35,327,333 bytes / 35.3 MB)
-- **Direct Download Link:** [Artifact 14762698492](https://github.com/beyondbday69/starling/actions/runs/45044632777/artifacts/14762698492)
+- **Status:** **PASSED (Green)** (Duration: 10m 24s)
+- **Artifact:** `starling-apk-arm64-v8a` (ID: `14766251399`, size: 35,329,918 bytes / 35.3 MB)
+- **Direct Download Link:** [Artifact 14766251399](https://github.com/beyondbday69/starling/actions/runs/45051072729/artifacts/14766251399)
 - **Generated APK:** `starling-preview-0.8.0-arm64-v8a.apk`
-- **Native Library SHA-256:** `c7135d751e71b61941c08c519f208a3e32c438eafdf956c0166790244c62cd2b`
+- **Native Library SHA-256:** `94585548d32c7ecc2a07d05c5182191a8126be0aa8c297c534618d81e2e93e20`
 - **Applied Mods (`build.json` verified):**
   - `holdmyitems`: `v5.2.0`
   - `zoom`: `v2.0.0`
@@ -70,6 +77,11 @@
   - `fallingtrees`: `v0.13.2`
   - `gyro`: `v1.6.0`
   - `skins_3d`: `v1.1.1`
+
+### Prior Run #45044632777 (Shader Support & Progress Bar)
+- **Workflow Run:** [#45044632777](https://github.com/beyondbday69/starling/actions/runs/45044632777)
+- **Commit:** `2a128259450fb0473344b68ae921102a61204986`
+- **Status:** PASSED (Green) | Artifact ID: `14762698492` (35.3 MB)
 
 ### Prior Run #45038706589 (Initial Port)
 - **Workflow Run:** [#45038706589](https://github.com/beyondbday69/starling/actions/runs/45038706589)
