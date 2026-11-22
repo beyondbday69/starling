@@ -9,8 +9,9 @@ cinematic_interactions
 skins_3d
 gyro
 fallingtrees
+distant_horizons
 wrench holdmyitems
 wrench holdmyitems zoom elytratrails livingmotion
 wrench holdmyitems zoom elytratrails livingmotion cinematic_interactions
-wrench holdmyitems zoom elytratrails livingmotion cinematic_interactions skins_3d gyro fallingtrees
-cinematic_interactions skins_3d gyro
+wrench holdmyitems zoom elytratrails livingmotion cinematic_interactions skins_3d gyro fallingtrees distant_horizons
+cinematic_interactions skins_3d gyro fallingtrees distant_horizons

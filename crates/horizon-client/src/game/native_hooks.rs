@@ -2534,6 +2534,9 @@ impl Game<'_> {
         if !commands.contains(&"hmi") {
             commands.push("hmi");
         }
+        if !commands.contains(&"dh") {
+            commands.push("dh");
+        }
         mod_api::dispatch_commands(self, mod_api::mods(), commands);
     }
     /// Player FOV scale, after vanilla effects and before zoom and easing.

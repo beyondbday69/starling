@@ -30,7 +30,7 @@ on:
       native_mods:
         description: A test with these native mods of native-mods/ compiled in (ids, separated by spaces), by native_build.sh
         type: string
-        default: 'cinematic_interactions skins_3d gyro fallingtrees'
+        default: 'cinematic_interactions skins_3d gyro fallingtrees distant_horizons'
 permissions:
   contents: read
 env:
@@ -112,7 +112,7 @@ jobs:
           HORIZON_ANDROID_KEY_ALIAS: ${{ env.RELEASE_BUILD == 'true' && secrets.STARLING_KEY_ALIAS || 'horizon-debug' }}
           HORIZON_ANDROID_STORE_PASSWORD: ${{ secrets.STARLING_STORE_PASSWORD }}
           HORIZON_ANDROID_KEY_PASSWORD: ${{ secrets.STARLING_KEY_PASSWORD }}
-          MODS: ${{ inputs.native_mods || 'cinematic_interactions skins_3d gyro' }}
+          MODS: ${{ inputs.native_mods || 'cinematic_interactions skins_3d gyro fallingtrees distant_horizons' }}
           PROFILE: ${{ env.RELEASE_BUILD == 'true' && 'fast' || 'quick' }}
           VARIANT: ${{ env.PREVIEW == 'true' && '--preview' || '' }}
         # Releases with the fast profile (fewer codegen units: a little quicker in game). With native mods, the APK
