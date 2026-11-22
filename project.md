@@ -3,8 +3,8 @@
 **Repository:** `beyondbday69/starling`  
 **Current Active Branch:** `feat/shader-fsr-upscaling`  
 **Target Platform:** Android (ARM64 `arm64-v8a`)  
-**Latest Commit:** `c827585` (`fix(fallingtrees): clone held item before block drops loop to resolve mutable borrow conflict`)  
-**Latest Successful CI Run:** `#45027183002` (Artifact: `14756228477`, size: 35.2 MB)  
+**Latest Commit:** `34d8186` (`feat: add Distant Horizons native mod`)  
+**Latest Successful CI Run:** `#45038706589` (Artifact: `14760659097`, size: 35.3 MB)  
 **Last Updated:** November 2026  
 
 ---
@@ -32,6 +32,7 @@ graph TD
     D --> D3["3D Skins & HD Player Models (horizon-3d-skins)"]
     D --> D4["Gyroscope Aiming Controls (gyro)"]
     D --> D5["Living Motion, Zoom, ElytraTrails"]
+    D --> D6["Distant Horizons (LOD Quadtree & Far Meshing)"]
 ```
 
 ---
@@ -150,10 +151,23 @@ graph TD
 
 ---
 
+## 3.3. Distant Horizons Native Mod Integration (`34d8186`)
+* **Goal:** Bring high-performance Level-of-Detail (LOD) distant terrain rendering past standard render distance directly into Starling on Android.
+* **Ported & Packaged:** Ported from `denizsahin7744/distant-horizons-for-horizon-client` (v0.1.0) into `native-mods/distant_horizons/`.
+* **Key Features:**
+  * **Quadtree Detail Plan:** Chunks converted into column runs and hierarchically propagated up to 16,384-block wide sections.
+  * **Distant Generation:** Background procedural sampling from world generator for unvisited sections.
+  * **Far-Terrain Meshing & Culling:** Top/bottom and adjacent column occlusion culling, coplanar face merging, and cave culling.
+  * **Options & Chat Controls:** In-game UI under `Options > Mods > Distant Horizons > Settings` and `/dh` chat commands with modern `chat_tree` completion.
+  * **Unit Tests & All-In-One APK:** 14/14 unit tests passed; built into `libhorizon_android.so` alongside all core and mixin mods.
+
+---
+
 ## 4. Key Artifacts, Releases & Action Runs
 
 | Run ID | Commit | Description | Artifact ID / Download | Status |
 |---|---|---|---|---|
+| **#45038706589** | `34d8186` | **Distant Horizons Native Mod (v0.1.0) + Full Native Mods Suite:** Ported Distant Horizons level-of-detail terrain (quadtree detail plans, section meshing, distant generation, cave culling, in-game options & /dh chat commands) built directly into Android APK (`starling-preview-0.8.0-arm64-v8a.apk`) | [Artifact 14760659097](https://github.com/beyondbday69/starling/actions/runs/45038706589/artifacts/14760659097) | **PASSED (Green)** |
 | **#45027183002** | `c827585` | **Falling Trees 3D Toppling Animation + Full Native Mods:** Added dynamic topple vector away from player, gravity angular acceleration, full 3D rotating block model rendering with world lighting & biome tints, ground impact audio, LevelEvent 2001 break particles, and clean drop spawning (`starling-preview-0.8.0-arm64-v8a.apk`) | [Artifact 14756228477](https://github.com/beyondbday69/starling/actions/runs/45027183002/artifacts/14756228477) | **PASSED (Green)** |
 | **#44931937290** | `72e3db2` | **Latest 33MB Single APK Build:** Single APK Output (~33MB zip / 35MB APK) + All Core Mods in Manifest (`holdmyitems`, `zoom`, `elytratrails`, `livingmotion`) + Mixin Mods (`cinematic_interactions`, `skins_3d`, `gyro`) + Left-Side [LMB]/[RMB] Hold & Right-Side Drag Buttons | [Artifact 14717714264](https://github.com/beyondbday69/starling/actions/runs/44931937290/artifacts/14717714264) | **PASSED (Green)** |
 | **#44928400353** | `6408c69` | Cinematic Interactions (Left-Side LMB/RMB Hold & Right-Side Drag Buttons) + All Native Mods (`cinematic_interactions`, `skins_3d`, `gyro`, `holdmyitems`, `zoom`, `livingmotion`, `elytratrails`) + Enchanted Tool Outlines & Section 11 Mining Cadence (Duplicated APK in artifact: 70.4 MB) | [Artifact 14716584831](https://github.com/beyondbday69/starling/actions/runs/44928400353/artifacts/14716584831) | PASSED |
