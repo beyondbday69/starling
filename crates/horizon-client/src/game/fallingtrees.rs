@@ -9,7 +9,7 @@ use std::sync::Mutex;
 
 use super::Game;
 use crate::mod_api::NativeMod;
-use horizon_world::BlockStateId;
+use horizon_world::registry::BlockStateId;
 use winit::keyboard::KeyCode;
 
 pub const ID: &str = "fallingtrees";
