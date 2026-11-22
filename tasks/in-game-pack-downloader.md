@@ -35,3 +35,13 @@ Built an in-game Resource Pack and Shader Pack downloader accessible directly fr
 6. **Full Desktop & Mobile Control**:
    - Desktop: Left click navigation, mouse wheel list scrolling, arrow key scrolling, and keyboard typing in search.
    - Mobile: Full touch dragging, tap-to-select, and system keyboard integration.
+
+## Verification
+- **Unit Tests**: `cargo test -p starling-catalog --test catalog` passed (11 tests).
+- **Public Tree Integrity**: `python3 tools/check_public_tree.py` passed.
+- **CI Build**: [Run #45069407294](https://github.com/beyondbday69/starling/actions/runs/45069407294) passed.
+- **Artifact**: [starling-apk-arm64-v8a (35.7 MB)](https://github.com/beyondbday69/starling/actions/runs/45069407294/artifacts/14772424890)
+  - Generated APK: `starling-preview-0.8.0-arm64-v8a.apk`
+  - Digest: `sha256:f5987a71774e4ba7a3209aefbd76c94e0976b5cea85514777de1fd8d4c9c2812`
+  - Built with commit `5873124` on branch `feat/shader-fsr-upscaling`.
+
