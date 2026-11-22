@@ -553,13 +553,14 @@ impl Game<'_> {
             .copied()
             .collect();
 
+        let held_stack = self.held().cloned();
         for p in &block_positions {
             let s = self.world.block(p[0], p[1], p[2]);
             blocks.push((*p, s));
             let d = self.res.items().block_drops(
                 self.pack.assets.registry,
                 s,
-                self.held(),
+                held_stack.as_ref(),
                 &mut self.world.random,
             );
             drops.extend(d);
