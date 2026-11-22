@@ -149,6 +149,15 @@ pub mod pos {
             .max((center_block_z(pos) - z).abs())
             - block_width(pos) / 2
     }
+    /// Closest Euclidean distance from (x, z) to the bounding box of `pos`.
+    pub fn euclidean_signed_block_distance(pos: i64, x: i32, z: i32) -> f64 {
+        let half_w = (block_width(pos) as f64) * 0.5;
+        let cx = f64::from(center_block_x(pos));
+        let cz = f64::from(center_block_z(pos));
+        let dx = ((cx - f64::from(x)).abs() - half_w).max(0.0);
+        let dz = ((cz - f64::from(z)).abs() - half_w).max(0.0);
+        (dx * dx + dz * dz).sqrt()
+    }
     pub fn to_string(pos: i64) -> String {
         format!("{}*{},{}", detail_level(pos), x(pos), z(pos))
     }
@@ -1098,9 +1107,9 @@ impl DetailPlan {
         detail.min(self.min_root_detail) + pos::SECTION_MINIMUM_DETAIL_LEVEL
     }
     /// The sections to draw: the root nodes over the render distance's
-    /// square, split while finer than their expected detail. `skip` leaves
+    /// shape, split while finer than their expected detail. `skip` leaves
     /// out sections the game draws itself (in its render distance).
-    pub fn sections(&self, player: [f64; 2], skip: impl Fn(i64) -> bool) -> Vec<i64> {
+    pub fn sections(&self, player: [f64; 2], shape: GenerationShape, skip: impl Fn(i64) -> bool) -> Vec<i64> {
         let (px, pz) = (player[0].floor() as i32, player[1].floor() as i32);
         let root = pos::ROOT_DETAIL_LEVEL;
         let lo = pos::containing_block(root, px - self.radius, pz - self.radius);
@@ -1108,14 +1117,22 @@ impl DetailPlan {
         let mut out = Vec::new();
         for x in pos::x(lo)..=pos::x(hi) {
             for z in pos::z(lo)..=pos::z(hi) {
-                self.walk(pos::encode(root, x, z), player, &skip, &mut out);
+                self.walk(pos::encode(root, x, z), player, shape, &skip, &mut out);
             }
         }
         out
     }
-    fn walk(&self, node: i64, player: [f64; 2], skip: &impl Fn(i64) -> bool, out: &mut Vec<i64>) {
+    fn walk(&self, node: i64, player: [f64; 2], shape: GenerationShape, skip: &impl Fn(i64) -> bool, out: &mut Vec<i64>) {
         let (px, pz) = (player[0].floor() as i32, player[1].floor() as i32);
-        if pos::chebyshev_signed_block_distance(node, px, pz) > self.radius || skip(node) {
+        let out_of_range = match shape {
+            GenerationShape::Circle => {
+                pos::euclidean_signed_block_distance(node, px, pz) > self.radius as f64
+            }
+            GenerationShape::Square => {
+                pos::chebyshev_signed_block_distance(node, px, pz) > self.radius
+            }
+        };
+        if out_of_range || skip(node) {
             return;
         }
         let detail = pos::detail_level(node);
@@ -1123,7 +1140,7 @@ impl DetailPlan {
             && detail > pos::SECTION_MINIMUM_DETAIL_LEVEL
         {
             for i in 0..4 {
-                self.walk(pos::child(node, i), player, skip, out);
+                self.walk(pos::child(node, i), player, shape, skip, out);
             }
         } else {
             out.push(node);
@@ -1903,6 +1920,32 @@ pub mod storage {
     }
 }
 
+/// The shape of the generated and drawn LOD terrain around the player.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum GenerationShape {
+    #[default]
+    Circle,
+    Square,
+}
+
+impl GenerationShape {
+    pub const ALL: [Self; 2] = [Self::Circle, Self::Square];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Circle => "circle",
+            Self::Square => "square",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Circle => "Circle",
+            Self::Square => "Square",
+        }
+    }
+}
+
 /// Visual HUD progress bar mode for Distant Horizons.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProgressBarMode {
@@ -1947,6 +1990,8 @@ pub struct Settings {
     pub debug: bool,
     /// Visual HUD progress bar for loaded LOD distance.
     pub progress_bar: ProgressBarMode,
+    /// Generation and LOD coverage shape around the player.
+    pub shape: GenerationShape,
 }
 
 /// LOD render distances, in chunks (`lodChunkRenderDistanceRadius`).
@@ -1962,6 +2007,7 @@ impl Default for Settings {
             cave_culling: true,
             debug: false,
             progress_bar: ProgressBarMode::WhileLoading,
+            shape: GenerationShape::Circle,
         }
     }
 }
@@ -1992,6 +2038,11 @@ impl Settings {
             Some("while_loading") => ProgressBarMode::WhileLoading,
             _ => d.progress_bar,
         };
+        let shape = match get("shape").as_deref().map(str::trim) {
+            Some("square") => GenerationShape::Square,
+            Some("circle") => GenerationShape::Circle,
+            _ => d.shape,
+        };
         Self {
             enabled: flag("enabled", d.enabled),
             distance,
@@ -2000,6 +2051,7 @@ impl Settings {
             cave_culling: flag("cave_culling", d.cave_culling),
             debug: flag("debug", d.debug),
             progress_bar,
+            shape,
         }
     }
     pub fn stored(&self) -> Vec<(&'static str, String)> {
@@ -2011,6 +2063,7 @@ impl Settings {
             ("cave_culling", self.cave_culling.to_string()),
             ("debug", self.debug.to_string()),
             ("progress_bar", self.progress_bar.name().to_owned()),
+            ("shape", self.shape.name().to_owned()),
         ]
     }
     pub fn radius_chunks(&self) -> i32 {
@@ -2026,6 +2079,7 @@ impl Settings {
             format!("Cave culling: {}", on(self.cave_culling)),
             format!("Debug detail colours: {}", on(self.debug)),
             format!("Progress bar: {}", self.progress_bar.label()),
+            format!("Generation shape: {}", self.shape.label()),
         ]
     }
     pub fn click(&mut self, button: usize) {
@@ -2048,6 +2102,13 @@ impl Settings {
                     .position(|&m| m == self.progress_bar)
                     .unwrap_or(0);
                 self.progress_bar = ProgressBarMode::ALL[(i + 1) % ProgressBarMode::ALL.len()];
+            }
+            7 => {
+                let i = GenerationShape::ALL
+                    .iter()
+                    .position(|&s| s == self.shape)
+                    .unwrap_or(0);
+                self.shape = GenerationShape::ALL[(i + 1) % GenerationShape::ALL.len()];
             }
             _ => {}
         }
@@ -2091,6 +2152,15 @@ impl Settings {
                 self.progress_bar = mode;
                 Some(format!("Progress bar: {}", self.progress_bar.label()))
             }
+            ["shape", s] => {
+                let shape = match *s {
+                    "circle" => GenerationShape::Circle,
+                    "square" => GenerationShape::Square,
+                    _ => return None,
+                };
+                self.shape = shape;
+                Some(format!("Generation shape: {}", self.shape.label()))
+            }
             ["generation", v] | ["caves", v] | ["debug", v] => {
                 let on = match *v {
                     "on" => true,
@@ -2119,6 +2189,7 @@ pub const COMMANDS: &[(&str, &[&str])] = &[
     ("startgen", &[]),
     ("stopgen", &[]),
     ("bar", &["while_loading", "always", "off"]),
+    ("shape", &["circle", "square"]),
     ("on", &[]),
     ("off", &[]),
     ("distance", &["64", "128", "256", "512", "1024"]),
@@ -2267,6 +2338,17 @@ pub mod engine {
         pub render: RenderSettings,
         pub generation: bool,
         pub debug: bool,
+        pub shape: GenerationShape,
+    }
+
+    /// Closest Euclidean distance from point (px, pz) to the bounding box of section `pos`.
+    pub fn closest_distance_to_player(pos: i64, px: f64, pz: f64) -> i64 {
+        let half_w = (pos::block_width(pos) as f64) * 0.5;
+        let cx = f64::from(pos::center_block_x(pos));
+        let cz = f64::from(pos::center_block_z(pos));
+        let dx = ((cx - px).abs() - half_w).max(0.0);
+        let dz = ((cz - pz).abs() - half_w).max(0.0);
+        (dx * dx + dz * dz).sqrt().round() as i64
     }
 
     struct Shared<H: Host> {
@@ -2293,6 +2375,7 @@ pub mod engine {
         shared: Arc<Shared<H>>,
         threads: Vec<JoinHandle<()>>,
         plan: Option<DetailPlan>,
+        shape: Option<GenerationShape>,
         planned_at: Option<(Instant, [f64; 2])>,
         wanted: HashSet<i64>,
         /// Sections with a mesh in the game, and those it still shows that
@@ -2367,6 +2450,7 @@ pub mod engine {
                 shared,
                 threads,
                 plan: None,
+                shape: None,
                 planned_at: None,
                 wanted: HashSet::new(),
                 shown: HashSet::new(),
@@ -2427,17 +2511,20 @@ pub mod engine {
         ) -> (Vec<Meshed<H::Mesh>>, Vec<i64>) {
             let now = Instant::now();
             self.player = player;
+            let shape = self.shared.settings.lock().unwrap().shape;
             let near_changed = **self.shared.near.lock().unwrap() != near;
             let moved = self.planned_at.is_none_or(|(at, p)| {
                 let d = (p[0] - player[0]).hypot(p[1] - player[1]);
                 d >= 16.0 || (d > 0.0 && now - at > Duration::from_secs(2))
             });
-            if self.plan != Some(plan) || moved || near_changed {
+            if self.plan != Some(plan) || self.shape != Some(shape) || moved || near_changed {
                 if near_changed {
                     *self.shared.near.lock().unwrap() = Arc::new(near.clone());
                 }
-                self.replan(player, plan, &near);
+                self.replan(player, plan, shape, &near);
                 self.planned_at = Some((now, player));
+                self.shape = Some(shape);
+                self.plan = Some(plan);
             }
             if now - self.last_save > Duration::from_secs(10) {
                 self.last_save = now;
@@ -2479,7 +2566,7 @@ pub mod engine {
             (meshes, removed)
         }
 
-        fn replan(&mut self, player: [f64; 2], plan: DetailPlan, near: &Near) {
+        fn replan(&mut self, player: [f64; 2], plan: DetailPlan, shape: GenerationShape, near: &Near) {
             let fully_near = |s: i64| {
                 let (x0, z0) = (
                     pos::min_corner_block_x(s) >> 4,
@@ -2489,12 +2576,7 @@ pub mod engine {
                 n <= 64
                     && (0..n.max(1)).all(|dx| (0..n.max(1)).all(|dz| near.covers(x0 + dx, z0 + dz)))
             };
-            let wanted: HashSet<i64> = plan.sections(player, fully_near).into_iter().collect();
-            let distance = |s: i64| {
-                let dx = f64::from(pos::center_block_x(s)) - player[0];
-                let dz = f64::from(pos::center_block_z(s)) - player[1];
-                (dx * dx + dz * dz).sqrt() as i64
-            };
+            let wanted: HashSet<i64> = plan.sections(player, shape, fully_near).into_iter().collect();
             // Sections across the near area's edge are meshed again when the
             // chunks it holds there change.
             let mut near_sections = HashMap::new();
@@ -2518,6 +2600,11 @@ pub mod engine {
             // Workers skip sections no longer wanted: they must see these
             // as wanted before their jobs are queued.
             *self.shared.wanted.lock().unwrap() = wanted.clone();
+            let distance = |s: i64| {
+                let dx = f64::from(pos::center_block_x(s)) - player[0];
+                let dz = f64::from(pos::center_block_z(s)) - player[1];
+                (dx * dx + dz * dz).sqrt() as i64
+            };
             for &s in &wanted {
                 let shown = self.shown.contains(&s) || self.blank.contains(&s);
                 if !self.wanted.contains(&s) && !shown {
@@ -2536,6 +2623,7 @@ pub mod engine {
             self.wanted = wanted;
             self.near_sections = near_sections;
             self.plan = Some(plan);
+            self.shape = Some(shape);
             // Sections far from everything wanted leave memory.
             let mut store = self.shared.store.lock().unwrap();
             if store.sections.len() > self.wanted.len() * 3 + 256 {
@@ -2597,34 +2685,39 @@ pub mod engine {
             self.blank.clear();
             self.planned_at = None;
             self.plan = None;
+            self.shape = None;
             self.wanted.clear();
         }
 
         /// Starts background pre-generation of all ungenerated/unmeshed LOD
-        /// sections within the active radius. Returns the count of queued sections.
+        /// sections within the active radius, ordered concentrically outward from the player.
+        /// Returns the count of queued sections.
         pub fn start_pregen(&mut self) -> usize {
-            let distance = |s: i64| {
-                let dx = f64::from(pos::center_block_x(s)) - self.player[0];
-                let dz = f64::from(pos::center_block_z(s)) - self.player[1];
-                (dx * dx + dz * dz).sqrt() as i64
-            };
-            let mut count = 0;
+            let (px, pz) = (self.player[0], self.player[1]);
             *self.shared.wanted.lock().unwrap() = self.wanted.clone();
+            let mut unmeshed: Vec<i64> = self
+                .wanted
+                .iter()
+                .copied()
+                .filter(|s| !self.shown.contains(s) && !self.blank.contains(s))
+                .collect();
+            // Concentric sorting: closest to player first
+            unmeshed.sort_by_key(|&s| closest_distance_to_player(s, px, pz));
+
+            let mut count = 0;
             let mut q = self.shared.queue.lock().unwrap();
-            for &s in &self.wanted {
-                let shown = self.shown.contains(&s) || self.blank.contains(&s);
-                if !shown {
-                    if q.sections.insert(s) {
-                        let sequence = q.sequence;
-                        q.sequence += 1;
-                        q.heap.push(Queued {
-                            priority: distance(s),
-                            sequence,
-                            job: Job::Section(s),
-                        });
-                    }
-                    count += 1;
+            for s in unmeshed {
+                let priority = closest_distance_to_player(s, px, pz);
+                if q.sections.insert(s) {
+                    let sequence = q.sequence;
+                    q.sequence += 1;
+                    q.heap.push(Queued {
+                        priority,
+                        sequence,
+                        job: Job::Section(s),
+                    });
                 }
+                count += 1;
             }
             drop(q);
             if count > 0 {
@@ -3255,8 +3348,11 @@ mod tests {
         // Medium: 192-block units, base 2.
         assert_eq!(plan.expected_detail_level(player, near), 6);
         assert_eq!(plan.expected_detail_level(player, far), 6 + 3);
-        let sections = plan.sections(player, |_| false);
+        let sections = plan.sections(player, GenerationShape::Square, |_| false);
         assert!(!sections.is_empty());
+        let circle_sections = plan.sections(player, GenerationShape::Circle, |_| false);
+        assert!(!circle_sections.is_empty());
+        assert!(circle_sections.len() <= sections.len());
         // The sections tile the area without overlapping.
         for (i, &a) in sections.iter().enumerate() {
             for &b in &sections[i + 1..] {
@@ -3424,6 +3520,7 @@ mod tests {
         s.click(2);
         s.click(5);
         s.click(6);
+        s.click(7);
         let stored: std::collections::HashMap<_, _> = s.stored().into_iter().collect();
         let read = Settings::read(|k| stored.get(k).cloned());
         assert_eq!(read, s);
@@ -3431,6 +3528,7 @@ mod tests {
         assert_eq!(read.quality, HorizontalQuality::High);
         assert!(read.debug);
         assert_eq!(read.progress_bar, ProgressBarMode::Always);
+        assert_eq!(read.shape, GenerationShape::Square);
         assert_eq!(Settings::read(|_| Some("junk".into())), Settings::default());
         let mut c = Settings::default();
         assert!(c.command(&["distance", "100"]).is_some());
@@ -3438,6 +3536,8 @@ mod tests {
         assert!(c.command(&["quality", "extreme"]).is_some());
         assert!(c.command(&["bar", "off"]).is_some());
         assert_eq!(c.progress_bar, ProgressBarMode::Off);
+        assert!(c.command(&["shape", "square"]).is_some());
+        assert_eq!(c.shape, GenerationShape::Square);
         assert!(c.command(&["nonsense"]).is_none());
     }
 
@@ -3480,6 +3580,7 @@ mod tests {
             },
             generation: true,
             debug: false,
+            shape: GenerationShape::Circle,
         };
         let mut e = engine::Engine::new(
             FakeHost { blocks: blocks() },
@@ -3539,6 +3640,7 @@ mod tests {
             },
             generation: true,
             debug: false,
+            shape: GenerationShape::Square,
         };
         let dir = std::env::temp_dir().join(format!("dh-engine-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);

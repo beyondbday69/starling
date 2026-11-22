@@ -505,6 +505,7 @@ fn work_settings(game: &Game<'_>, settings: &Settings) -> WorkSettings {
         },
         generation: settings.generation,
         debug: settings.debug,
+        shape: settings.shape,
     }
 }
 
