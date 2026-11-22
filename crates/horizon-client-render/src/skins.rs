@@ -726,10 +726,29 @@ pub fn lookup(
     skin
 }
 
+pub static ALLOW_SKIN_TRANSPARENCY: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Enable or disable ETF player skin transparency.
+pub fn process_skin_transparency(allow: bool) {
+    ALLOW_SKIN_TRANSPARENCY.store(allow, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Whether ETF player skin transparency is currently permitted.
+pub fn allows_skin_transparency() -> bool {
+    ALLOW_SKIN_TRANSPARENCY.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// `SkinTextureDownloader.processLegacySkin` on RGBA pixels: 64x32 skins
-/// get the 64x64 layout, and the opaque parts lose their alpha. `None` for
+/// get the 64x64 layout, and the opaque parts lose their alpha unless
+/// `allow_transparency` preserves intentional cutouts (ETF feature). `None` for
 /// any other size (the download fails).
-pub fn process_legacy_skin(width: u32, height: u32, rgba: &[u8]) -> Option<Vec<u8>> {
+pub fn process_skin(
+    width: u32,
+    height: u32,
+    rgba: &[u8],
+    allow_transparency: bool,
+) -> Option<Vec<u8>> {
     if width != 64 || height != 32 && height != 64 {
         return None;
     }
@@ -763,28 +782,37 @@ pub fn process_legacy_skin(width: u32, height: u32, rgba: &[u8]) -> Option<Vec<u
             }
         }
     }
-    let no_alpha = |img: &mut Vec<u8>, x0: i32, y0: i32, x1: i32, y1: i32| {
-        for x in x0..x1 {
-            for y in y0..y1 {
-                img[at(x, y) + 3] = 255;
+    if !allow_transparency {
+        let no_alpha = |img: &mut Vec<u8>, x0: i32, y0: i32, x1: i32, y1: i32| {
+            for x in x0..x1 {
+                for y in y0..y1 {
+                    img[at(x, y) + 3] = 255;
+                }
             }
-        }
-    };
-    no_alpha(&mut img, 0, 0, 32, 16);
-    if legacy {
-        // doNotchTransparencyHack: a fully opaque hat layer is cleared.
-        let opaque = (32..64).all(|x| (0..32).all(|y| img[at(x, y) + 3] >= 128));
-        if opaque {
-            for x in 32..64 {
-                for y in 0..32 {
-                    img[at(x, y) + 3] = 0;
+        };
+        no_alpha(&mut img, 0, 0, 32, 16);
+        if legacy {
+            // doNotchTransparencyHack: a fully opaque hat layer is cleared.
+            let opaque = (32..64).all(|x| (0..32).all(|y| img[at(x, y) + 3] >= 128));
+            if opaque {
+                for x in 32..64 {
+                    for y in 0..32 {
+                        img[at(x, y) + 3] = 0;
+                    }
                 }
             }
         }
+        no_alpha(&mut img, 0, 16, 64, 32);
+        no_alpha(&mut img, 16, 48, 48, 64);
     }
-    no_alpha(&mut img, 0, 16, 64, 32);
-    no_alpha(&mut img, 16, 48, 48, 64);
     Some(img)
+}
+
+/// `SkinTextureDownloader.processLegacySkin` on RGBA pixels: 64x32 skins
+/// get the 64x64 layout, and the opaque parts lose their alpha unless
+/// ETF skin transparency is allowed. `None` for any other size (the download fails).
+pub fn process_legacy_skin(width: u32, height: u32, rgba: &[u8]) -> Option<Vec<u8>> {
+    process_skin(width, height, rgba, allows_skin_transparency())
 }
 
 /// `SkinTextureDownloader`: fetches textures on background threads, from
@@ -1157,6 +1185,24 @@ mod tests {
         assert!(super::read_offline_skin(&file, "slim").is_err());
         assert!(super::read_offline_skin(&dir.join("missing.png"), "").is_err());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn etf_skin_transparency_preserves_head_cutouts() {
+        let mut rgba = vec![255u8; 64 * 64 * 4];
+        // Transparent eye cutout on the face (8..10, 8..10)
+        for x in 8..10 {
+            for y in 8..10 {
+                let idx = ((y * 64 + x) * 4) as usize;
+                rgba[idx + 3] = 0;
+            }
+        }
+        let opaque = super::process_skin(64, 64, &rgba, false).unwrap();
+        let idx = ((8 * 64 + 8) * 4) as usize;
+        assert_eq!(opaque[idx + 3], 255);
+
+        let transparent = super::process_skin(64, 64, &rgba, true).unwrap();
+        assert_eq!(transparent[idx + 3], 0);
     }
 
     /// `MinecraftProfileTexture.getMetadata("model")`: `slim` marks a slim

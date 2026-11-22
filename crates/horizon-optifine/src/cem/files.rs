@@ -11,7 +11,20 @@ use std::{collections::BTreeMap, fs, path::Path};
 /// `<name>.jem` before `<name>/<name>.jem`.
 pub fn jem_files(root: &Path) -> BTreeMap<String, Vec<String>> {
     let mut out: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for base in ["assets/minecraft/emf/cem", "assets/minecraft/optifine/cem"] {
+    let mut bases = vec![
+        "assets/minecraft/emf/cem".to_string(),
+        "assets/minecraft/optifine/cem".to_string(),
+    ];
+    if let Ok(entries) = fs::read_dir(root.join("assets")) {
+        for e in entries.flatten() {
+            let ns = e.file_name().to_string_lossy().into_owned();
+            if ns != "minecraft" {
+                bases.push(format!("assets/{ns}/emf/cem"));
+                bases.push(format!("assets/{ns}/optifine/cem"));
+            }
+        }
+    }
+    for base in &bases {
         let Ok(entries) = fs::read_dir(root.join(base)) else {
             continue;
         };
@@ -83,7 +96,16 @@ fn read_small(path: &Path) -> Option<String> {
 /// The atlas name of a texture resource path: `assets/minecraft/textures/entity/x.png` is
 /// `entity/x`. Textures outside a `textures/` folder are not in the atlas.
 pub fn atlas_name(path: &str) -> Option<String> {
-    let rest = path.strip_prefix("assets/minecraft/textures/")?;
+    let path = path.trim();
+    let rest = if let Some(r) = path.strip_prefix("assets/minecraft/textures/") {
+        r
+    } else if let Some(r) = path.strip_prefix("textures/") {
+        r
+    } else if let Some(r) = path.strip_prefix("assets/minecraft/") {
+        r
+    } else {
+        path
+    };
     Some(rest.strip_suffix(".png").unwrap_or(rest).to_owned())
 }
 

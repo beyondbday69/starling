@@ -1963,9 +1963,9 @@ fn render_visible(
     let cem_key = cem_key(&model_key);
     let custom_body = cem.layer(cem_key);
     let body_animation = custom_body.and_then(|c| c.animation.as_ref());
-    let model = match (m.skin_3d.as_ref(), custom_body) {
-        (Some(skin_3d), _) => skin_3d.clone(),
-        (None, Some(custom)) => custom.model.clone(),
+    let model = match (custom_body, m.skin_3d.as_ref()) {
+        (Some(custom), _) => custom.model.clone(),
+        (None, Some(skin_3d)) => skin_3d.clone(),
         (None, None) => m
             .kind
             .layer(&model_key)

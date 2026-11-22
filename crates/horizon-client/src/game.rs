@@ -20554,11 +20554,14 @@ fn load_world_rest(
     };
     let load_mobs = || -> Result<_> {
         let _step = startup::step("rest.mobs");
-        let mob_types: HashMap<_, _> = MobTypes::load(root)?
+        let mut mob_types: HashMap<_, _> = MobTypes::load(root)?
             .types
             .into_iter()
             .map(|(k, v)| (k, Arc::new(v)))
             .collect();
+        if let Some(player) = perspective::player_type(root) {
+            mob_types.insert("minecraft:player".into(), player);
+        }
         let mut mob_data = horizon_client::mobs::MobData::load(root, facts);
         mob_data.cem = std::sync::RwLock::new(Arc::new(
             horizon_client::mobs::cem::CemModels::load(root, &mob_types),

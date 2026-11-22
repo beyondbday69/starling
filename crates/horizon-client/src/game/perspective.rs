@@ -195,8 +195,8 @@ fn load_player_type(root: &Path) -> Option<Arc<MobType>> {
             ambient_interval: 80,
             flags: Default::default(),
             model: Arc::new(model),
-            // PlayerModel's slim arms, for slim skins, and PlayerCapeModel.
-            layers: ["player_slim#main", "player#cape"]
+            // PlayerModel's main layer, slim arms for slim skins, and PlayerCapeModel.
+            layers: ["player#main", "player_slim#main", "player#cape"]
                 .into_iter()
                 .filter_map(|key| {
                     let model = models.model(&format!("minecraft:{key}"))?;

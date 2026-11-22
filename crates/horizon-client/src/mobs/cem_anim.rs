@@ -69,6 +69,7 @@ params! {
     "is_holding_item_left" => HoldingLeft, "is_paused" => Paused, "is_hovered" => Hovered,
     "is_player_first_person" => FirstPerson, "is_player_third_person" => ThirdPerson,
     "is_player_third_person_reversed" => ThirdPersonReversed,
+    "is_sleeping" => Sleeping,
 }
 
 /// What every entity of a frame shares, set once per frame by the game.
@@ -647,6 +648,11 @@ fn params(m: &Mob, s: &State, frame: &Frame, slots: &mut [f32]) {
             Tamed => flag(m.extra.tame),
             Sprinting => flag(m.extra.sprinting),
             Sneaking => flag(m.extra.crouching),
+            Sleeping => flag(
+                m.extra.pose == 2
+                    || m.extra.avatar_pose == crate::pose::Pose::Sleeping
+                    || super::villager::sleeping(m),
+            ),
             // A player's `isBlocking`: the item in use blocks attacks.
             Blocking => flag(m.extra.blocking),
             // `isVisuallyCrawling`: the swimming pose out of water.

@@ -52,6 +52,7 @@ impl CemModels {
     pub fn load(root: &Path, types: &HashMap<String, Arc<MobType>>) -> Self {
         let files = jem_files(root);
         if files.is_empty() {
+            horizon_client_render::skins::process_skin_transparency(false);
             return Self::default();
         }
         Self::from_files(root, &files, &vanilla_layers(types))
@@ -124,6 +125,9 @@ impl CemModels {
             }
             layers.insert(key, layer);
         }
+        let has_player_cem =
+            layers.contains_key("player#main") || layers.contains_key("player_slim#main");
+        horizon_client_render::skins::process_skin_transparency(has_player_cem);
         Self { layers }
     }
 
@@ -166,6 +170,8 @@ const LAYERS: &[(&str, &str)] = &[
     ("puffer_fish_small", "pufferfish_small#main"),
     ("skeleton_horse_armor", "undead_horse_armor#main"),
     ("zombie_horse_armor", "undead_horse_armor#main"),
+    ("player_cape", "player#cape"),
+    ("cape", "player#cape"),
 ];
 
 /// The model layer a CEM model name reshapes.
@@ -297,6 +303,20 @@ fn vanilla_part(model: &str, part: &str) -> String {
         (_, "body") if spider => Some("body1".into()),
         ("villager" | "wandering_trader" | "witch", "headwear2") => Some("hat_rim".into()),
         ("villager" | "wandering_trader" | "witch", "bodywear") => Some("jacket".into()),
+        ("player" | "player_slim", "bodywear" | "body_layer") => Some("jacket".into()),
+        ("player" | "player_slim", "left_pant" | "left_leg_layer" | "left_pants_layer") => {
+            Some("left_pants".into())
+        }
+        ("player" | "player_slim", "right_pant" | "right_leg_layer" | "right_pants_layer") => {
+            Some("right_pants".into())
+        }
+        ("player" | "player_slim", "left_arm_layer" | "left_sleve" | "left_sleeve_layer") => {
+            Some("left_sleeve".into())
+        }
+        ("player" | "player_slim", "right_arm_layer" | "right_sleve" | "right_sleeve_layer") => {
+            Some("right_sleeve".into())
+        }
+        ("player" | "player_slim" | "player_cape" | "cape", "cape") => Some("cloak".into()),
         ("chicken" | "cold_chicken" | "warm_chicken", "bill") => Some("beak".into()),
         ("chicken" | "cold_chicken" | "warm_chicken", "chin") => Some("red_thing".into()),
         ("llama" | "llama_decor" | "trader_llama" | "trader_llama_decor", "chest_right") => {
