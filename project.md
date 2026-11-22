@@ -3,8 +3,8 @@
 **Repository:** `beyondbday69/starling`  
 **Current Active Branch:** `feat/shader-fsr-upscaling`  
 **Target Platform:** Android (ARM64 `arm64-v8a`)  
-**Latest Commit:** `72e3db2` (`fix(android): produce single ~33MB APK artifact and include all core mods in build manifest`)  
-**Latest Successful CI Run:** `#44931937290` (Artifact: `14717714264`, size: 33.57 MB / 35.2 MB)  
+**Latest Commit:** `c827585` (`fix(fallingtrees): clone held item before block drops loop to resolve mutable borrow conflict`)  
+**Latest Successful CI Run:** `#45027183002` (Artifact: `14756228477`, size: 35.2 MB)  
 **Last Updated:** November 2026  
 
 ---
@@ -139,10 +139,22 @@ graph TD
 
 ---
 
+## 3.2. Falling Trees 3D Toppling Animation
+* **Goal:** Direct response to user feedback *"why there's is no animation for falling tree tree just breaks apart instantly without any animation fix it man"*.
+* **Implementation:**
+  * **Dynamic Topple Vector:** Calculates horizontal topple trajectory directed away from the chopping player.
+  * **Zero Ghosting:** Immediately clears chunk terrain blocks and replaces them with an animated 3D multi-block structure.
+  * **Realistic 3D Topple Physics:** Accelerates under gravity ($\theta(t) \propto t^2$) with full 3D block model rendering, ambient occlusion, world lighting, and leaf biome tints.
+  * **Impact Landing:** On ground impact, plays heavy crash audio, bursts LevelEvent 2001 wood/leaf particles across landing coordinates, spawns all loot drops cleanly at the stump, and wears held axe durability.
+  * **Borrow & Scope Safety:** Cloned held item stack before `block_drops` loop and accessed player coordinates via `self.player`.
+
+---
+
 ## 4. Key Artifacts, Releases & Action Runs
 
 | Run ID | Commit | Description | Artifact ID / Download | Status |
 |---|---|---|---|---|
+| **#45027183002** | `c827585` | **Falling Trees 3D Toppling Animation + Full Native Mods:** Added dynamic topple vector away from player, gravity angular acceleration, full 3D rotating block model rendering with world lighting & biome tints, ground impact audio, LevelEvent 2001 break particles, and clean drop spawning (`starling-preview-0.8.0-arm64-v8a.apk`) | [Artifact 14756228477](https://github.com/beyondbday69/starling/actions/runs/45027183002/artifacts/14756228477) | **PASSED (Green)** |
 | **#44931937290** | `72e3db2` | **Latest 33MB Single APK Build:** Single APK Output (~33MB zip / 35MB APK) + All Core Mods in Manifest (`holdmyitems`, `zoom`, `elytratrails`, `livingmotion`) + Mixin Mods (`cinematic_interactions`, `skins_3d`, `gyro`) + Left-Side [LMB]/[RMB] Hold & Right-Side Drag Buttons | [Artifact 14717714264](https://github.com/beyondbday69/starling/actions/runs/44931937290/artifacts/14717714264) | **PASSED (Green)** |
 | **#44928400353** | `6408c69` | Cinematic Interactions (Left-Side LMB/RMB Hold & Right-Side Drag Buttons) + All Native Mods (`cinematic_interactions`, `skins_3d`, `gyro`, `holdmyitems`, `zoom`, `livingmotion`, `elytratrails`) + Enchanted Tool Outlines & Section 11 Mining Cadence (Duplicated APK in artifact: 70.4 MB) | [Artifact 14716584831](https://github.com/beyondbday69/starling/actions/runs/44928400353/artifacts/14716584831) | PASSED |
 | **#44924392350** | `5cf85b3` | Hold My Items Mining Cadence (Section 11 HMI 5.1.3 reference: half-duration restart, 6-tick cap, zero idle lag) + Canonical Pickaxe/Bare Hand poses + Enchanted Tool Outlines (GUI & 3D first-person) | [Artifact 14715600991](https://github.com/beyondbday69/starling/actions/runs/44924392350/artifacts/14715600991) | PASSED |
