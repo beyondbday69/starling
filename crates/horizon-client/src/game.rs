@@ -136,6 +136,7 @@ mod explosion;
 mod extras;
 mod falling_damage;
 mod falling_trees;
+pub(crate) mod fallingtrees;
 mod fangs;
 mod fans;
 #[cfg(target_os = "android")]
@@ -6122,6 +6123,7 @@ impl Game<'_> {
         }
         self.pending.clear(pos);
         self.process_level_events()?;
+        self.fallingtrees_tick();
         Ok(())
     }
     /// The hand whose use ended the click, if any.

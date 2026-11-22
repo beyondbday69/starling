@@ -1,0 +1,13 @@
+[package]
+name = "horizon-mod-fallingtrees"
+version = "0.13.2"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+description = "Panda's Falling Trees for Horizon: trees fall when their base is chopped with an axe."
+
+# The mod's logic and its tests: the same file the bundle adds to the game.
+[lib]
+path = "mixins/fallingtrees/runtime.rs"
+
+[workspace]

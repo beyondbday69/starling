@@ -2171,6 +2171,7 @@ impl Game<'_> {
     pub(super) fn native_tick(&mut self) {
         self.holdmyitems_tick();
         self.elytratrails_tick();
+        self.fallingtrees_tick();
         mod_api::dispatch_tick(self, mod_api::mods());
         super::mod_loader::tick(self);
     }
@@ -2826,6 +2827,9 @@ impl Game<'_> {
         if !mods.iter().any(|m| m.id == "livingmotion") {
             self.livingmotion_listed(mods);
         }
+        if !mods.iter().any(|m| m.id == "fallingtrees") {
+            mods.push(Self::fallingtrees_mod_entry());
+        }
         mod_api::dispatch_mods(self, mod_api::mods(), mods);
         // Mods built as shared libraries list themselves the same way, and are only known once
         // their folder has been read.
@@ -2851,6 +2855,10 @@ impl Game<'_> {
             self.livingmotion_settings_page(mod_id, buttons);
             return;
         }
+        if mod_id == "fallingtrees" {
+            buttons.extend(self.fallingtrees_settings());
+            return;
+        }
         mod_api::dispatch_settings(self, mod_api::mods(), mod_id, buttons);
         super::mod_loader::settings(self, mod_id, buttons);
     }
@@ -2870,6 +2878,10 @@ impl Game<'_> {
         }
         if mod_id == "livingmotion" {
             self.livingmotion_settings_click(mod_id, button);
+            return;
+        }
+        if mod_id == "fallingtrees" {
+            self.fallingtrees_settings_click(button);
             return;
         }
         mod_api::dispatch_settings_click(self, mod_api::mods(), mod_id, button);
@@ -6359,6 +6371,7 @@ impl Game<'_> {
         state: BlockStateId,
         canceled: &mut bool,
     ) {
+        self.fallingtrees_destroy_block(pos, state, canceled);
         mod_api::dispatch_destroy_block(self, mod_api::mods(), pos, state, canceled);
     }
     /// A player placed `stack` as the block `state` at `pos`: where

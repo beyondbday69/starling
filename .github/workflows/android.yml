@@ -30,7 +30,7 @@ on:
       native_mods:
         description: A test with these native mods of native-mods/ compiled in (ids, separated by spaces), by native_build.sh
         type: string
-        default: 'cinematic_interactions skins_3d gyro'
+        default: 'cinematic_interactions skins_3d gyro fallingtrees'
 permissions:
   contents: read
 env:
