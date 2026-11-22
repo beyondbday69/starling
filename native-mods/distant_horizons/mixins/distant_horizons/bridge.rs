@@ -769,24 +769,64 @@ pub(super) fn command(game: &mut Game<'_>, command: &str) -> bool {
                 })
             });
             match session {
-                Some((s, generator, dir)) => format!(
-                    "Distant Horizons {}: {} of {} sections drawn ({} faces), {} jobs queued, {} in memory, {} generated, {} chunks read; generator {}; near {} chunks around {:?}; LODs {}",
-                    dh::VERSION,
-                    s.shown,
-                    s.wanted,
-                    s.quads,
-                    s.queued,
-                    s.loaded,
-                    s.generated,
-                    s.chunks,
-                    if generator { "on" } else { "none" },
-                    game.streaming.radius,
-                    game.streaming.center,
-                    if dir.is_some() {
-                        "saved in the world"
+                Some((s, generator, dir)) => {
+                    let pct = if s.wanted > 0 {
+                        (s.shown as f32 / s.wanted as f32 * 100.0).clamp(0.0, 100.0)
                     } else {
-                        "in memory"
-                    },
+                        100.0
+                    };
+                    format!(
+                        "Distant Horizons {}: {:.1}% - {} of {} sections drawn ({} faces), {} jobs queued, {} in memory, {} generated, {} chunks read; generator {}; near {} chunks around {:?}; LODs {}",
+                        dh::VERSION,
+                        pct,
+                        s.shown,
+                        s.wanted,
+                        s.quads,
+                        s.queued,
+                        s.loaded,
+                        s.generated,
+                        s.chunks,
+                        if generator { "on" } else { "none" },
+                        game.streaming.radius,
+                        game.streaming.center,
+                        if dir.is_some() {
+                            "saved in the world"
+                        } else {
+                            "in memory"
+                        },
+                    )
+                }
+                None => format!("Distant Horizons {}: not running here", dh::VERSION),
+            }
+        }
+        ["startgen"] => {
+            let res = SESSION.with_borrow_mut(|s| {
+                let session = s.as_mut()?;
+                let host = session.engine.host();
+                if host.source.lock().unwrap().is_none() {
+                    *host.source.lock().unwrap() = generator(game);
+                }
+                let queued = session.engine.start_pregen();
+                Some((queued, settings.radius_chunks()))
+            });
+            match res {
+                Some((queued, radius)) => format!(
+                    "Distant Horizons: Pre-generation started for radius {} chunks ({} sections queued)",
+                    radius, queued
+                ),
+                None => format!("Distant Horizons {}: not running here", dh::VERSION),
+            }
+        }
+        ["stopgen"] => {
+            let res = SESSION.with_borrow_mut(|s| {
+                let session = s.as_mut()?;
+                let removed = session.engine.stop_pregen();
+                Some(removed)
+            });
+            match res {
+                Some(removed) => format!(
+                    "Distant Horizons: Pre-generation stopped ({} queued jobs cancelled)",
+                    removed
                 ),
                 None => format!("Distant Horizons {}: not running here", dh::VERSION),
             }
@@ -822,44 +862,81 @@ pub(super) fn command(game: &mut Game<'_>, command: &str) -> bool {
     true
 }
 
-/// The debug box: shown with the debug detail colours.
+/// The HUD cards: the live progress bar and debug box.
 pub(super) fn hud(
     game: &mut Game<'_>,
     batch: &mut horizon_client::hud::HudBatch,
     corners: &mut horizon_client::extras_hud::Corners,
 ) {
     use horizon_client::extras::Corner;
-    if !game.native_on(dh::ID)
-        || !settings(game).debug
-        || !game.native_corner_shown(Corner::BottomLeft)
-    {
+    if !game.native_on(dh::ID) || !game.native_corner_shown(Corner::BottomLeft) {
         return;
     }
+    let settings = settings(game);
     let Some(s) = SESSION.with_borrow(|s| s.as_ref().map(|s| s.engine.stats())) else {
         return;
     };
-    let lines = [
-        format!("DH {}: {}/{} sections", dh::VERSION, s.shown, s.wanted),
-        format!(
-            "{} queued, {} generated, {} chunks",
-            s.queued, s.generated, s.chunks
-        ),
-    ];
-    let w = lines
-        .iter()
-        .map(|l| game.native_text_width(l))
-        .fold(0.0, f32::max)
-        + 4.0;
-    let h = 10.0 * lines.len() as f32 + 2.0;
-    let (x, y) = corners.place(Corner::BottomLeft, w, h);
-    game.native_fill(batch, [x, y, w, h], 0x7800_0000);
-    for (i, line) in lines.iter().enumerate() {
-        game.native_text(
-            batch,
-            line,
-            [x + 2.0, y + 2.0 + 10.0 * i as f32],
-            0xE0E0E0,
-            true,
+    let show_bar = match settings.progress_bar {
+        dh::ProgressBarMode::Off => false,
+        dh::ProgressBarMode::Always => true,
+        dh::ProgressBarMode::WhileLoading => s.shown < s.wanted || s.queued > 0,
+    };
+    if !show_bar && !settings.debug {
+        return;
+    }
+    if show_bar {
+        let pct = if s.wanted > 0 {
+            (s.shown as f32 / s.wanted as f32 * 100.0).clamp(0.0, 100.0)
+        } else {
+            100.0
+        };
+        let label = format!(
+            "DH: {pct:.0}% - {}/{} ({} chunks)",
+            s.shown, s.wanted, s.chunks
         );
+        let text_w = game.native_text_width(&label);
+        let w = (text_w + 8.0).max(165.0);
+        let h = 24.0;
+        let (x, y) = corners.place(Corner::BottomLeft, w, h);
+        game.native_fill(batch, [x, y, w, h], 0xA018_1818);
+        game.native_text(batch, &label, [x + 4.0, y + 3.0], 0xFF_FFFF, true);
+        let bar_w = w - 8.0;
+        let bar_h = 5.0;
+        game.native_fill(batch, [x + 4.0, y + 15.0, bar_w, bar_h], 0x6033_3333);
+        let fill_w = (bar_w * (pct / 100.0)).clamp(0.0, bar_w);
+        let color = if pct >= 99.5 && s.queued == 0 {
+            0xFF10_B981
+        } else {
+            0xFF3B_82F6
+        };
+        if fill_w > 0.0 {
+            game.native_fill(batch, [x + 4.0, y + 15.0, fill_w, bar_h], color);
+        }
+    }
+    if settings.debug {
+        let lines = [
+            format!("DH {}: {}/{} sections", dh::VERSION, s.shown, s.wanted),
+            format!(
+                "{} queued, {} generated, {} chunks",
+                s.queued, s.generated, s.chunks
+            ),
+        ];
+        let w = lines
+            .iter()
+            .map(|l| game.native_text_width(l))
+            .fold(0.0, f32::max)
+            + 4.0;
+        let h = 10.0 * lines.len() as f32 + 2.0;
+        let (x, y) = corners.place(Corner::BottomLeft, w, h);
+        game.native_fill(batch, [x, y, w, h], 0x7800_0000);
+        for (i, line) in lines.iter().enumerate() {
+            game.native_text(
+                batch,
+                line,
+                [x + 2.0, y + 2.0 + 10.0 * i as f32],
+                0xE0E0E0,
+                true,
+            );
+        }
     }
 }

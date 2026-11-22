@@ -1903,9 +1903,37 @@ pub mod storage {
     }
 }
 
+/// Visual HUD progress bar mode for Distant Horizons.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProgressBarMode {
+    WhileLoading,
+    Always,
+    Off,
+}
+
+impl ProgressBarMode {
+    pub const ALL: [Self; 3] = [Self::WhileLoading, Self::Always, Self::Off];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::WhileLoading => "while_loading",
+            Self::Always => "always",
+            Self::Off => "off",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::WhileLoading => "While loading",
+            Self::Always => "Always",
+            Self::Off => "Off",
+        }
+    }
+}
+
 /// The mod's settings, one file per key in its data folder, as Horizon's
 /// native mods keep them.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Settings {
     pub enabled: bool,
     /// An index into `DISTANCES`.
@@ -1917,6 +1945,8 @@ pub struct Settings {
     pub cave_culling: bool,
     /// Tint each section by its detail level (`LodUtil.DEBUG_DETAIL_LEVEL_COLORS`).
     pub debug: bool,
+    /// Visual HUD progress bar for loaded LOD distance.
+    pub progress_bar: ProgressBarMode,
 }
 
 /// LOD render distances, in chunks (`lodChunkRenderDistanceRadius`).
@@ -1931,6 +1961,7 @@ impl Default for Settings {
             generation: true,
             cave_culling: true,
             debug: false,
+            progress_bar: ProgressBarMode::WhileLoading,
         }
     }
 }
@@ -1955,6 +1986,12 @@ impl Settings {
                     .find(|q| q.name() == v.trim())
             })
             .unwrap_or(d.quality);
+        let progress_bar = match get("progress_bar").as_deref().map(str::trim) {
+            Some("always") => ProgressBarMode::Always,
+            Some("off") => ProgressBarMode::Off,
+            Some("while_loading") => ProgressBarMode::WhileLoading,
+            _ => d.progress_bar,
+        };
         Self {
             enabled: flag("enabled", d.enabled),
             distance,
@@ -1962,6 +1999,7 @@ impl Settings {
             generation: flag("generation", d.generation),
             cave_culling: flag("cave_culling", d.cave_culling),
             debug: flag("debug", d.debug),
+            progress_bar,
         }
     }
     pub fn stored(&self) -> Vec<(&'static str, String)> {
@@ -1972,6 +2010,7 @@ impl Settings {
             ("generation", self.generation.to_string()),
             ("cave_culling", self.cave_culling.to_string()),
             ("debug", self.debug.to_string()),
+            ("progress_bar", self.progress_bar.name().to_owned()),
         ]
     }
     pub fn radius_chunks(&self) -> i32 {
@@ -1986,6 +2025,7 @@ impl Settings {
             format!("Distant generation: {}", on(self.generation)),
             format!("Cave culling: {}", on(self.cave_culling)),
             format!("Debug detail colours: {}", on(self.debug)),
+            format!("Progress bar: {}", self.progress_bar.label()),
         ]
     }
     pub fn click(&mut self, button: usize) {
@@ -2002,6 +2042,13 @@ impl Settings {
             3 => self.generation = !self.generation,
             4 => self.cave_culling = !self.cave_culling,
             5 => self.debug = !self.debug,
+            6 => {
+                let i = ProgressBarMode::ALL
+                    .iter()
+                    .position(|&m| m == self.progress_bar)
+                    .unwrap_or(0);
+                self.progress_bar = ProgressBarMode::ALL[(i + 1) % ProgressBarMode::ALL.len()];
+            }
             _ => {}
         }
     }
@@ -2034,6 +2081,16 @@ impl Settings {
                     .find(|h| h.name() == *q)?;
                 Some(format!("Horizontal quality: {}", self.quality.label()))
             }
+            ["bar", v] => {
+                let mode = match *v {
+                    "while_loading" => ProgressBarMode::WhileLoading,
+                    "always" => ProgressBarMode::Always,
+                    "off" => ProgressBarMode::Off,
+                    _ => return None,
+                };
+                self.progress_bar = mode;
+                Some(format!("Progress bar: {}", self.progress_bar.label()))
+            }
             ["generation", v] | ["caves", v] | ["debug", v] => {
                 let on = match *v {
                     "on" => true,
@@ -2059,6 +2116,9 @@ pub const COMMANDS: &[(&str, &[&str])] = &[
     ("status", &[]),
     ("save", &[]),
     ("clear", &[]),
+    ("startgen", &[]),
+    ("stopgen", &[]),
+    ("bar", &["while_loading", "always", "off"]),
     ("on", &[]),
     ("off", &[]),
     ("distance", &["64", "128", "256", "512", "1024"]),
@@ -2538,6 +2598,59 @@ pub mod engine {
             self.planned_at = None;
             self.plan = None;
             self.wanted.clear();
+        }
+
+        /// Starts background pre-generation of all ungenerated/unmeshed LOD
+        /// sections within the active radius. Returns the count of queued sections.
+        pub fn start_pregen(&mut self) -> usize {
+            let distance = |s: i64| {
+                let dx = f64::from(pos::center_block_x(s)) - self.player[0];
+                let dz = f64::from(pos::center_block_z(s)) - self.player[1];
+                (dx * dx + dz * dz).sqrt() as i64
+            };
+            let mut count = 0;
+            *self.shared.wanted.lock().unwrap() = self.wanted.clone();
+            let mut q = self.shared.queue.lock().unwrap();
+            for &s in &self.wanted {
+                let shown = self.shown.contains(&s) || self.blank.contains(&s);
+                if !shown {
+                    if q.sections.insert(s) {
+                        let sequence = q.sequence;
+                        q.sequence += 1;
+                        q.heap.push(Queued {
+                            priority: distance(s),
+                            sequence,
+                            job: Job::Section(s),
+                        });
+                    }
+                    count += 1;
+                }
+            }
+            drop(q);
+            if count > 0 {
+                self.shared.ready.notify_all();
+            }
+            count
+        }
+
+        /// Pauses or cancels pending pre-generation jobs in the queue.
+        /// Returns the count of cancelled jobs.
+        pub fn stop_pregen(&mut self) -> usize {
+            let mut q = self.shared.queue.lock().unwrap();
+            let before = q.heap.len();
+            let items: Vec<Queued> = q.heap.drain().collect();
+            let mut retained = BinaryHeap::new();
+            for item in items {
+                match item.job {
+                    Job::Section(s) => {
+                        q.sections.remove(&s);
+                    }
+                    _ => retained.push(item),
+                }
+            }
+            let removed = before - retained.len();
+            q.heap = retained;
+            removed
         }
     }
 
@@ -3310,26 +3423,30 @@ mod tests {
         s.click(1);
         s.click(2);
         s.click(5);
+        s.click(6);
         let stored: std::collections::HashMap<_, _> = s.stored().into_iter().collect();
         let read = Settings::read(|k| stored.get(k).cloned());
         assert_eq!(read, s);
         assert_eq!(read.radius_chunks(), 512);
         assert_eq!(read.quality, HorizontalQuality::High);
         assert!(read.debug);
+        assert_eq!(read.progress_bar, ProgressBarMode::Always);
         assert_eq!(Settings::read(|_| Some("junk".into())), Settings::default());
         let mut c = Settings::default();
         assert!(c.command(&["distance", "100"]).is_some());
         assert_eq!(c.radius_chunks(), 128);
         assert!(c.command(&["quality", "extreme"]).is_some());
+        assert!(c.command(&["bar", "off"]).is_some());
+        assert_eq!(c.progress_bar, ProgressBarMode::Off);
         assert!(c.command(&["nonsense"]).is_none());
     }
 
     #[test]
     fn every_completed_command_is_one_the_mod_runs() {
-        // `status`, `save` and `clear` act on the session (bridge.rs); every
+        // `status`, `save`, `clear`, `startgen` and `stopgen` act on the session (bridge.rs); every
         // other completion must change a setting.
         for &(word, values) in COMMANDS {
-            if matches!(word, "status" | "save" | "clear") {
+            if matches!(word, "status" | "save" | "clear" | "startgen" | "stopgen") {
                 assert!(values.is_empty());
                 continue;
             }
@@ -3351,6 +3468,32 @@ mod tests {
                 .map(String::as_str)
                 .collect::<Vec<_>>()[..]
         );
+    }
+
+    #[test]
+    fn pregen_queues_and_cancels_jobs() {
+        let settings = engine::WorkSettings {
+            render: RenderSettings {
+                cave_culling: true,
+                cave_culling_height: 60,
+                min_y: -64,
+            },
+            generation: true,
+            debug: false,
+        };
+        let mut e = engine::Engine::new(
+            FakeHost { blocks: blocks() },
+            None,
+            1,
+            settings,
+            1,
+        );
+        let plan = DetailPlan::new(HorizontalQuality::Low, 64);
+        let _ = e.update([0.0, 0.0], plan, engine::Near::default());
+        let queued = e.start_pregen();
+        assert!(queued > 0);
+        let stopped = e.stop_pregen();
+        assert!(stopped <= queued);
     }
 
     struct FakeHost {

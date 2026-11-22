@@ -16104,7 +16104,7 @@ impl Game<'_> {
             shadow_scene_revision: (self.world.revision, self.world.chunks.membership_revision()),
             shadow_cache: self.settings.horizon.shadow_cache,
             distance,
-            detail_distance: (self.streaming.radius * 16) as f32,
+            detail_distance: (self.terrain_distance() * 16) as f32,
             depth_far,
             underwater,
             water_plane: if title

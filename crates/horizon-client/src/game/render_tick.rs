@@ -126,7 +126,7 @@ impl Game<'_> {
             water_fog_color,
             biome,
             render_distance_chunks: self.terrain_distance(),
-            distant_terrain: self.lod.is_some(),
+            distant_terrain: self.lod.is_some() || self.terrain_distance() > self.streaming.radius,
             cloud_range_chunks: self.settings.cloud_range,
             camera_y: camera.y,
             min_y: self.level_min_y(),
