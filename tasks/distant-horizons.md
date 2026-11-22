@@ -30,22 +30,36 @@
   - Horizontal Quality: Lowest, Low, Medium, High, Extreme
   - Distant Generation: On / Off
   - Cave Culling: On / Off
+  - Progress Bar: While Loading / Always / Off
   - Debug Detail Colors: On / Off
-- **Chat Commands & Autocompletion:** Supports `/dh` commands (`distance`, `quality`, `generation`, `caves`, `debug`, `on|off`, `save`, `clear`) using Horizon's modern `chat_tree` and `native_commands`.
-- **Unit Tests:** 14/14 unit tests passing (quadtree propagation, section meshing, LOD save/load).
+- **Chat Commands & Autocompletion:** Supports `/dh` commands (`distance`, `quality`, `generation`, `caves`, `bar`, `startgen`, `stopgen`, `debug`, `on|off`, `save`, `clear`) using Horizon's modern `chat_tree` and `native_commands`.
+- **Unit Tests:** 15/15 unit tests passing (quadtree propagation, section meshing, LOD save/load, pre-generation queue/cancel).
+
+### 2.4. Shader Pack Support & Environmental Fog Scaling
+- **Uniform `far` / `detail_distance`:** In `game.rs:16107`, scaled `detail_distance` from near streaming radius `(self.streaming.radius * 16)` to the full LOD boundary `(self.terrain_distance() * 16) as f32`. Shader packs (e.g. Complementary Reimagined) using uniform `far` for atmospheric fog and depth reconstruction now shade distant LOD terrain across the full 1024m–2048m horizon without premature clipping or fog drowning.
+- **Fog Boundary Activation:** In `render_tick.rs:129`, updated `distant_terrain: self.lod.is_some() || self.terrain_distance() > self.streaming.radius` so environmental fog scales outward to encompass distant LOD terrain.
+
+### 2.5. Live HUD Progress Bar & Pre-Generation
+- **Live Progress Card:** Renders a sleek 165×24px status card at `Corner::BottomLeft` displaying `{pct:.0}% - {shown}/{wanted} ({chunks} chunks)` with background (`0xA018_1818`), dark track (`0x6033_3333`), and colored progress fill (blue `0xFF3B_82F6` while generating, emerald `0xFF10_B981` on 100% completion).
+- **Display Modes:** Supports `ProgressBarMode::WhileLoading` (automatically hides when generation completes and queue is clear), `ProgressBarMode::Always`, and `ProgressBarMode::Off`.
+- **Pre-Generation Commands:**
+  - `/dh startgen`: Iterates through all unmeshed sections in `wanted`, batch-queues `Job::Section(s)` into background worker thread pool, and wakes workers via `ready.notify_all()`.
+  - `/dh stopgen`: Cancels and drains pending pre-generation section jobs from the queue.
+  - `/dh status`: Reports live loaded percentage `{pct:.1}%`.
 
 ---
 
 ## 3. Build & CI Verification
 
-- **Workflow Run:** [#45038706589](https://github.com/beyondbday69/starling/actions/runs/45038706589)
-- **Commit:** `34d81861ec9d82ad491db16aa68de87d16703777` (`feat: add Distant Horizons native mod`)
+### Run #45044632777 (Latest: Shader Support, Live Progress Bar & Pre-Gen)
+- **Workflow Run:** [#45044632777](https://github.com/beyondbday69/starling/actions/runs/45044632777)
+- **Commit:** `2a128259450fb0473344b68ae921102a61204986` (`feat(distant_horizons): add shader far distance, HUD progress bar, and pre-generation commands`)
 - **Branch:** `feat/shader-fsr-upscaling`
-- **Status:** **PASSED (Green)**
-- **Artifact:** `starling-apk-arm64-v8a` (ID: `14760659097`, size: 35,321,185 bytes / 35.3 MB)
-- **Direct Download Link:** [Artifact 14760659097](https://github.com/beyondbday69/starling/actions/runs/45038706589/artifacts/14760659097)
+- **Status:** **PASSED (Green)** (Duration: 8m 27s)
+- **Artifact:** `starling-apk-arm64-v8a` (ID: `14762698492`, size: 35,327,333 bytes / 35.3 MB)
+- **Direct Download Link:** [Artifact 14762698492](https://github.com/beyondbday69/starling/actions/runs/45044632777/artifacts/14762698492)
 - **Generated APK:** `starling-preview-0.8.0-arm64-v8a.apk`
-- **Native Library SHA-256:** `915787d9be8445dd3e8e8709c72854b47dc59e08416a19b8746e1cd439a80276`
+- **Native Library SHA-256:** `c7135d751e71b61941c08c519f208a3e32c438eafdf956c0166790244c62cd2b`
 - **Applied Mods (`build.json` verified):**
   - `holdmyitems`: `v5.2.0`
   - `zoom`: `v2.0.0`
@@ -56,3 +70,8 @@
   - `fallingtrees`: `v0.13.2`
   - `gyro`: `v1.6.0`
   - `skins_3d`: `v1.1.1`
+
+### Prior Run #45038706589 (Initial Port)
+- **Workflow Run:** [#45038706589](https://github.com/beyondbday69/starling/actions/runs/45038706589)
+- **Commit:** `34d81861ec9d82ad491db16aa68de87d16703777`
+- **Status:** PASSED (Green) | Artifact ID: `14760659097` (35.3 MB)
