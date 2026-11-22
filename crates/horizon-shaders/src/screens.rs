@@ -116,6 +116,11 @@ impl Screens {
         self.screens.get(name).map(|(i, c)| (i.as_slice(), *c))
     }
 
+    /// The names of every named sub-screen.
+    pub fn screen_names(&self) -> impl Iterator<Item = &str> {
+        self.screens.keys().filter(|s| !s.is_empty()).map(String::as_str)
+    }
+
     /// The profile whose values are all those of `value`.
     pub fn current_profile(&self, value: impl Fn(&str) -> Option<String>) -> Option<&str> {
         self.profiles

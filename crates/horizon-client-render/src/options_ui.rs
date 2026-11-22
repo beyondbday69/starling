@@ -2458,12 +2458,69 @@ fn blank_slot(w: f32) -> Widget {
 }
 /// Page `at` of the options of the Horizon pack `s.shader_packs[i]`: the pack's own layout,
 /// else every option two a row.
-fn native_pack_option_rows(s: &Settings, i: usize, at: u8) -> Vec<Row> {
+fn native_pack_option_rows(s: &Settings, i: usize, at: u8, query: &str) -> Vec<Row> {
     use horizon_shader_api::PageItem;
     let Some(pack) = s.shader_packs.get(i) else {
         return Vec::new();
     };
     let count = pack.options.len().min(pack.values.len());
+    let query = query.trim().to_lowercase();
+
+    if !query.is_empty() {
+        let columns = if cfg!(target_os = "android") { 1 } else { 2 };
+        let width = if columns == 1 { 310.0 } else { 150.0 };
+        let mut items = Vec::new();
+        // Matching pages
+        for (p, page) in pack.pages.iter().enumerate() {
+            if page.name.to_lowercase().contains(&query) {
+                items.push(PageItem::Page(p));
+            }
+        }
+        // Matching options
+        for (o, option) in pack.options.iter().enumerate().take(count) {
+            if option.name.to_lowercase().contains(&query)
+                || option.description.to_lowercase().contains(&query)
+            {
+                items.push(PageItem::Option(o));
+            }
+        }
+        let widget = |item: &PageItem| match *item {
+            PageItem::Option(o) if o < count => {
+                let option = &pack.options[o];
+                let value = crate::shader_pack_list::show_value(&option.kind, pack.values[o]);
+                let label = Text::literal(format!("{}: {value}", option.name));
+                button(0.0, 0.0, width, label, Act::NativePackOption(i, o))
+            }
+            PageItem::Page(p) if p < pack.pages.len() => {
+                let label = Text::literal(format!("{}...", pack.pages[p].name));
+                let page = Page::NativePackOptions(i, p as u8);
+                button(0.0, 0.0, width, label, Act::Push(page))
+            }
+            _ => blank_slot(width),
+        };
+        let mut rows = Vec::new();
+        if items.is_empty() {
+            rows.push(Row::Note(format!(
+                "{}: \"{}\" (0)",
+                tr("horizon.options.search").plain(),
+                query
+            )));
+            return rows;
+        }
+        rows.push(Row::Note(format!(
+            "{}: \"{}\" ({})",
+            tr("horizon.options.search").plain(),
+            query,
+            items.len()
+        )));
+        rows.extend(
+            items
+                .chunks(columns)
+                .map(|row| Row::Buttons(widget(&row[0]), row.get(1).map(widget))),
+        );
+        return rows;
+    }
+
     let (columns, items) = match pack.pages.get(usize::from(at)) {
         Some(page) => (usize::from(page.columns), page.items.clone()),
         None => (2, (0..count).map(PageItem::Option).collect()),
@@ -2496,10 +2553,121 @@ fn native_pack_option_rows(s: &Settings, i: usize, at: u8) -> Vec<Row> {
 }
 /// The open screen of the picked pack: its title, then its items, one to a row on a phone, where
 /// long names fit and a finger finds them, else as the pack lays them out.
-fn shader_option_rows(s: &Settings) -> Vec<Row> {
+fn shader_option_rows(s: &Settings, query: &str) -> Vec<Row> {
     let Some(options) = &s.shader_options else {
         return vec![Row::Header("horizon.shader_options.loading")];
     };
+    let query = query.trim().to_lowercase();
+    let blank = || blank_slot(150.0);
+
+    if !query.is_empty() {
+        let columns = if cfg!(target_os = "android") { 1 } else { 2 };
+        let width = if columns == 1 { 310.0 } else { 150.0 };
+        let widget = |item: &horizon_shaders::ScreenItem| -> Option<Widget> {
+            use horizon_shaders::ScreenItem;
+            Some(match item {
+                ScreenItem::Empty => return None,
+                ScreenItem::Profile => {
+                    button(0.0, 0.0, width, options.profile_label(), Act::ShaderProfile)
+                }
+                ScreenItem::Screen(name) => button(
+                    0.0,
+                    0.0,
+                    width,
+                    options.screen_label(name),
+                    Act::ShaderScreen(name.clone()),
+                ),
+                ScreenItem::Option(name) => match options.slider_position(name) {
+                    Some(value) => Widget {
+                        x: 0.0,
+                        y: 0.0,
+                        w: width,
+                        h: 20.0,
+                        kind: WKind::ShaderSlider {
+                            label: options.option_label(name),
+                            value,
+                            name: name.clone(),
+                        },
+                        list: false,
+                        row: 0,
+                    },
+                    None => button(
+                        0.0,
+                        0.0,
+                        width,
+                        options.option_label(name),
+                        Act::ShaderOption(name.clone()),
+                    ),
+                },
+            })
+        };
+
+        let mut items = Vec::new();
+        // 1. Check if profile matches
+        let profile_label = options.profile_label().plain().to_lowercase();
+        if profile_label.contains(&query) || "profile".contains(&query) {
+            items.push(horizon_shaders::ScreenItem::Profile);
+        }
+        // 2. Check matching screens
+        for screen_name in options.screens.screen_names() {
+            let label = options
+                .lang
+                .get(&format!("screen.{screen_name}"))
+                .unwrap_or(screen_name)
+                .to_lowercase();
+            if screen_name.to_lowercase().contains(&query) || label.contains(&query) {
+                items.push(horizon_shaders::ScreenItem::Screen(screen_name.to_string()));
+            }
+        }
+        // 3. Check matching options across the entire shader pack
+        for (name, _) in &options.options {
+            let label = options
+                .lang
+                .get(&format!("option.{name}"))
+                .unwrap_or(name)
+                .to_lowercase();
+            let comment = options
+                .lang
+                .get(&format!("option.{name}.comment"))
+                .unwrap_or("")
+                .to_lowercase();
+            if name.to_lowercase().contains(&query)
+                || label.contains(&query)
+                || comment.contains(&query)
+            {
+                items.push(horizon_shaders::ScreenItem::Option(name.clone()));
+            }
+        }
+
+        let widgets: Vec<Widget> = items.iter().filter_map(widget).collect();
+        let mut rows = Vec::new();
+        if widgets.is_empty() {
+            rows.push(Row::Note(format!(
+                "{}: \"{}\" (0)",
+                tr("horizon.options.search").plain(),
+                query
+            )));
+            return rows;
+        }
+
+        rows.push(Row::Note(format!(
+            "{}: \"{}\" ({})",
+            tr("horizon.options.search").plain(),
+            query,
+            widgets.len()
+        )));
+
+        if columns == 1 {
+            rows.extend(widgets.into_iter().map(|w| Row::Buttons(w, None)));
+            return rows;
+        }
+        let mut iter = widgets.into_iter();
+        while let Some(a) = iter.next() {
+            rows.push(Row::Buttons(a, iter.next()));
+        }
+        return rows;
+    }
+
     let columns = if cfg!(target_os = "android") {
         1
     } else {
@@ -2508,7 +2676,6 @@ fn shader_option_rows(s: &Settings) -> Vec<Row> {
             .screen(options.screen())
             .map_or(2, |(_, c)| c)
     };
-    let blank = || blank_slot(150.0);
     let width = if columns == 1 { 310.0 } else { 150.0 };
     let widget = |item: &horizon_shaders::ScreenItem| -> Option<Widget> {
         use horizon_shaders::ScreenItem;
@@ -2811,9 +2978,19 @@ impl OptionsUi {
         let label = format!("{}: {}", item.caption_text(), item.value(&s.extras));
         button(0.0, 0.0, 150.0, Text::literal(label), Act::Extra(item))
     }
+    pub(crate) fn has_settings_search(page: Page) -> bool {
+        matches!(
+            page,
+            Page::Video
+                | Page::Controls
+                | Page::KeyBinds
+                | Page::ShaderPacks
+                | Page::ShaderOptions
+                | Page::NativePackOptions(..)
+        )
+    }
     fn settings_search_active(&self) -> bool {
-        self.settings_search.focused
-            && matches!(self.page(), Page::Video | Page::Controls | Page::KeyBinds)
+        self.settings_search.focused && Self::has_settings_search(self.page())
     }
     /// Whether a text field shown now has the focus: the language and settings searches, the
     /// pack search, or Skin Customization's name.
@@ -3151,7 +3328,7 @@ impl OptionsUi {
         self.focus = None;
         self.focus_from_keyboard = false;
         self.can_change_value = false;
-        if matches!(page, Page::Video | Page::Controls | Page::KeyBinds) {
+        if Self::has_settings_search(page) {
             self.settings_search.set_value("");
             self.settings_search.focused = false;
         }
@@ -4173,11 +4350,14 @@ impl OptionsUi {
                         ));
                     }
                 }
-                rows.push(Row::Note(
-                    "Horizon's own packs, and Iris and OptiFine ones".into(),
-                ));
-                rows.push(Row::Note(shader_folder_note()));
-                rows.push(pick(choice.is_none(), "Off", Act::PickShaderPack(None)));
+                let query = self.settings_search.value.trim().to_lowercase();
+                if query.is_empty() {
+                    rows.push(Row::Note(
+                        "Horizon's own packs, and Iris and OptiFine ones".into(),
+                    ));
+                    rows.push(Row::Note(shader_folder_note()));
+                    rows.push(pick(choice.is_none(), "Off", Act::PickShaderPack(None)));
+                }
                 if s.shader_packs.is_empty() {
                     rows.push(Row::Header("horizon.shader_packs.empty"));
                 }
@@ -4191,12 +4371,20 @@ impl OptionsUi {
                         ),
                         PackKind::Classic => pack.title.clone(),
                     };
+                    if !query.is_empty()
+                        && !pack.title.to_lowercase().contains(&query)
+                        && !pack.file.to_lowercase().contains(&query)
+                    {
+                        continue;
+                    }
                     rows.push(pick(on, &name, Act::PickShaderPack(Some(i))));
                 }
                 rows
             }
-            Page::ShaderOptions => shader_option_rows(s),
-            Page::NativePackOptions(i, at) => native_pack_option_rows(s, i, at),
+            Page::ShaderOptions => shader_option_rows(s, &self.settings_search.value),
+            Page::NativePackOptions(i, at) => {
+                native_pack_option_rows(s, i, at, &self.settings_search.value)
+            }
             Page::CustomButtons => {
                 let mut rows = vec![Row::Note(
                     "Buttons of your own: place them in Touch Controls".into(),
@@ -4454,7 +4642,7 @@ impl OptionsUi {
         let mut rows = ListRows::default();
         let page = self.page();
         let cx = (w / 2.0).floor();
-        if matches!(page, Page::Video | Page::Controls | Page::KeyBinds) {
+        if Self::has_settings_search(page) {
             self.settings_search.x = cx - 100.0;
             self.settings_search.y = 17.0;
         }
@@ -4964,12 +5152,12 @@ impl OptionsUi {
             // Drawn by `pack_screen`.
             Page::Packs => {}
             _ => {
-                if matches!(page, Page::Video | Page::Controls) {
+                if Self::has_settings_search(page) {
                     top = 38.0;
                 }
                 out.push(Widget {
                     x: 0.0,
-                    y: if matches!(page, Page::Video | Page::Controls) {
+                    y: if Self::has_settings_search(page) {
                         4.0
                     } else {
                         12.0
@@ -5648,7 +5836,7 @@ impl OptionsUi {
             }
             self.language_search = search;
         }
-        if matches!(self.page(), Page::Video | Page::Controls | Page::KeyBinds) {
+        if Self::has_settings_search(self.page()) {
             let mut search = self.settings_search.clone();
             if self.focus == Some(FocusId::Search) {
                 search.focused = true;
@@ -5835,7 +6023,7 @@ impl OptionsUi {
         if !right && self.painting() && self.painter.press(x, y, drag) {
             return events;
         }
-        if !drag && matches!(self.page(), Page::Video | Page::Controls | Page::KeyBinds) {
+        if !drag && Self::has_settings_search(self.page()) {
             let search = &mut self.settings_search;
             search.focused = ui::hovered((x, y), search.x, search.y, search.width, search.height);
             if search.focused {
@@ -6257,6 +6445,7 @@ impl OptionsUi {
                             if let Some(options) = &mut s.shader_options {
                                 options.path.push(screen);
                                 self.scroll = 0.0;
+                                self.settings_search.set_value("");
                             }
                         }
                         Act::ShaderProfile => {
@@ -7087,7 +7276,7 @@ impl OptionsUi {
 
         // Gather focusables on the current page
         let (widgets, top, bottom, content) = self.layout(s, self.size.0, self.size.1);
-        let has_search = (self.page() == Page::Language) || self.settings_search_active();
+        let has_search = (self.page() == Page::Language) || Self::has_settings_search(self.page());
         let mut focusables: Vec<(FocusId, [f32; 4], bool)> = Vec::new();
         if has_search {
             let search = if self.page() == Page::Language {
@@ -7396,6 +7585,7 @@ impl OptionsUi {
                                 self.focus_from_keyboard = false;
                                 options.path.push(screen);
                                 self.scroll = 0.0;
+                                self.settings_search.set_value("");
                             }
                         }
                         Act::ShaderProfile => {
@@ -10787,5 +10977,138 @@ mod tests {
         ui.update_pack_infos(vec![pack_info("file/new")]);
         assert_eq!(ui.pack_infos.len(), listed);
         assert!(!ui.pack_infos.iter().any(|p| p.id == "file/new"));
+    }
+
+    #[test]
+    fn shader_options_search_filters_matching_options() {
+        use crate::shader_options::ShaderOptions;
+        use horizon_shaders::{Lang, Macros, PackOption, Properties, Screens};
+        use std::collections::BTreeMap;
+
+        let pack_options = BTreeMap::from([
+            (
+                "SHADOWS".to_owned(),
+                PackOption {
+                    name: "SHADOWS".into(),
+                    default: "true".into(),
+                    values: vec!["false".into(), "true".into()],
+                    switch: true,
+                    tested: true,
+                },
+            ),
+            (
+                "WATER_REFLECT".to_owned(),
+                PackOption {
+                    name: "WATER_REFLECT".into(),
+                    default: "off".into(),
+                    values: vec!["off".into(), "on".into()],
+                    switch: true,
+                    tested: true,
+                },
+            ),
+        ]);
+        let screens = Screens::parse(
+            &Properties::parse("screen = SHADOWS\n", &Macros::standard()),
+            &pack_options,
+        );
+        let options = ShaderOptions::new(
+            "TestPack.zip".into(),
+            pack_options,
+            screens,
+            Lang::default(),
+            BTreeMap::new(),
+        );
+
+        let mut s = Settings::default();
+        s.shader_options = Some(options);
+        let mut ui = OptionsUi::default();
+        ui.show(Page::ShaderOptions);
+
+        // Empty query: returns screen's items
+        let rows = ui.list_rows(&s);
+        assert!(rows.iter().any(|r| match r {
+            Row::Buttons(a, _) => matches!(&a.kind, WKind::Button { act: Act::ShaderOption(n), .. } if n == "SHADOWS"),
+            _ => false,
+        }));
+        // Search "water": finds WATER_REFLECT even though it's not on the main screen
+        ui.settings_search.set_value("water");
+        let rows = ui.list_rows(&s);
+        assert!(rows.iter().any(|r| match r {
+            Row::Buttons(a, _) => matches!(&a.kind, WKind::Button { act: Act::ShaderOption(n), .. } if n == "WATER_REFLECT"),
+            _ => false,
+        }));
+        assert!(!rows.iter().any(|r| match r {
+            Row::Buttons(a, _) => matches!(&a.kind, WKind::Button { act: Act::ShaderOption(n), .. } if n == "SHADOWS"),
+            _ => false,
+        }));
+
+        // Search nonexistent: returns empty note
+        ui.settings_search.set_value("nonexistent_setting");
+        let rows = ui.list_rows(&s);
+        assert!(
+            rows.iter()
+                .any(|r| matches!(r, Row::Note(t) if t.contains("0")))
+        );
+    }
+
+    #[test]
+    fn shader_packs_search_filters_matching_packs() {
+        use crate::shader_pack_list::{PackKind, ShaderPackEntry};
+        let mut s = Settings::default();
+        s.shader_packs = vec![
+            ShaderPackEntry {
+                file: "ComplementaryShaders.zip".into(),
+                title: "Complementary Reimagined".into(),
+                kind: PackKind::Classic,
+                options: Vec::new(),
+                pages: Vec::new(),
+                values: Vec::new(),
+            },
+            ShaderPackEntry {
+                file: "BSL_v8.zip".into(),
+                title: "BSL Shaders".into(),
+                kind: PackKind::Classic,
+                options: Vec::new(),
+                pages: Vec::new(),
+                values: Vec::new(),
+            },
+        ];
+        let mut ui = OptionsUi::default();
+        ui.show(Page::ShaderPacks);
+
+        // Empty search shows both
+        let rows = ui.list_rows(&s);
+        let picks: Vec<_> = rows
+            .iter()
+            .filter_map(|r| match r {
+                Row::Buttons(a, _) => match &a.kind {
+                    WKind::Button {
+                        act: Act::PickShaderPack(Some(i)),
+                        ..
+                    } => Some(*i),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .collect();
+        assert_eq!(picks, vec![0, 1]);
+
+        // Filter for BSL
+        ui.settings_search.set_value("bsl");
+        let rows = ui.list_rows(&s);
+        let picks: Vec<_> = rows
+            .iter()
+            .filter_map(|r| match r {
+                Row::Buttons(a, _) => match &a.kind {
+                    WKind::Button {
+                        act: Act::PickShaderPack(Some(i)),
+                        ..
+                    } => Some(*i),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .collect();
+        assert_eq!(picks, vec![1]);
     }
 }
