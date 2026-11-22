@@ -304,6 +304,43 @@ impl FallingTreesSettings {
     }
 }
 
+/// An active tree falling in the world.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ActiveFallingTree {
+    pub origin: [i32; 3],
+    pub toward: [f64; 3],
+    pub start_time: f64,
+    pub fall_ticks: f64,
+    pub max_angle: f64,
+}
+
+impl ActiveFallingTree {
+    pub const DROP_TICKS: f64 = 5.0;
+
+    /// Calculate fall duration and ground impact angle from tree height and blocks.
+    pub fn calculate_fall(height: f64, min_angle: f64) -> (f64, f64) {
+        let ticks = Self::DROP_TICKS + 8.0 + 8.0 * height.max(1.0).sqrt();
+        let angle = min_angle.clamp(std::f64::consts::FRAC_PI_3, std::f64::consts::FRAC_PI_2);
+        (ticks, angle)
+    }
+
+    /// Calculate topple progression factor [0.0, 1.0] at elapsed time `t`.
+    pub fn progress(&self, elapsed_ticks: f64) -> f64 {
+        if elapsed_ticks <= Self::DROP_TICKS {
+            0.0
+        } else {
+            ((elapsed_ticks - Self::DROP_TICKS)
+                / (self.fall_ticks - Self::DROP_TICKS).max(0.1))
+            .clamp(0.0, 1.0)
+        }
+    }
+
+    /// Check if the tree has landed (elapsed time >= fall_ticks).
+    pub fn has_landed(&self, current_time: f64) -> bool {
+        current_time - self.start_time >= self.fall_ticks
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -486,5 +523,27 @@ mod tests {
             s2.labels(),
             vec!["Falling Trees: OFF", "Break Leaves: OFF", "Wear Axe: OFF",]
         );
+    }
+
+    #[test]
+    fn active_falling_tree_physics_progression() {
+        let (ticks, angle) = ActiveFallingTree::calculate_fall(16.0, std::f64::consts::FRAC_PI_2);
+        assert!(ticks >= 20.0);
+        assert!(angle >= std::f64::consts::FRAC_PI_3);
+
+        let active = ActiveFallingTree {
+            origin: [0, 64, 0],
+            toward: [0.0, 0.0, 1.0],
+            start_time: 100.0,
+            fall_ticks: ticks,
+            max_angle: angle,
+        };
+
+        assert_eq!(active.progress(0.0), 0.0);
+        assert_eq!(active.progress(ActiveFallingTree::DROP_TICKS), 0.0);
+        assert!(active.progress(ticks * 0.5) > 0.0);
+        assert_eq!(active.progress(ticks), 1.0);
+        assert!(active.has_landed(100.0 + ticks));
+        assert!(!active.has_landed(100.0 + ticks - 1.0));
     }
 }

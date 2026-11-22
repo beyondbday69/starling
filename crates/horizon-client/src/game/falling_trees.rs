@@ -239,5 +239,6 @@ impl Game<'_> {
                 }
             }
         }
+        self.fallingtrees_geometry(camera, out);
     }
 }

@@ -3964,7 +3964,7 @@ impl Game<'_> {
         let id = self.next_entity;
         self.dropped.last_mut().filter(|d| d.id == id)
     }
-    fn spawn_item(
+    pub(super) fn spawn_item(
         &mut self,
         stack: ItemStack,
         position: [f64; 3],
@@ -4401,7 +4401,7 @@ impl Game<'_> {
         self.dropped = kept;
     }
     /// Run vanilla block behaviour against the world through `LevelAccess`.
-    fn with_level<R>(
+    pub(super) fn with_level<R>(
         &mut self,
         f: impl FnOnce(&Behaviours, &mut GameLevel<'_>, &mut Ticks) -> R,
     ) -> R {

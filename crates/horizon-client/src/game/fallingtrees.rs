@@ -8,7 +8,10 @@ use std::collections::{HashSet, VecDeque};
 use std::sync::Mutex;
 
 use super::Game;
+use crate::items::ItemStack;
+use crate::mesher::Vertex;
 use crate::mod_api::NativeMod;
+use horizon_core::position::BlockPos;
 use horizon_world::registry::BlockStateId;
 use winit::keyboard::KeyCode;
 
@@ -311,15 +314,89 @@ impl FallingTreesSettings {
     }
 }
 
+/// An active tree falling in the world.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ActiveFallingTree {
+    pub origin: [i32; 3],
+    pub toward: [f64; 3],
+    pub start_time: f64,
+    pub fall_ticks: f64,
+    pub max_angle: f64,
+}
+
+impl ActiveFallingTree {
+    pub const DROP_TICKS: f64 = 5.0;
+
+    /// Calculate fall duration and ground impact angle from tree height and blocks.
+    pub fn calculate_fall(height: f64, min_angle: f64) -> (f64, f64) {
+        let ticks = Self::DROP_TICKS + 8.0 + 8.0 * height.max(1.0).sqrt();
+        let angle = min_angle.clamp(std::f64::consts::FRAC_PI_3, std::f64::consts::FRAC_PI_2);
+        (ticks, angle)
+    }
+
+    /// Calculate topple progression factor [0.0, 1.0] at elapsed time `t`.
+    pub fn progress(&self, elapsed_ticks: f64) -> f64 {
+        if elapsed_ticks <= Self::DROP_TICKS {
+            0.0
+        } else {
+            ((elapsed_ticks - Self::DROP_TICKS)
+                / (self.fall_ticks - Self::DROP_TICKS).max(0.1))
+            .clamp(0.0, 1.0)
+        }
+    }
+
+    /// Check if the tree has landed (elapsed time >= fall_ticks).
+    pub fn has_landed(&self, current_time: f64) -> bool {
+        current_time - self.start_time >= self.fall_ticks
+    }
+}
+
+pub(crate) struct ActiveTree {
+    pub(crate) felling: Felling,
+    pub(crate) blocks: Vec<([i32; 3], BlockStateId)>,
+    pub(crate) drops: Vec<ItemStack>,
+    pub(crate) cut: [i32; 3],
+    pub(crate) toward: [f64; 3],
+    pub(crate) start_time: f64,
+    pub(crate) fall_ticks: f64,
+    pub(crate) angle: f64,
+}
+
+impl ActiveTree {
+    pub(crate) fn pivot(&self) -> glam::DVec3 {
+        glam::DVec3::new(
+            self.cut[0] as f64 + 0.5 + self.toward[0] * 0.5,
+            self.cut[1] as f64,
+            self.cut[2] as f64 + 0.5 + self.toward[2] * 0.5,
+        )
+    }
+
+    pub(crate) fn turn(&self, t: f64) -> glam::DMat4 {
+        if t < ActiveFallingTree::DROP_TICKS {
+            let f = (t / ActiveFallingTree::DROP_TICKS).clamp(0.0, 1.0);
+            return glam::DMat4::from_translation(glam::DVec3::NEG_Y * f * f);
+        }
+        let f = ((t - ActiveFallingTree::DROP_TICKS)
+            / (self.fall_ticks - ActiveFallingTree::DROP_TICKS).max(0.1))
+        .clamp(0.0, 1.0);
+        let pivot = self.pivot();
+        let way = glam::DVec3::new(self.toward[0], 0.0, self.toward[2]);
+        let axis = glam::DVec3::Y.cross(way).normalize();
+        glam::DMat4::from_translation(pivot)
+            * glam::DMat4::from_axis_angle(axis, self.angle * f * f)
+            * glam::DMat4::from_translation(-pivot - glam::DVec3::Y)
+    }
+}
+
 #[derive(Default)]
 struct State {
     settings: Option<FallingTreesSettings>,
-    queue: Vec<Felling>,
+    active: Vec<ActiveTree>,
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
     settings: None,
-    queue: Vec::new(),
+    active: Vec::new(),
 });
 
 impl Game<'_> {
@@ -436,8 +513,70 @@ impl Game<'_> {
         if !settings.break_leaves {
             tree.leaves.clear();
         }
-        let axe = (settings.wear_axe && !self.creative).then_some(held_item);
+
+        // 1. Calculate topple vector away from the player
+        let px = self.position.x;
+        let pz = self.position.z;
+        let dx = (pos[0] as f64 + 0.5) - px;
+        let dz = (pos[2] as f64 + 0.5) - pz;
+        let len = (dx * dx + dz * dz).sqrt();
+        let toward = if len > 0.001 {
+            [dx / len, 0.0, dz / len]
+        } else {
+            let rad = (self.yaw as f64).to_radians();
+            [-rad.sin(), 0.0, rad.cos()]
+        };
+
+        // 2. Calculate tree height and fall physics parameters
+        let mut max_y = pos[1];
+        for &p in tree.logs.iter().chain(&tree.leaves).chain(&tree.attached) {
+            if p[1] > max_y {
+                max_y = p[1];
+            }
+        }
+        let height = (max_y - pos[1] + 1) as f64;
+        let (fall_ticks, angle) =
+            ActiveFallingTree::calculate_fall(height, std::f64::consts::FRAC_PI_2);
+
+        // 3. Collect block positions and pre-calculate item drops
+        let mut blocks = Vec::new();
+        let mut drops = Vec::new();
+        let block_positions: Vec<[i32; 3]> = tree
+            .attached
+            .iter()
+            .chain(&tree.leaves)
+            .chain(&tree.logs)
+            .copied()
+            .collect();
+
+        for p in &block_positions {
+            let s = self.world.block(p[0], p[1], p[2]);
+            blocks.push((*p, s));
+            let d = self.res.items().block_drops(
+                self.pack.assets.registry,
+                s,
+                self.held(),
+                &mut self.world.random,
+            );
+            drops.extend(d);
+        }
+
+        // 4. Clear world blocks immediately to avoid ghost block duplication
+        for &(p, s) in &blocks {
+            let left = self.fluid_left(s);
+            let at = BlockPos::new(p[0], p[1], p[2]);
+            self.with_level(|b, level, ticks| b.set_block(level, ticks, at, left, 3));
+        }
+
+        // 5. Initial wood cracking sound
         let dim = self.fallingtrees_dimension_id().to_string();
+        self.run_command_quietly(&format!(
+            "execute in {dim} run playsound minecraft:block.wood.break block @a {} {} {} 1.0 0.7",
+            pos[0], pos[1], pos[2]
+        ));
+
+        // 6. Queue active falling tree
+        let axe = (settings.wear_axe && !self.creative).then_some(held_item);
         let player = self.acting_player_name().to_string();
         let felling = Felling {
             dimension: dim,
@@ -446,19 +585,111 @@ impl Game<'_> {
             tree,
             axe,
         };
+        let start_time = self.world.game_time as f64 + self.clock.fraction();
+        let active = ActiveTree {
+            felling,
+            blocks,
+            drops,
+            cut: pos,
+            toward,
+            start_time,
+            fall_ticks,
+            angle,
+        };
         let mut s = STATE.lock().unwrap_or_else(|e| e.into_inner());
-        if !s.queue.iter().any(|f| f.origin == pos) {
-            s.queue.push(felling);
+        if !s.active.iter().any(|t| t.cut == pos) {
+            s.active.push(active);
         }
     }
 
     pub(crate) fn fallingtrees_tick(&mut self) {
-        let pending = {
+        let now = self.world.game_time as f64 + self.clock.fraction();
+        let mut landed = Vec::new();
+        {
             let mut s = STATE.lock().unwrap_or_else(|e| e.into_inner());
-            std::mem::take(&mut s.queue)
-        };
-        for felling in pending {
-            felling.run(&mut |line| self.run_command_quietly(line));
+            let mut i = 0;
+            while i < s.active.len() {
+                if now - s.active[i].start_time >= s.active[i].fall_ticks {
+                    landed.push(s.active.remove(i));
+                } else {
+                    i += 1;
+                }
+            }
+        }
+        for tree in landed {
+            let turn = tree.turn(f64::INFINITY);
+            let dim = &tree.felling.dimension;
+            let [ox, oy, oz] = tree.cut;
+
+            // Wood impact crash sound
+            self.run_command_quietly(&format!(
+                "execute in {dim} run playsound minecraft:block.wood.fall block @a {ox} {oy} {oz} 1.2 0.8"
+            ));
+
+            // Block break particles (level event 2001) at landing coordinates
+            for &(at, state) in &tree.blocks {
+                let center = turn.transform_point3(glam::DVec3::new(
+                    at[0] as f64 + 0.5,
+                    at[1] as f64 + 0.5,
+                    at[2] as f64 + 0.5,
+                ));
+                let land_pos = center.floor().as_ivec3().to_array();
+                self.level_event_at(2001, land_pos, state.0 as i32);
+            }
+
+            // Spawn drops cleanly at the stump
+            let stump_pos = [ox as f64 + 0.5, oy as f64 + 0.125, oz as f64 + 0.5];
+            for stack in tree.drops {
+                self.spawn_item(stack, stump_pos, [0.0, 0.1, 0.0], 0);
+            }
+
+            // Held axe receives durability wear per felled log
+            if let Some(line) = tree.felling.wear_line(tree.felling.tree.logs.len()) {
+                self.run_command_quietly(&line);
+            }
+        }
+        let _ = self.process_level_events();
+    }
+
+    pub(crate) fn fallingtrees_geometry(
+        &self,
+        camera: glam::DVec3,
+        out: &mut Vec<Vertex>,
+    ) {
+        let now = self.world.game_time as f64 + self.clock.fraction();
+        let s = STATE.lock().unwrap_or_else(|e| e.into_inner());
+        if s.active.is_empty() {
+            return;
+        }
+        for tree in &s.active {
+            let t = now - tree.start_time;
+            if t < 0.0 || t >= tree.fall_ticks {
+                continue;
+            }
+            let turn = glam::DMat4::from_translation(-camera) * tree.turn(t);
+            for &(at, state) in &tree.blocks {
+                let corner = glam::DVec3::from_array(at.map(f64::from));
+                let pose = (turn * glam::DMat4::from_translation(corner)).as_mat4();
+                let light = self.world.light(at[0], at[1], at[2]);
+                let packed = (u32::from(light >> 4) * 16) | ((u32::from(light & 15) * 16) << 8);
+                let seed = BlockPos::new(at[0], at[1], at[2]);
+                let tint = self.particle_sprite(state, at).map(|(_, tint)| tint);
+                let start = out.len();
+                self.block_model_vertices(
+                    state,
+                    horizon_core::random::position_seed(seed),
+                    pose,
+                    packed,
+                    false,
+                    out,
+                );
+                if let Some(tint) = tint {
+                    let tint = horizon_client::mobs::render::abgr(tint);
+                    for vertex in &mut out[start..] {
+                        vertex.color = horizon_client::hud_layout::multiply(vertex.color, tint);
+                    }
+                }
+            }
         }
     }
 }
@@ -645,5 +876,27 @@ mod tests {
             s2.labels(),
             vec!["Falling Trees: OFF", "Break Leaves: OFF", "Wear Axe: OFF",]
         );
+    }
+
+    #[test]
+    fn active_falling_tree_physics_progression() {
+        let (ticks, angle) = ActiveFallingTree::calculate_fall(16.0, std::f64::consts::FRAC_PI_2);
+        assert!(ticks >= 20.0);
+        assert!(angle >= std::f64::consts::FRAC_PI_3);
+
+        let active = ActiveFallingTree {
+            origin: [0, 64, 0],
+            toward: [0.0, 0.0, 1.0],
+            start_time: 100.0,
+            fall_ticks: ticks,
+            max_angle: angle,
+        };
+
+        assert_eq!(active.progress(0.0), 0.0);
+        assert_eq!(active.progress(ActiveFallingTree::DROP_TICKS), 0.0);
+        assert!(active.progress(ticks * 0.5) > 0.0);
+        assert_eq!(active.progress(ticks), 1.0);
+        assert!(active.has_landed(100.0 + ticks));
+        assert!(!active.has_landed(100.0 + ticks - 1.0));
     }
 }
