@@ -1,7 +1,7 @@
-//! Panda's Falling Trees for Horizon (native mixin runtime): chopping a tree's log
-//! with an axe takes the whole tree down, as Falling Trees 0.13.2 (PandaMods) does with
-//! Homestead's config (generic trees, axes only, 256 logs at most, leaves within 10,
-//! persistent leaves left alone, sneak to chop one log).
+// Panda's Falling Trees for Horizon (native mixin runtime): chopping a tree's log
+// with an axe takes the whole tree down, as Falling Trees 0.13.2 (PandaMods) does with
+// Homestead's config (generic trees, axes only, 256 logs at most, leaves within 10,
+// persistent leaves left alone, sneak to chop one log).
 
 use std::collections::{HashSet, VecDeque};
 
