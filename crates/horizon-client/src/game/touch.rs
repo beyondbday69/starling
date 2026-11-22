@@ -732,13 +732,12 @@ impl Game<'_> {
         // The touch controls come back with a touch after a keyboard, a mouse or a controller.
         self.input_used(InputMode::Touch);
         self.last_input = Instant::now();
+        if self.catalog_touch(t) {
+            return true;
+        }
         // The offer of the Starling folder, over the title, takes the touches while it shows.
         #[cfg(target_os = "android")]
-        if self.files_offer_touch(t)
-            || self.update_offer_touch(t)
-            || self.native_builds_touch(t)
-            || self.catalog_touch(t)
-        {
+        if self.files_offer_touch(t) || self.update_offer_touch(t) || self.native_builds_touch(t) {
             return true;
         }
         let p = [t.location.x as f32, t.location.y as f32];

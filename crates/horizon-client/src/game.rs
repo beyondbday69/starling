@@ -17315,6 +17315,32 @@ impl Game<'_> {
             self.sync_toggle(SNEAK);
             self.sync_toggle(SPRINT);
         }
+        if self.catalog.shown {
+            match &event {
+                WindowEvent::MouseInput { state, button, .. } => {
+                    if *button == MouseButton::Left {
+                        self.catalog_mouse_click(*state == ElementState::Pressed, self.cursor);
+                        return;
+                    }
+                }
+                WindowEvent::MouseWheel { delta, .. } => {
+                    let dy = match delta {
+                        winit::event::MouseScrollDelta::LineDelta(_, y) => *y * 40.0,
+                        winit::event::MouseScrollDelta::PixelDelta(p) => p.y as f32,
+                    };
+                    self.catalog_mouse_wheel(dy);
+                    return;
+                }
+                WindowEvent::KeyboardInput {
+                    event: key_event, ..
+                } => {
+                    if self.catalog_key_event(key_event) {
+                        return;
+                    }
+                }
+                _ => {}
+            }
+        }
         // `PackSelectionScreen.onFilesDrop` on the Create New World screen.
         if let WindowEvent::DroppedFile(path) = &event
             && let Some(title) = &mut self.title

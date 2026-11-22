@@ -185,3 +185,57 @@ fn removing_deletes_the_file_and_the_row_goes_back_to_installable() {
     assert!(!home.join("resourcepacks/pack.zip").exists());
     assert!(installed_projects(&home).is_empty());
 }
+
+#[test]
+fn version_metadata_and_filtering() {
+    use starling_catalog::browser::{FileRef, Version};
+    let v1 = Version {
+        id: "v1".into(),
+        number: "1.0.0".into(),
+        published: "2024-01-01T00:00:00Z".into(),
+        game_versions: vec!["1.20".into()],
+        loaders: vec!["iris".into()],
+        files: vec![FileRef {
+            url: "https://cdn.modrinth.com/test1.zip".into(),
+            name: "test1.zip".into(),
+            size: 1024,
+            sha512: Some("00".into()),
+            sha256: None,
+            sha1: Some("00".into()),
+            primary: true,
+        }],
+        required: Vec::new(),
+        blocked: None,
+    };
+    let v2 = Version {
+        id: "v2".into(),
+        number: "2.0.0".into(),
+        published: "2024-06-01T00:00:00Z".into(),
+        game_versions: vec![starling_catalog::browser::GAME.into()],
+        loaders: vec!["iris".into()],
+        files: vec![FileRef {
+            url: "https://cdn.modrinth.com/test2.zip".into(),
+            name: "test2.zip".into(),
+            size: 2048,
+            sha512: Some("11".into()),
+            sha256: None,
+            sha1: Some("11".into()),
+            primary: true,
+        }],
+        required: Vec::new(),
+        blocked: None,
+    };
+    let p = project(
+        Kind::Shader,
+        SourceId::Modrinth,
+        &["1.20", starling_catalog::browser::GAME],
+        &["iris"],
+    );
+    assert_eq!(p.kind, Kind::Shader);
+    assert_eq!(v2.number, "2.0.0");
+    assert_eq!(v1.file().unwrap().name, "test1.zip");
+    assert!(
+        v2.game_versions
+            .contains(&starling_catalog::browser::GAME.to_string())
+    );
+}

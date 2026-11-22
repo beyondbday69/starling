@@ -463,6 +463,31 @@ impl<'a> Ui<'a> {
         self.raw_fill(x1 - 1.0, y0 + r, x1, y1 - r, color);
         self.corners(x0, y0, x1, y1, r, true, color);
     }
+    /// A textured quad from `rect` in the atlas.
+    pub fn blit_sprite(&mut self, x: f32, y: f32, w: f32, h: f32, rect: Rect) {
+        self.blit_sprite_tint(x, y, w, h, rect, u32::MAX);
+    }
+    /// A textured quad from `rect` in the atlas with color tint.
+    pub fn blit_sprite_tint(&mut self, x: f32, y: f32, w: f32, h: f32, rect: Rect, color: u32) {
+        let (x0, y0, x1, y1) = (
+            self.px_x(x),
+            self.px_y(y),
+            self.px_x(x + w),
+            self.px_y(y + h),
+        );
+        let s = self.scale;
+        let (gx0, gy0, gx1, gy1) = (x0 / s, y0 / s, x1 / s, y1 / s);
+        self.batch.quad(
+            [[gx0, gy0], [gx1, gy0], [gx1, gy1], [gx0, gy1]],
+            [
+                [rect.u0, rect.v0],
+                [rect.u1, rect.v0],
+                [rect.u1, rect.v1],
+                [rect.u0, rect.v1],
+            ],
+            color,
+        );
+    }
 
     // ---- text ----
     /// The advance of `text` in dp.

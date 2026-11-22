@@ -4,7 +4,7 @@
 //! and each Java mod it ported into `horizon-mods/`: where it came from, its version and its
 //! checksum. Files the player put there themselves are never touched: the browser only replaces
 //! or removes what it lists.
-use super::{pick, safe_name, Kind, Project, Source, SourceId, Support, Version};
+use super::{Kind, Project, Source, SourceId, Support, Version, pick, safe_name};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -188,7 +188,7 @@ pub fn install(
 
 /// Downloads each step's file into `home`, in the folder `folder` names for its kind, and lists
 /// it: what was already there at that version is kept, an older version replaced.
-pub(super) fn put(
+pub fn put(
     source: &dyn Source,
     steps: Vec<Step>,
     home: &Path,

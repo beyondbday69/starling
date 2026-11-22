@@ -3198,9 +3198,9 @@ impl OptionsUi {
     pub fn resource_packs_open(&self) -> bool {
         self.page() == Page::Packs && self.data_pack_dir.is_none()
     }
-    /// The game is up, so on a phone the pages can open its catalog.
+    /// The game is up, so the pages can open its catalog.
     pub fn offer_catalog(&mut self) {
-        self.catalog_buttons = ON_A_PHONE;
+        self.catalog_buttons = true;
     }
     /// The packs in `resourcepacks/` changed while the pack screen is open
     /// (`PackSelectionScreen`'s directory watcher): the screen is made again over
@@ -10898,10 +10898,10 @@ mod tests {
     }
 
     #[test]
-    fn only_a_phone_takes_the_offer_of_the_catalog() {
+    fn the_offer_of_the_catalog_enables_catalog_buttons() {
         let mut ui = OptionsUi::default();
         ui.offer_catalog();
-        assert_eq!(ui.catalog_buttons, cfg!(target_os = "android"));
+        assert!(ui.catalog_buttons);
     }
 
     #[test]

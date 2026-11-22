@@ -15,10 +15,10 @@ pub use launcher::browser;
 pub mod list;
 
 use browser::{
+    GAME, Kind, Project, Query, Source, SourceId, Support, Version,
     horizon::Registry,
     installed::{self, Entry, Installed},
     modrinth::Modrinth,
-    Kind, Project, Query, Source, SourceId, Support, Version, GAME,
 };
 use serde_json::Value;
 use std::collections::HashSet;
@@ -259,6 +259,56 @@ pub fn install(
     })
 }
 
+/// The versions of a project, newest first.
+pub fn project_versions(project: &Project) -> Result<Vec<Version>, String> {
+    if is_modrinth_shader_pack(project) || project.source == SourceId::Modrinth {
+        Modrinth.versions(project)
+    } else if let Some(source) = browser::source(project.source) {
+        source.versions(project)
+    } else {
+        Err(format!("{} cannot list versions from here.", project.title))
+    }
+}
+
+/// Installs a chosen version of `project` into the game folder `home`.
+pub fn install_version(
+    project: &Project,
+    version: &Version,
+    home: &Path,
+    progress: &dyn Fn(&str, f32),
+) -> Result<Done, String> {
+    forget_missing(home);
+    if is_modrinth_shader_pack(project) {
+        install_modrinth_shader_pack_version(project, version, home, progress)?;
+        return Ok(Done::ShaderPack);
+    }
+    let source = browser::source(project.source)
+        .ok_or_else(|| format!("{} can't be installed from here.", project.title))?;
+    let step = browser::installed::Step {
+        project: project.clone(),
+        version: version.clone(),
+        dependency: false,
+    };
+    let entries = browser::installed::put(
+        source.as_ref(),
+        vec![step],
+        home,
+        &|kind| kind.folder().expect("plan keeps folder kinds"),
+        progress,
+    )?;
+    Ok(match project.kind {
+        Kind::ResourcePack => Done::ResourcePack,
+        Kind::Shader => Done::ShaderPack,
+        _ if entries
+            .iter()
+            .any(|e| e.file.starts_with(native_mods::INSTALLED)) =>
+        {
+            Done::NativeMod
+        }
+        _ => Done::ContentMod,
+    })
+}
+
 /// The newest ZIP of a shader pack, preferring one made for the version the game plays.
 fn shader_pack_version(versions: &[Version]) -> Option<&Version> {
     let usable = |v: &&Version| {
@@ -283,6 +333,15 @@ fn install_modrinth_shader_pack(
     let versions = Modrinth.versions(project)?;
     let version = shader_pack_version(&versions)
         .ok_or_else(|| format!("{} has no ZIP to download.", project.title))?;
+    install_modrinth_shader_pack_version(project, version, home, progress)
+}
+
+fn install_modrinth_shader_pack_version(
+    project: &Project,
+    version: &Version,
+    home: &Path,
+    progress: &dyn Fn(&str, f32),
+) -> Result<(), String> {
     if !version.required.is_empty() {
         return Err(format!(
             "{} needs other projects, which can't be installed from here.",
