@@ -515,15 +515,19 @@ impl Game<'_> {
         }
 
         // 1. Calculate topple vector away from the player
-        let px = self.position.x;
-        let pz = self.position.z;
+        let (px, pz, yaw) = self
+            .player
+            .as_ref()
+            .map_or((pos[0] as f64 + 0.5, pos[2] as f64 + 0.5, 0.0), |p| {
+                (p.position.x, p.position.z, p.yaw)
+            });
         let dx = (pos[0] as f64 + 0.5) - px;
         let dz = (pos[2] as f64 + 0.5) - pz;
         let len = (dx * dx + dz * dz).sqrt();
         let toward = if len > 0.001 {
             [dx / len, 0.0, dz / len]
         } else {
-            let rad = (self.yaw as f64).to_radians();
+            let rad = (yaw as f64).to_radians();
             [-rad.sin(), 0.0, rad.cos()]
         };
 
