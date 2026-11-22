@@ -93,7 +93,7 @@ struct Shared {
 }
 
 pub(super) struct Catalog {
-    shown: bool,
+    pub(super) shown: bool,
     shelf: Shelf,
     query: String,
     typing: bool,
@@ -525,8 +525,8 @@ fn draw_list(
 
     let y = top + content_h(rows.len()) - END_H - scrolled;
     let end = &shared.feed.tail();
-    if let Tail::Busy(first) = end {
-        let line = loading_line(card.shelf, *first);
+    if matches!(end, Tail::Loading) {
+        let line = loading_line(card.shelf, rows.is_empty());
         ui.text(
             Face::Regular,
             BODY_TEXT,
@@ -586,8 +586,8 @@ fn draw_versions(
     let (w, h) = (ui.w, ui.h);
     ui.fill(0.0, 0.0, w, h, color::hex(0x00_00_00, 215));
 
-    let panel_w = 860.0.min(w - 2.0 * MARGIN);
-    let panel_h = 620.0.min(h - 2.0 * MARGIN);
+    let panel_w = 860.0_f32.min(w - 2.0 * MARGIN);
+    let panel_h = 620.0_f32.min(h - 2.0 * MARGIN);
     let panel_x = (w - panel_w) / 2.0;
     let panel_y = (h - panel_h) / 2.0;
 
@@ -1188,15 +1188,14 @@ impl Game<'_> {
                 let [w, h] = self.touch_size();
                 h as f32 / density(w as f32, h as f32) - FOOT_H
             });
-            let rows = self
-                .catalog
-                .shared
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .feed
-                .rows()
-                .clone();
-            let scrolled = self.catalog.list.offset;
+            let (rows, scrolled) = {
+                let s = self
+                    .catalog
+                    .shared
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner);
+                (s.feed.rows().to_vec(), self.catalog.list.offset)
+            };
             for i in list::rows_shown(scrolled, bottom - top, ROW_H, rows.len()) {
                 let p = &rows[i];
                 if !self.catalog.icons.contains_key(&p.id)
@@ -1534,17 +1533,18 @@ impl Game<'_> {
         if !self.catalog.shown {
             return false;
         }
-        let card = &mut self.catalog;
-        if card.versions_project.is_some() {
-            let ver_count = card.versions_list.len();
+        if self.catalog.versions_project.is_some() {
+            let ver_count = self.catalog.versions_list.len();
             let content_h = ver_count as f32 * 96.0;
             let [w, h] = self.touch_size();
             let view = h as f32 / density(w as f32, h as f32) - 100.0;
+            let card = &mut self.catalog;
             card.versions_scroller.offset =
                 (card.versions_scroller.offset - dy).clamp(0.0, (content_h - view).max(0.0));
         } else {
             let (view, content) = self.catalog_list_size();
             let most = (content - view).max(0.0);
+            let card = &mut self.catalog;
             card.list.offset = (card.list.offset - dy).clamp(0.0, most);
             self.catalog_keep_up();
         }
