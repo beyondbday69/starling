@@ -7,7 +7,7 @@ use super::native_builds::{density, wrapped};
 use horizon_client::{
     font::Patch,
     hud::{HudBatch, PACK_ICON_SIZE, PACK_ICON_SLOTS},
-    ui_theme::{Face, Ui, color},
+    ui_theme::{Face, Ui},
 };
 use starling_catalog::{
     Done, Shelf,
@@ -219,29 +219,170 @@ fn fitted_lines(
         .collect()
 }
 
-/// `text` in the middle of `rect`.
-fn label(ui: &mut Ui<'_>, rect: [f32; 4], ink: u32, text: &str) {
+/// Authentic Minecraft styling and color palette (no launcher purple/black theme).
+mod mc {
+    pub const fn hex(c: u32, a: u8) -> u32 {
+        (a as u32) << 24 | (c & 0xff) << 16 | (c >> 8 & 0xff) << 8 | (c >> 16 & 0xff)
+    }
+
+    // Screen backdrops and header/footer bars
+    pub const SCREEN_BG: u32 = hex(0x101010, 215);        // In-world dark translucent overlay
+    pub const HEADER_BG: u32 = hex(0x181818, 250);        // Minecraft solid charcoal header/footer
+    pub const SEPARATOR_DARK: u32 = hex(0x000000, 255);   // 1px black groove border
+    pub const SEPARATOR_LIGHT: u32 = hex(0x3e3e3e, 255);  // 1px gray groove border
+
+    // Slot rows
+    pub const SLOT_BG: u32 = hex(0x181818, 235);
+    pub const SLOT_BG_HOVER: u32 = hex(0x222222, 250);
+    pub const SLOT_BORDER_BLACK: u32 = hex(0x000000, 255);
+    pub const SLOT_BORDER_IDLE: u32 = hex(0x2d2d2d, 255);
+    pub const SLOT_BORDER_HOVER: u32 = hex(0xffffff, 255);
+
+    // Beveled Minecraft buttons
+    pub const BTN_BORDER_BLACK: u32 = hex(0x000000, 255);
+    pub const BTN_HI_IDLE: u32 = hex(0x8b8b8b, 255);      // Inner top/left highlight
+    pub const BTN_SH_IDLE: u32 = hex(0x373737, 255);      // Inner bottom/right shadow
+    pub const BTN_FILL_IDLE: u32 = hex(0x4c4c4c, 255);    // Standard Minecraft button fill
+    pub const BTN_HI_HOVER: u32 = hex(0xffffff, 255);     // Inner top/left highlight on hover
+    pub const BTN_SH_HOVER: u32 = hex(0x555555, 255);     // Inner bottom/right shadow on hover
+    pub const BTN_FILL_HOVER: u32 = hex(0x6e6e6e, 255);   // Lighter gray fill on hover/selected
+    pub const BTN_FILL_DISABLED: u32 = hex(0x282828, 255);
+
+    // Minecraft EditBox
+    pub const EDITBOX_BG: u32 = hex(0x000000, 255);
+    pub const EDITBOX_BORDER_IDLE: u32 = hex(0x757575, 255);
+    pub const EDITBOX_BORDER_FOCUSED: u32 = hex(0xffffff, 255);
+
+    // Typography
+    pub const TEXT_WHITE: u32 = hex(0xffffff, 255);
+    pub const TEXT_YELLOW: u32 = hex(0xffffa0, 255);
+    pub const TEXT_GOLD: u32 = hex(0xffaa00, 255);
+    pub const TEXT_GRAY: u32 = hex(0xaaaaaa, 255);
+    pub const TEXT_DARK_GRAY: u32 = hex(0x555555, 255);
+    pub const TEXT_GREEN: u32 = hex(0x55ff55, 255);
+    pub const TEXT_RED: u32 = hex(0xff5555, 255);
+    pub const TEXT_SHADOW: u32 = hex(0x181818, 255);
+
+    // Modals
+    pub const MODAL_DIM: u32 = hex(0x000000, 215);
+    pub const MODAL_BG: u32 = hex(0x222222, 255);
+    pub const MODAL_BORDER_LIGHT: u32 = hex(0x8b8b8b, 255);
+    pub const MODAL_BORDER_DARK: u32 = hex(0x373737, 255);
+
+    // Progress
+    pub const PROGRESS_BG: u32 = hex(0x202020, 255);
+    pub const PROGRESS_GREEN: u32 = hex(0x55ff55, 255);
+}
+
+fn mc_is_hovered(ui: &Ui<'_>, rect: [f32; 4]) -> bool {
+    let (cx, cy) = ui.cursor;
+    cx >= rect[0] && cx <= rect[0] + rect[2] && cy >= rect[1] && cy <= rect[1] + rect[3]
+}
+
+fn mc_text_shadow(ui: &mut Ui<'_>, face: Face, size: f32, x: f32, y: f32, color: u32, text: &str) {
+    ui.text(face, size, x + 1.5, y + 1.5, mc::TEXT_SHADOW, text);
+    ui.text(face, size, x, y, color, text);
+}
+
+fn mc_text_line_shadow(
+    ui: &mut Ui<'_>,
+    face: Face,
+    size: f32,
+    line: f32,
+    x: f32,
+    y: f32,
+    color: u32,
+    text: &str,
+) -> f32 {
+    ui.text_line(face, size, line, x + 1.5, y + 1.5, mc::TEXT_SHADOW, text);
+    ui.text_line(face, size, line, x, y, color, text)
+}
+
+fn mc_label_shadow(ui: &mut Ui<'_>, rect: [f32; 4], text: &str, color: u32) {
     let width = ui.measure(Face::Semibold, BUTTON_TEXT, text);
-    ui.text_line(
+    let x = rect[0] + (rect[2] - width) / 2.0;
+    mc_text_line_shadow(
+        ui,
         Face::Semibold,
         BUTTON_TEXT,
         rect[3],
-        rect[0] + (rect[2] - width) / 2.0,
+        x,
+        rect[1],
+        color,
+        text,
+    );
+}
+
+/// Authentic 3D beveled Minecraft button.
+fn mc_button(
+    ui: &mut Ui<'_>,
+    rect: [f32; 4],
+    text: &str,
+    lit: bool,
+    enabled: bool,
+    act: Option<Act>,
+    drawn: &mut Vec<([f32; 4], Act)>,
+) {
+    let hovered = mc_is_hovered(ui, rect);
+    let (x, y, w, h) = (rect[0], rect[1], rect[2], rect[3]);
+
+    // 1px black outer border
+    ui.fill(x, y, w, h, mc::BTN_BORDER_BLACK);
+
+    if !enabled {
+        ui.fill(x + 1.0, y + 1.0, w - 2.0, 1.0, mc::BTN_SH_IDLE);
+        ui.fill(x + 1.0, y + 1.0, 1.0, h - 2.0, mc::BTN_SH_IDLE);
+        ui.fill(x + w - 2.0, y + 1.0, 1.0, h - 2.0, mc::BTN_SH_IDLE);
+        ui.fill(x + 1.0, y + h - 2.0, w - 2.0, 1.0, mc::BTN_SH_IDLE);
+        ui.fill(x + 2.0, y + 2.0, w - 4.0, h - 4.0, mc::BTN_FILL_DISABLED);
+        mc_label_shadow(ui, rect, text, mc::TEXT_DARK_GRAY);
+        return;
+    }
+
+    let active = hovered || lit;
+    let hi_color = if active { mc::BTN_HI_HOVER } else { mc::BTN_HI_IDLE };
+    let sh_color = if active { mc::BTN_SH_HOVER } else { mc::BTN_SH_IDLE };
+    let fill_color = if active { mc::BTN_FILL_HOVER } else { mc::BTN_FILL_IDLE };
+    let text_color = if active { mc::TEXT_YELLOW } else { mc::TEXT_WHITE };
+
+    // 1px top highlight
+    ui.fill(x + 1.0, y + 1.0, w - 2.0, 1.0, hi_color);
+    // 1px left highlight
+    ui.fill(x + 1.0, y + 1.0, 1.0, h - 2.0, hi_color);
+    // 1px right shadow
+    ui.fill(x + w - 2.0, y + 1.0, 1.0, h - 2.0, sh_color);
+    // 1px bottom shadow
+    ui.fill(x + 1.0, y + h - 2.0, w - 2.0, 1.0, sh_color);
+    // Center fill
+    ui.fill(x + 2.0, y + 2.0, w - 4.0, h - 4.0, fill_color);
+
+    mc_label_shadow(ui, rect, text, text_color);
+
+    if let Some(act) = act {
+        drawn.push((rect, act));
+    }
+}
+
+/// `text` in the middle of `rect`.
+fn label(ui: &mut Ui<'_>, rect: [f32; 4], ink: u32, text: &str) {
+    let width = ui.measure(Face::Semibold, BUTTON_TEXT, text);
+    let x = rect[0] + (rect[2] - width) / 2.0;
+    mc_text_line_shadow(
+        ui,
+        Face::Semibold,
+        BUTTON_TEXT,
+        rect[3],
+        x,
         rect[1],
         ink,
         text,
     );
 }
 
-/// A button's look: filled with the accent when `lit`.
+/// A button's look: styled as Minecraft button.
 fn plate(ui: &mut Ui<'_>, rect: [f32; 4], text: &str, lit: bool) {
-    let (fill, ink) = if lit {
-        (color::ACCENT, color::ON_ACCENT)
-    } else {
-        (color::RAISED, color::TEXT)
-    };
-    ui.rounded(rect[0], rect[1], rect[2], rect[3], 10.0, fill);
-    label(ui, rect, ink, text);
+    let mut unused = Vec::new();
+    mc_button(ui, rect, text, lit, true, None, &mut unused);
 }
 
 /// A button above or below the list.
@@ -253,8 +394,7 @@ fn button(
     act: Act,
     drawn: &mut Vec<([f32; 4], Act)>,
 ) {
-    plate(ui, rect, text, lit);
-    drawn.push((rect, act));
+    mc_button(ui, rect, text, lit, true, Some(act), drawn);
 }
 
 /// What to do next, after an install.
@@ -299,11 +439,19 @@ fn installed_parts(rect: [f32; 4]) -> ([f32; 4], [f32; 4]) {
 fn draw_confirm(ui: &mut Ui<'_>, title: &str, drawn: &mut Vec<([f32; 4], Act)>) {
     drawn.clear();
     let (w, h) = (ui.w, ui.h);
-    ui.fill(0.0, 0.0, w, h, color::hex(0x00_00_00, 190));
+    ui.fill(0.0, 0.0, w, h, mc::MODAL_DIM);
     let width = CONFIRM_W.min(w - 2.0 * MARGIN);
     let panel = [(w - width) / 2.0, (h - CONFIRM_H) / 2.0, width, CONFIRM_H];
-    ui.rounded(panel[0], panel[1], panel[2], panel[3], 14.0, color::BG);
-    ui.rounded(panel[0], panel[1], panel[2], panel[3], 14.0, color::RAISED);
+
+    // Minecraft dialog frame
+    let (px, py, pw, ph) = (panel[0], panel[1], panel[2], panel[3]);
+    ui.fill(px, py, pw, ph, mc::BTN_BORDER_BLACK);
+    ui.fill(px + 1.0, py + 1.0, pw - 2.0, 1.0, mc::MODAL_BORDER_LIGHT);
+    ui.fill(px + 1.0, py + 1.0, 1.0, ph - 2.0, mc::MODAL_BORDER_LIGHT);
+    ui.fill(px + pw - 2.0, py + 1.0, 1.0, ph - 2.0, mc::MODAL_BORDER_DARK);
+    ui.fill(px + 1.0, py + ph - 2.0, pw - 2.0, 1.0, mc::MODAL_BORDER_DARK);
+    ui.fill(px + 2.0, py + 2.0, pw - 4.0, ph - 4.0, mc::MODAL_BG);
+
     let inner = width - 48.0;
     let head = fitted(
         ui,
@@ -312,23 +460,25 @@ fn draw_confirm(ui: &mut Ui<'_>, title: &str, drawn: &mut Vec<([f32; 4], Act)>) 
         inner,
         &format!("Remove {title}?"),
     );
-    ui.text(
+    mc_text_shadow(
+        ui,
         Face::Semibold,
         TITLE_TEXT,
         panel[0] + 24.0,
         panel[1] + 20.0,
-        color::TEXT,
+        mc::TEXT_YELLOW,
         &head,
     );
     let body = "This deletes its file from your game folder. You can install it again from here.";
     let mut y = panel[1] + 70.0;
     for line in fitted_lines(ui, Face::Regular, BODY_TEXT, inner, 3, body) {
-        ui.text(
+        mc_text_shadow(
+            ui,
             Face::Regular,
             BODY_TEXT,
             panel[0] + 24.0,
             y,
-            color::MUTED,
+            mc::TEXT_GRAY,
             &line,
         );
         y += BODY_LINE;
@@ -346,18 +496,8 @@ fn draw_confirm(ui: &mut Ui<'_>, title: &str, drawn: &mut Vec<([f32; 4], Act)>) 
         ROW_BUTTON_W,
         ROW_BUTTON_H,
     ];
-    ui.rounded(
-        remove[0],
-        remove[1],
-        remove[2],
-        remove[3],
-        10.0,
-        color::DANGER,
-    );
-    label(ui, remove, color::TEXT, "Remove");
-    drawn.push((remove, Act::ConfirmRemove));
-    plate(ui, cancel, "Cancel", false);
-    drawn.push((cancel, Act::CancelRemove));
+    mc_button(ui, remove, "Remove", false, true, Some(Act::ConfirmRemove), drawn);
+    mc_button(ui, cancel, "Cancel", false, true, Some(Act::CancelRemove), drawn);
 }
 
 /// A search that failed: the log has what it said, the screen one plain sentence.
@@ -394,12 +534,36 @@ fn draw_list(
         let project = &rows[i];
         let y = top + i as f32 * ROW_H - scrolled;
         let row = ROW_H - ROW_GAP;
-        ui.rounded(MARGIN, y, row_w, row, 12.0, color::RAISED);
+        let row_rect = [MARGIN, y, row_w, row];
+        let row_hovered = mc_is_hovered(ui, row_rect);
+
+        // Minecraft slot box
+        let border_color = if row_hovered {
+            mc::SLOT_BORDER_HOVER
+        } else {
+            mc::SLOT_BORDER_IDLE
+        };
+        let bg_color = if row_hovered {
+            mc::SLOT_BG_HOVER
+        } else {
+            mc::SLOT_BG
+        };
+        ui.fill(MARGIN, y, row_w, row, mc::SLOT_BORDER_BLACK);
+        ui.fill(MARGIN + 1.0, y + 1.0, row_w - 2.0, 1.0, border_color);
+        ui.fill(MARGIN + 1.0, y + 1.0, 1.0, row - 2.0, border_color);
+        ui.fill(MARGIN + row_w - 2.0, y + 1.0, 1.0, row - 2.0, border_color);
+        ui.fill(MARGIN + 1.0, y + row - 2.0, row_w - 2.0, 1.0, border_color);
+        ui.fill(MARGIN + 2.0, y + 2.0, row_w - 4.0, row - 4.0, bg_color);
 
         // 1. Pack Preview Icon
         let icon_x = MARGIN + 12.0;
         let icon_y = y + (row - ICON_SIZE) / 2.0;
-        ui.rounded(icon_x, icon_y, ICON_SIZE, ICON_SIZE, 10.0, color::HOVER);
+        ui.fill(icon_x, icon_y, ICON_SIZE, ICON_SIZE, mc::BTN_BORDER_BLACK);
+        ui.fill(icon_x + 1.0, icon_y + 1.0, ICON_SIZE - 2.0, 1.0, mc::BTN_SH_IDLE);
+        ui.fill(icon_x + 1.0, icon_y + 1.0, 1.0, ICON_SIZE - 2.0, mc::BTN_SH_IDLE);
+        ui.fill(icon_x + ICON_SIZE - 2.0, icon_y + 1.0, 1.0, ICON_SIZE - 2.0, mc::BTN_SH_IDLE);
+        ui.fill(icon_x + 1.0, icon_y + ICON_SIZE - 2.0, ICON_SIZE - 2.0, 1.0, mc::BTN_SH_IDLE);
+        ui.fill(icon_x + 2.0, icon_y + 2.0, ICON_SIZE - 4.0, ICON_SIZE - 4.0, mc::hex(0x0e0e0e, 255));
 
         let mut drawn_icon = false;
         if let Some(rgba) = card.icons.get(&project.id) {
@@ -414,7 +578,7 @@ fn draw_list(
                     rgba: rgba.to_vec(),
                 };
                 ui.batch.patches.push(patch);
-                ui.blit_sprite(icon_x, icon_y, ICON_SIZE, ICON_SIZE, rect);
+                ui.blit_sprite(icon_x + 2.0, icon_y + 2.0, ICON_SIZE - 4.0, ICON_SIZE - 4.0, rect);
                 drawn_icon = true;
             }
         }
@@ -444,12 +608,13 @@ fn draw_list(
             project.title.clone()
         };
         let title = fitted(ui, Face::Semibold, TITLE_TEXT, text_w, &title);
-        ui.text(
+        mc_text_shadow(
+            ui,
             Face::Semibold,
             TITLE_TEXT,
             text_x,
             y + 10.0,
-            color::TEXT,
+            mc::TEXT_WHITE,
             &title,
         );
 
@@ -460,24 +625,26 @@ fn draw_list(
             format_categories(project)
         );
         let meta = fitted(ui, Face::Regular, META_TEXT, text_w, &meta);
-        ui.text(
+        mc_text_shadow(
+            ui,
             Face::Regular,
             META_TEXT,
             text_x,
             y + 40.0,
-            color::hex(0x56c476, 255),
+            mc::TEXT_GOLD,
             &meta,
         );
 
         let about = starling_catalog::caution(project).unwrap_or_else(|| project.summary.clone());
         let mut line_y = y + 68.0;
         for line in fitted_lines(ui, Face::Regular, BODY_TEXT, text_w, 2, &about) {
-            ui.text(
+            mc_text_shadow(
+                ui,
                 Face::Regular,
                 BODY_TEXT,
                 text_x,
                 line_y,
-                color::MUTED,
+                mc::TEXT_GRAY,
                 &line,
             );
             line_y += BODY_LINE;
@@ -494,30 +661,22 @@ fn draw_list(
         ];
 
         if shared.installing.as_deref() == Some(project.title.as_str()) {
-            label(ui, install_rect, color::MUTED, "Installing...");
+            mc_button(ui, install_rect, "Installing...", false, false, None, drawn);
         } else if card.installed.contains(&project.id) {
             let (state, remove) = installed_parts(install_rect);
-            label(ui, state, color::MUTED, "Installed");
-            ui.rounded(
-                remove[0],
-                remove[1],
-                remove[2],
-                remove[3],
-                10.0,
-                color::HOVER,
-            );
-            label(ui, remove, color::TEXT, "Remove");
+            mc_label_shadow(ui, state, "Installed", mc::TEXT_GREEN);
+            mc_button(ui, remove, "Remove", false, true, None, drawn);
             if let Some(part) = list::shown_part(remove, top, bottom) {
                 drawn.push((part, Act::Remove(i)));
             }
         } else {
-            plate(ui, install_rect, "Install", true);
+            mc_button(ui, install_rect, "Install", false, true, None, drawn);
             if let Some(part) = list::shown_part(install_rect, top, bottom) {
                 drawn.push((part, Act::Install(i)));
             }
         }
 
-        plate(ui, ver_rect, "All Versions", false);
+        mc_button(ui, ver_rect, "All Versions", false, true, None, drawn);
         if let Some(part) = list::shown_part(ver_rect, top, bottom) {
             drawn.push((part, Act::ViewVersions(i)));
         }
@@ -527,12 +686,13 @@ fn draw_list(
     let end = &shared.feed.tail();
     if matches!(end, Tail::Loading) {
         let line = loading_line(card.shelf, rows.is_empty());
-        ui.text(
+        mc_text_shadow(
+            ui,
             Face::Regular,
             BODY_TEXT,
             MARGIN + 14.0,
             y + 26.0,
-            color::MUTED,
+            mc::TEXT_GRAY,
             &line,
         );
     } else if let Tail::End = end {
@@ -541,23 +701,25 @@ fn draw_list(
         } else {
             "End of list."
         };
-        ui.text(
+        mc_text_shadow(
+            ui,
             Face::Regular,
             BODY_TEXT,
             MARGIN + 14.0,
             y + 26.0,
-            color::MUTED,
+            mc::TEXT_GRAY,
             line,
         );
     } else if let Tail::Failed(why) = end {
         let text_w = row_w - ROW_BUTTON_W - 44.0;
         let line = fitted(ui, Face::Regular, BODY_TEXT, text_w, why);
-        ui.text(
+        mc_text_shadow(
+            ui,
             Face::Regular,
             BODY_TEXT,
             MARGIN + 14.0,
             y + 26.0,
-            color::DANGER,
+            mc::TEXT_RED,
             &line,
         );
         let rect = [
@@ -566,7 +728,7 @@ fn draw_list(
             ROW_BUTTON_W,
             ROW_BUTTON_H,
         ];
-        plate(ui, rect, "Try again", false);
+        mc_button(ui, rect, "Try again", false, true, None, drawn);
         if let Some(part) = list::shown_part(rect, top, bottom) {
             drawn.push((part, Act::Retry));
         }
@@ -584,38 +746,47 @@ fn draw_versions(
         return;
     };
     let (w, h) = (ui.w, ui.h);
-    ui.fill(0.0, 0.0, w, h, color::hex(0x00_00_00, 215));
+    ui.fill(0.0, 0.0, w, h, mc::MODAL_DIM);
 
     let panel_w = 860.0_f32.min(w - 2.0 * MARGIN);
     let panel_h = 620.0_f32.min(h - 2.0 * MARGIN);
     let panel_x = (w - panel_w) / 2.0;
     let panel_y = (h - panel_h) / 2.0;
 
-    ui.rounded(panel_x, panel_y, panel_w, panel_h, 14.0, color::BG);
-    ui.border(panel_x, panel_y, panel_w, panel_h, 14.0, color::BORDER);
+    // Beveled Minecraft modal frame
+    ui.fill(panel_x, panel_y, panel_w, panel_h, mc::BTN_BORDER_BLACK);
+    ui.fill(panel_x + 1.0, panel_y + 1.0, panel_w - 2.0, 1.0, mc::MODAL_BORDER_LIGHT);
+    ui.fill(panel_x + 1.0, panel_y + 1.0, 1.0, panel_h - 2.0, mc::MODAL_BORDER_LIGHT);
+    ui.fill(panel_x + panel_w - 2.0, panel_y + 1.0, 1.0, panel_h - 2.0, mc::MODAL_BORDER_DARK);
+    ui.fill(panel_x + 1.0, panel_y + panel_h - 2.0, panel_w - 2.0, 1.0, mc::MODAL_BORDER_DARK);
+    ui.fill(panel_x + 2.0, panel_y + 2.0, panel_w - 4.0, panel_h - 4.0, mc::MODAL_BG);
 
-    // Header:
+    // Header bar with separator
     let header_h = 80.0;
-    ui.rounded(panel_x, panel_y, panel_w, header_h, 14.0, color::RAISED);
+    ui.fill(panel_x + 2.0, panel_y + 2.0, panel_w - 4.0, header_h - 2.0, mc::HEADER_BG);
+    ui.fill(panel_x + 2.0, panel_y + header_h - 1.0, panel_w - 4.0, 1.0, mc::SEPARATOR_DARK);
+    ui.fill(panel_x + 2.0, panel_y + header_h, panel_w - 4.0, 1.0, mc::SEPARATOR_LIGHT);
 
     let title = format!("{} - All Versions", project.title);
     let title_fit = fitted(ui, Face::Semibold, TITLE_TEXT, panel_w - 380.0, &title);
-    ui.text(
+    mc_text_shadow(
+        ui,
         Face::Semibold,
         TITLE_TEXT,
         panel_x + 20.0,
         panel_y + 14.0,
-        color::TEXT,
+        mc::TEXT_YELLOW,
         &title_fit,
     );
 
     let author_line = format!("by {} • {}", project.author, project.kind.label());
-    ui.text(
+    mc_text_shadow(
+        ui,
         Face::Regular,
         META_TEXT,
         panel_x + 20.0,
         panel_y + 46.0,
-        color::MUTED,
+        mc::TEXT_GRAY,
         &author_line,
     );
 
@@ -632,13 +803,27 @@ fn draw_versions(
         filter_w,
         52.0,
     ];
-    plate(ui, filter_btn, filter_text, card.versions_filter_current);
-    drawn.push((filter_btn, Act::ToggleVersionsFilter));
+    mc_button(
+        ui,
+        filter_btn,
+        filter_text,
+        card.versions_filter_current,
+        true,
+        Some(Act::ToggleVersionsFilter),
+        drawn,
+    );
 
     // Close button
     let close_btn = [panel_x + panel_w - 94.0, panel_y + 14.0, 80.0, 52.0];
-    plate(ui, close_btn, "Close", false);
-    drawn.push((close_btn, Act::CloseVersions));
+    mc_button(
+        ui,
+        close_btn,
+        "Done",
+        false,
+        true,
+        Some(Act::CloseVersions),
+        drawn,
+    );
 
     // Versions Content Area
     let list_top = panel_y + header_h + 10.0;
@@ -651,12 +836,13 @@ fn draw_versions(
     if card.versions_loading {
         let loading_txt = "Fetching versions from Modrinth...";
         let tw = ui.measure(Face::Semibold, 24.0, loading_txt);
-        ui.text(
+        mc_text_shadow(
+            ui,
             Face::Semibold,
             24.0,
             panel_x + (panel_w - tw) / 2.0,
             list_top + 100.0,
-            color::MUTED,
+            mc::TEXT_GRAY,
             loading_txt,
         );
         return;
@@ -664,12 +850,13 @@ fn draw_versions(
 
     if let Some(err) = &card.versions_error {
         let err_fit = fitted(ui, Face::Regular, BODY_TEXT, panel_w - 40.0, err);
-        ui.text(
+        mc_text_shadow(
+            ui,
             Face::Regular,
             BODY_TEXT,
             panel_x + 20.0,
             list_top + 40.0,
-            color::DANGER,
+            mc::TEXT_RED,
             &err_fit,
         );
         return;
@@ -693,12 +880,13 @@ fn draw_versions(
     if filtered_versions.is_empty() {
         let empty_txt = "No versions found matching the filter.";
         let tw = ui.measure(Face::Regular, BODY_TEXT, empty_txt);
-        ui.text(
+        mc_text_shadow(
+            ui,
             Face::Regular,
             BODY_TEXT,
             panel_x + (panel_w - tw) / 2.0,
             list_top + 100.0,
-            color::MUTED,
+            mc::TEXT_GRAY,
             empty_txt,
         );
         return;
@@ -712,7 +900,26 @@ fn draw_versions(
             continue;
         }
 
-        ui.rounded(ver_x, vy, ver_w, v_box, 10.0, color::RAISED);
+        let ver_rect = [ver_x, vy, ver_w, v_box];
+        let ver_hovered = mc_is_hovered(ui, ver_rect);
+        let border_color = if ver_hovered {
+            mc::SLOT_BORDER_HOVER
+        } else {
+            mc::SLOT_BORDER_IDLE
+        };
+        let bg_color = if ver_hovered {
+            mc::SLOT_BG_HOVER
+        } else {
+            mc::SLOT_BG
+        };
+
+        // Minecraft slot box for version entry
+        ui.fill(ver_x, vy, ver_w, v_box, mc::SLOT_BORDER_BLACK);
+        ui.fill(ver_x + 1.0, vy + 1.0, ver_w - 2.0, 1.0, border_color);
+        ui.fill(ver_x + 1.0, vy + 1.0, 1.0, v_box - 2.0, border_color);
+        ui.fill(ver_x + ver_w - 2.0, vy + 1.0, 1.0, v_box - 2.0, border_color);
+        ui.fill(ver_x + 1.0, vy + v_box - 2.0, ver_w - 2.0, 1.0, border_color);
+        ui.fill(ver_x + 2.0, vy + 2.0, ver_w - 4.0, v_box - 4.0, bg_color);
 
         // Version title / number:
         let v_title = format!(
@@ -724,12 +931,13 @@ fn draw_versions(
                 &version.loaders[0]
             }
         );
-        ui.text(
+        mc_text_shadow(
+            ui,
             Face::Semibold,
             22.0,
             ver_x + 14.0,
             vy + 10.0,
-            color::TEXT,
+            mc::TEXT_WHITE,
             &v_title,
         );
 
@@ -753,12 +961,13 @@ fn draw_versions(
         };
         let sub = format!("{game_vers} • {size_str} • Published {date_str}");
         let sub_fit = fitted(ui, Face::Regular, 16.0, ver_w - 180.0, &sub);
-        ui.text(
+        mc_text_shadow(
+            ui,
             Face::Regular,
             16.0,
             ver_x + 14.0,
             vy + 42.0,
-            color::MUTED,
+            mc::TEXT_GRAY,
             &sub_fit,
         );
 
@@ -773,9 +982,9 @@ fn draw_versions(
         ];
 
         if shared.installing.as_deref() == Some(project.title.as_str()) {
-            label(ui, v_btn, color::MUTED, "Installing...");
+            mc_button(ui, v_btn, "Installing...", false, false, None, drawn);
         } else {
-            plate(ui, v_btn, "Download", true);
+            mc_button(ui, v_btn, "Download", false, true, None, drawn);
             if let Some(part) = list::shown_part(v_btn, list_top, list_bottom) {
                 drawn.push((part, Act::InstallVersion(*real_idx)));
             }
@@ -785,62 +994,58 @@ fn draw_versions(
 
 /// The title, Close, the three shelves and the search box.
 fn draw_head(ui: &mut Ui<'_>, card: &Catalog, edge: f32, drawn: &mut Vec<([f32; 4], Act)>) {
-    ui.text_line(
+    mc_text_line_shadow(
+        ui,
         Face::Semibold,
         TITLE_TEXT,
         62.0,
         MARGIN,
         8.0,
-        color::TEXT,
-        "Downloader",
+        mc::TEXT_WHITE,
+        "Resource Pack & Shader Catalog",
     );
-    button(
+    mc_button(
         ui,
-        [edge - 130.0, 8.0, 130.0, 62.0],
-        "Close",
+        [edge - 130.0, 12.0, 130.0, 52.0],
+        "Done",
         false,
-        Act::Close,
+        true,
+        Some(Act::Close),
         drawn,
     );
 
     const SHELF_Y: f32 = 78.0;
-    const SHELF_H: f32 = 72.0;
+    const SHELF_H: f32 = 62.0;
     let mut x = MARGIN;
     for (shelf, name) in SHELVES {
-        let width = ui.measure(Face::Semibold, BUTTON_TEXT, name) + 44.0;
-        button(
+        let width = ui.measure(Face::Semibold, BUTTON_TEXT, name) + 40.0;
+        mc_button(
             ui,
             [x, SHELF_Y, width, SHELF_H],
             name,
             card.shelf == shelf,
-            Act::Shelf(shelf),
+            true,
+            Some(Act::Shelf(shelf)),
             drawn,
         );
         x += width + 8.0;
     }
+
+    // Classic Minecraft EditBox for search
     let search = [x + 4.0, SHELF_Y, (edge - x - 4.0).max(120.0), SHELF_H];
-    ui.rounded(
-        search[0],
-        search[1],
-        search[2],
-        search[3],
-        10.0,
-        color::RAISED,
-    );
-    if card.typing {
-        ui.border(
-            search[0],
-            search[1],
-            search[2],
-            search[3],
-            10.0,
-            color::ACCENT,
-        );
-    }
-    let (typed, ink) = if card.query.is_empty() && !card.typing {
-        ("Search Modrinth & Registry...", color::MUTED)
+    let border_col = if card.typing {
+        mc::EDITBOX_BORDER_FOCUSED
     } else {
-        (card.query.as_str(), color::TEXT)
+        mc::EDITBOX_BORDER_IDLE
+    };
+    ui.fill(search[0], search[1], search[2], search[3], mc::BTN_BORDER_BLACK);
+    ui.fill(search[0] + 1.0, search[1] + 1.0, search[2] - 2.0, search[3] - 2.0, border_col);
+    ui.fill(search[0] + 2.0, search[1] + 2.0, search[2] - 4.0, search[3] - 4.0, mc::EDITBOX_BG);
+
+    let (typed, ink) = if card.query.is_empty() && !card.typing {
+        ("Search Modrinth & Registry...", mc::TEXT_DARK_GRAY)
+    } else {
+        (card.query.as_str(), mc::TEXT_WHITE)
     };
     let typed = fitted(
         ui,
@@ -849,7 +1054,8 @@ fn draw_head(ui: &mut Ui<'_>, card: &Catalog, edge: f32, drawn: &mut Vec<([f32; 
         search[2] - 32.0 - CLEAR_W,
         typed,
     );
-    ui.text_line(
+    mc_text_line_shadow(
+        ui,
         Face::Regular,
         BODY_TEXT,
         search[3],
@@ -860,17 +1066,16 @@ fn draw_head(ui: &mut Ui<'_>, card: &Catalog, edge: f32, drawn: &mut Vec<([f32; 
     );
     if card.typing {
         let end = search[0] + 16.0 + ui.measure(Face::Regular, BODY_TEXT, &typed);
-        ui.fill(end + 1.0, search[1] + 18.0, 2.0, 36.0, color::ACCENT);
+        ui.fill(end + 1.0, search[1] + 14.0, 2.0, search[3] - 28.0, mc::TEXT_WHITE);
     }
     if !card.query.is_empty() {
         let clear = [
             search[0] + search[2] - CLEAR_W,
-            search[1],
-            CLEAR_W,
-            search[3],
+            search[1] + 6.0,
+            CLEAR_W - 6.0,
+            search[3] - 12.0,
         ];
-        label(ui, clear, color::MUTED, "Clear");
-        drawn.push((clear, Act::Clear));
+        mc_button(ui, clear, "Clear", false, true, Some(Act::Clear), drawn);
     }
     drawn.push((search, Act::Search));
 }
@@ -883,7 +1088,7 @@ fn draw_foot(
     edge: f32,
     drawn: &mut Vec<([f32; 4], Act)>,
 ) {
-    let foot = ui.h - FOOT_H + 7.0;
+    let foot = ui.h - FOOT_H + 10.0;
     let mut right = edge;
     if matches!(card.shelf, Shelf::ResourcePacks | Shelf::ShaderPacks) {
         let name = if card.everything {
@@ -891,14 +1096,15 @@ fn draw_foot(
         } else {
             "Other game versions: Off"
         };
-        let width = ui.measure(Face::Semibold, BUTTON_TEXT, name) + 44.0;
+        let width = ui.measure(Face::Semibold, BUTTON_TEXT, name) + 40.0;
         right -= width;
-        button(
+        mc_button(
             ui,
-            [right, foot, width, 64.0],
+            [right, foot, width, 56.0],
             name,
             card.everything,
-            Act::Everything,
+            true,
+            Some(Act::Everything),
             drawn,
         );
         right -= 12.0;
@@ -906,15 +1112,17 @@ fn draw_foot(
     let status_w = (right - MARGIN).max(0.0);
     if shared.installing.is_some() {
         let line = fitted(ui, Face::Regular, BODY_TEXT, status_w, &shared.line);
-        ui.text(Face::Regular, BODY_TEXT, MARGIN, foot, color::TEXT, &line);
-        ui.rounded(MARGIN, foot + 38.0, status_w, 12.0, 6.0, color::RAISED);
-        let done = (status_w * shared.fraction.clamp(0.0, 1.0)).max(12.0);
-        ui.rounded(MARGIN, foot + 38.0, done, 12.0, 6.0, color::ACCENT);
+        mc_text_shadow(ui, Face::Regular, BODY_TEXT, MARGIN, foot, mc::TEXT_WHITE, &line);
+        // Minecraft progress bar: outer black, inner dark, green bar
+        ui.fill(MARGIN, foot + 36.0, status_w, 14.0, mc::BTN_BORDER_BLACK);
+        ui.fill(MARGIN + 1.0, foot + 37.0, status_w - 2.0, 12.0, mc::PROGRESS_BG);
+        let done = (status_w * shared.fraction.clamp(0.0, 1.0)).max(6.0);
+        ui.fill(MARGIN + 1.0, foot + 37.0, done - 2.0, 12.0, mc::PROGRESS_GREEN);
     } else if let Some((notice, failed)) = &card.notice {
-        let ink = if *failed { color::DANGER } else { color::TEXT };
+        let ink = if *failed { mc::TEXT_RED } else { mc::TEXT_WHITE };
         let mut y = foot;
         for line in fitted_lines(ui, Face::Regular, BODY_TEXT, status_w, 2, notice) {
-            ui.text(Face::Regular, BODY_TEXT, MARGIN, y, ink, &line);
+            mc_text_shadow(ui, Face::Regular, BODY_TEXT, MARGIN, y, ink, &line);
             y += BODY_LINE;
         }
     }
@@ -1390,11 +1598,23 @@ impl Game<'_> {
         let (w, h) = (ui.w, ui.h);
         let edge = w - MARGIN - if card.typing { w * NAV_BAR_SHARE } else { 0.0 };
         let mut drawn = Vec::new();
-        ui.fill(0.0, 0.0, w, h, color::BG);
+        // 1. Dark translucent in-world screen backdrop
+        ui.fill(0.0, 0.0, w, h, mc::SCREEN_BG);
+
+        // 2. Main catalog list
         draw_list(&mut ui, card, &shared, edge, &mut drawn);
-        // The rows go under these two.
-        ui.fill(0.0, 0.0, w, HEAD_H, color::BG);
-        ui.fill(0.0, h - FOOT_H, w, FOOT_H, color::BG);
+
+        // 3. Header bar with Minecraft 2px separator
+        ui.fill(0.0, 0.0, w, HEAD_H, mc::HEADER_BG);
+        ui.fill(0.0, HEAD_H - 2.0, w, 1.0, mc::SEPARATOR_DARK);
+        ui.fill(0.0, HEAD_H - 1.0, w, 1.0, mc::SEPARATOR_LIGHT);
+
+        // 4. Footer bar with Minecraft 2px separator
+        ui.fill(0.0, h - FOOT_H, w, FOOT_H, mc::HEADER_BG);
+        ui.fill(0.0, h - FOOT_H, w, 1.0, mc::SEPARATOR_DARK);
+        ui.fill(0.0, h - FOOT_H + 1.0, w, 1.0, mc::SEPARATOR_LIGHT);
+
+        // 5. Header and Footer interactive contents
         draw_head(&mut ui, card, edge, &mut drawn);
         draw_foot(&mut ui, card, &shared, edge, &mut drawn);
         if let Some(project) = &card.removing {
