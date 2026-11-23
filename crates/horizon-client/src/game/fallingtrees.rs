@@ -475,6 +475,10 @@ impl Game<'_> {
         state: BlockStateId,
         _canceled: &mut bool,
     ) {
+        // Only run on the authoritative server, never on a remote client
+        if self.remote.is_some() {
+            return;
+        }
         let settings = {
             let mut s = STATE.lock().unwrap_or_else(|e| e.into_inner());
             *s.settings.get_or_insert_with(|| {
@@ -485,7 +489,8 @@ impl Game<'_> {
             return;
         }
         // Sneak: Shift key or touch sneak cancels whole tree fall, chopping only the single log
-        if self.keys.contains(&KeyCode::ShiftLeft)
+        if self.player.as_ref().is_some_and(|p| p.shift_key_down)
+            || self.keys.contains(&KeyCode::ShiftLeft)
             || self.keys.contains(&KeyCode::ShiftRight)
             || self.touch_sneaking()
         {
@@ -608,6 +613,11 @@ impl Game<'_> {
     }
 
     pub(crate) fn fallingtrees_tick(&mut self) {
+        // Only the authoritative server thread lands trees and spawns drops.
+        // Remote client must never remove active trees or spawn drops.
+        if self.remote.is_some() {
+            return;
+        }
         let now = self.world.game_time as f64 + self.clock.fraction();
         let mut landed = Vec::new();
         {
@@ -642,10 +652,29 @@ impl Game<'_> {
                 self.level_event_at(2001, land_pos, state.0 as i32);
             }
 
+            // Enter target dimension if needed for entity spawning
+            let back = self.dim;
+            let target_dim = super::Dim::from_id(dim);
+            let switched = if back != target_dim {
+                self.enter_level(None, target_dim).is_ok()
+            } else {
+                false
+            };
+
             // Spawn drops cleanly at the stump
             let stump_pos = [ox as f64 + 0.5, oy as f64 + 0.125, oz as f64 + 0.5];
-            for stack in tree.drops {
-                self.spawn_item(stack, stump_pos, [0.0, 0.1, 0.0], 0);
+            let block_drops = self.ui.rules.bool("block_drops");
+            if block_drops {
+                for stack in tree.drops {
+                    if &*stack.item != "minecraft:air" {
+                        let motion = super::dispenser::new_item_motion();
+                        self.spawn_item(stack, stump_pos, motion, 0);
+                    }
+                }
+            }
+
+            if switched {
+                let _ = self.enter_level(None, back);
             }
 
             // Held axe receives durability wear per felled log
