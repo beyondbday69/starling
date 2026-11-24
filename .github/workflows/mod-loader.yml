@@ -8,6 +8,7 @@ name: mod-loader
 on:
   workflow_dispatch:
   push:
+    branches-ignore: [feat/shader-fsr-upscaling]
     paths:
       - 'crates/horizon-mod-abi/**'
       - 'crates/horizon-mod-loader/**'

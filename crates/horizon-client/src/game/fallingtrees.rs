@@ -8,7 +8,7 @@ use std::collections::{HashSet, VecDeque};
 use std::sync::Mutex;
 
 use super::Game;
-use crate::items::ItemStack;
+use crate::items::{BlockLootRoll, ItemStack};
 use crate::mesher::Vertex;
 use crate::mod_api::NativeMod;
 use horizon_core::position::BlockPos;
@@ -565,7 +565,10 @@ impl Game<'_> {
             let d = self.res.items().block_drops(
                 self.pack.assets.registry,
                 s,
-                held_stack.as_ref(),
+                BlockLootRoll {
+                    held: held_stack.as_ref(),
+                    ..Default::default()
+                },
                 &mut self.world.random,
                 None,
             );

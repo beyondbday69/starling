@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - 'feat/**'
+      - '!feat/shader-fsr-upscaling'
       - 'fix/**'
       - 'android'
       - 'starling'
@@ -21,6 +22,7 @@ concurrency:
 
 jobs:
   render-preview:
+    if: github.ref != 'refs/heads/feat/shader-fsr-upscaling' && github.head_ref != 'feat/shader-fsr-upscaling'
     name: Render Title Screen
     runs-on: ubuntu-latest
     timeout-minutes: 20

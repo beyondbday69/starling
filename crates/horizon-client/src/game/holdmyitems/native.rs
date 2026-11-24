@@ -90,7 +90,7 @@ fn load_bundled_scripts(game: &Game<'_>, state: &mut State) {
     }
     state.scripts_loaded = true;
     state.hmi.overrides = hmi::LuaOverrides::default();
-    if let Some(built_dir) = game.native_data(hmi::ID) {
+    if let Some(built_dir) = game.native_built_data(hmi::ID) {
         for file in [
             "hand_pose.lua",
             "hand_relative_pose.lua",

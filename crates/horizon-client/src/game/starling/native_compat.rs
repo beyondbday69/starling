@@ -1130,6 +1130,12 @@ impl Game<'_> {
             39
         }
     }
+    /// The folder mod `mod_id`'s post-build step wrote into (`native-data/<id>/` beside the
+    /// executable); None when the game's own path is unknown.
+    #[allow(dead_code)]
+    pub(in crate::game) fn native_built_data(&self, mod_id: &str) -> Option<PathBuf> {
+        horizon_client::native_data::built(mod_id)
+    }
 }
 
 /// A recipe the panel shows as Horizon's API had it before results could have a chance and recipes

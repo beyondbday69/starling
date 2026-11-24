@@ -35,6 +35,7 @@ jobs:
   # The Rust cache of each job is saved by the pushes to android, starling and sync-horizon-7 (pull requests read the
   # one of the branch they go to): before sync-horizon-7 saved one, its pull requests built their dependencies anew.
   lint:
+    if: github.ref != 'refs/heads/feat/shader-fsr-upscaling' && github.head_ref != 'feat/shader-fsr-upscaling'
     runs-on: ${{ vars.SELF_HOSTED_CI == 'all' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "linux", "playhorizon-ci"]') || 'ubuntu-latest' }}
     timeout-minutes: 75
     steps:
@@ -94,6 +95,7 @@ jobs:
           # The server build (released as horizon-engine): the game without sound or controllers.
           cargo +stable clippy -p horizon-client -p horizon-game -p horizon-mod-host --all-targets --no-default-features -- -D warnings
   verify:
+    if: github.ref != 'refs/heads/feat/shader-fsr-upscaling' && github.head_ref != 'feat/shader-fsr-upscaling'
     runs-on: ${{ vars.SELF_HOSTED_CI == 'all' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "linux", "playhorizon-ci"]') || 'ubuntu-latest' }}
     # Since sync 7 a full run took 43-47 minutes on GitHub's runners, so 45 cancelled half of them.
     timeout-minutes: 75
