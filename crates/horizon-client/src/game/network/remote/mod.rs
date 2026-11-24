@@ -6236,15 +6236,6 @@ impl Game<'_> {
             OwnProfile::Done(_) => {}
         }
     }
-    pub(super) fn skin_3d_model(
-        &self,
-        kind: &std::sync::Arc<horizon_client::mobs::MobType>,
-        skin: &str,
-        slim: bool,
-    ) -> Option<std::sync::Arc<horizon_client::mobs::Part>> {
-        let _ = (kind, skin, slim);
-        None
-    }
 
     /// `PlayerInfo.getSkin` for every player entity, including NPCs that are
     /// never in the tab list: resolve each profile's textures and give the
