@@ -17317,6 +17317,7 @@ impl Game<'_> {
             self.sync_toggle(SNEAK);
             self.sync_toggle(SPRINT);
         }
+        #[cfg(target_os = "android")]
         if self.catalog.shown {
             match &event {
                 WindowEvent::MouseInput { state, button, .. } => {

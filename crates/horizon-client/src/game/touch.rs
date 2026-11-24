@@ -732,6 +732,7 @@ impl Game<'_> {
         // The touch controls come back with a touch after a keyboard, a mouse or a controller.
         self.input_used(InputMode::Touch);
         self.last_input = Instant::now();
+        #[cfg(target_os = "android")]
         if self.catalog_touch(t) {
             return true;
         }
