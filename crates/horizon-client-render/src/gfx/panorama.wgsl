@@ -1,4 +1,5 @@
 // CubeMap's position-only cube with Complementary Reimagined dawn (time 23400) crisp lighting.
+override HDR_WRITE_LIGHT: bool = false;
 struct Projection { view_proj: mat4x4<f32> }
 @group(0) @binding(0) var<uniform> projection: Projection;
 @group(0) @binding(1) var panorama: texture_cube<f32>;
@@ -33,5 +34,5 @@ struct Out {
     let luma = dot(lit_col, vec3<f32>(0.2126, 0.7152, 0.0722));
     let crisp_col = clamp(mix(vec3<f32>(luma), lit_col, 1.12) * 1.02, vec3<f32>(0.0), vec3<f32>(1.0));
 
-    return vec4<f32>(crisp_col, 1.0);
+    return vec4<f32>(crisp_col, select(1.0, 1.0, HDR_WRITE_LIGHT));
 }

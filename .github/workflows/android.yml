@@ -31,6 +31,10 @@ on:
         description: A test with these native mods of native-mods/ compiled in (ids, separated by spaces), by native_build.sh
         type: string
         default: 'cinematic_interactions skins_3d gyro fallingtrees distant_horizons'
+      wasm_probe:
+        description: Also build packaging/android/wasm-probe, a wasm mod that says its hooks ran, as an artifact (arm64)
+        type: boolean
+        default: false
 permissions:
   contents: read
 env:
@@ -67,8 +71,9 @@ jobs:
             "build-tools;35.0.0" "platforms;android-36" "ndk;28.2.13676358" > /dev/null
       - name: Install Rust for Android and cargo-ndk
         run: |
-          rustup toolchain install stable --profile minimal --target ${{ matrix.target }}
-          rustup default stable
+          # The Rust Horizon pins (tools/ci/rust-version), as its CI and the launcher's native mods build with.
+          # rust-src: build_apk.py builds the std with the game (its TLS_FLAGS).
+          bash tools/ci/rustup_install.sh --profile minimal --component rust-src --target ${{ matrix.target }}
           cargo install cargo-ndk --version 3.5.4 --locked
       - uses: Swatinem/rust-cache@v2
         with:
@@ -106,8 +111,15 @@ jobs:
           test -n "$KEYSTORE" || exit 0
           mkdir -p target/android
           echo "$KEYSTORE" | base64 -d > target/android/debug.keystore
+      # Compile v2: the arm64 APK's game is a set of Rust libraries (the mod API's crates and the mod host among
+      # them), so a native mod plays from a small library of its own beside them, which mod-builds' store builds
+      # for this commit and profile (its store-base.yml runs this same build). The other ABIs have no store.
+      - name: The game and the mod API as dylibs
+        if: matrix.abi == 'arm64-v8a' && !inputs.native_mods
+        run: python3 tools/android_native_sdk.py prepare
       - name: Build the APK
         env:
+          RUSTFLAGS: ${{ matrix.abi == 'arm64-v8a' && !inputs.native_mods && '-C prefer-dynamic' || '' }}
           ABI: ${{ matrix.abi }}
           HORIZON_ANDROID_KEY_ALIAS: ${{ env.RELEASE_BUILD == 'true' && secrets.STARLING_KEY_ALIAS || 'horizon-debug' }}
           HORIZON_ANDROID_STORE_PASSWORD: ${{ secrets.STARLING_STORE_PASSWORD }}
@@ -149,6 +161,17 @@ jobs:
           path: target/android/lib*-symbols.so
           if-no-files-found: ignore
           retention-days: 90
+      # With the cargo-horizon-mod and the Rust build_apk.py built the wasm std with (build_apk.py `wasm_std`).
+      - name: Build the wasm probe mod
+        if: inputs.wasm_probe && matrix.abi == 'arm64-v8a'
+        working-directory: packaging/android/wasm-probe
+        run: ../../../target/debug/cargo-horizon-mod horizon-mod build --wasm
+      - uses: actions/upload-artifact@v4
+        if: inputs.wasm_probe && matrix.abi == 'arm64-v8a'
+        with:
+          name: starling-wasm-probe
+          path: packaging/android/wasm-probe/target/horizon-mod/*.hmod
+          if-no-files-found: error
 
   release:
     # Publish once, only after every architecture has built and signed successfully.
