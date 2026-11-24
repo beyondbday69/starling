@@ -161,7 +161,7 @@ bindings = [{ name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *s
 [[injection]]
 id = "table-open"
 kind = "HEAD"
-target = "horizon_client::game::Game<'_>::open_menu"
+target = "horizon_client::game::Game<'_>::open_block_effect_menu"
 helper = "table_open.rs"
 bindings = [
   { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },

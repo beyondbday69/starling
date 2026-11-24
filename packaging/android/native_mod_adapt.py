@@ -28,6 +28,7 @@ RENAMED = {
     "horizon_client::game::titles::Game<'_>::draw_titles": "horizon_client::game::titles::Game<'_>::draw_title",
     "horizon_client::game::pointer_capture::Game<'_>::apply_mouse_look": "horizon_client::game::Game<'_>::apply_mouse_look",
     "horizon_client::game::frame_geometry::Game<'_>::first_person_arm": "horizon_client::game::Game<'_>::first_person_arm",
+    "horizon_client::game::Game<'_>::open_menu": "horizon_client::game::Game<'_>::open_block_effect_menu",
     # The packet decoded, which Horizon's hook gives and the split's (an id and a payload) doesn't.
     "horizon_client::game::native_hooks::Game<'_>::native_client_packet": (
         "horizon_client::game::native_hooks::Game<'_>::native_client_packet_old"

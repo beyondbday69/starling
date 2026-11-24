@@ -3952,7 +3952,7 @@ impl Game<'_> {
         Ok(())
     }
     /// Menus opened by PlayerEffect::OpenMenu.
-    fn open_block_effect_menu(&mut self, pos: [i32; 3]) {
+    pub(super) fn open_block_effect_menu(&mut self, pos: [i32; 3]) {
         if self.fake_blocks(mod_api::FakeEffect::Menu) {
             return;
         }
