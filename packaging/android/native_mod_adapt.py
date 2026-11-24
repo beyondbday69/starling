@@ -26,15 +26,12 @@ OLD_ROOT = OLD_FOLDER + "lib.rs"
 # What Horizon renamed since, and takes the same arguments.
 RENAMED = {
     "horizon_client::game::titles::Game<'_>::draw_titles": "horizon_client::game::titles::Game<'_>::draw_title",
-<<<<<<< HEAD
     "horizon_client::game::pointer_capture::Game<'_>::apply_mouse_look": "horizon_client::game::Game<'_>::apply_mouse_look",
     "horizon_client::game::frame_geometry::Game<'_>::first_person_arm": "horizon_client::game::Game<'_>::first_person_arm",
-=======
     # The packet decoded, which Horizon's hook gives and the split's (an id and a payload) doesn't.
     "horizon_client::game::native_hooks::Game<'_>::native_client_packet": (
         "horizon_client::game::native_hooks::Game<'_>::native_client_packet_old"
     ),
->>>>>>> v0.9.0
 }
 MODULE = re.compile(r"^\s*(?:pub(?:\(crate\))? )?mod (\w+)\s*(?:;|\{)", re.M)
 # Calls with the arguments they took (a call, how many, what the new ones are).
