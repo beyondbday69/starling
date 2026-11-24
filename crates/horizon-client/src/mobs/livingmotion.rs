@@ -319,10 +319,10 @@ impl Input {
             gliding: gliding || m.extra.fall_flying,
             swimming: swimming || m.extra.swim.amount(1.0) > 0.5,
             climbing: m.climbing && !m.on_ground,
-            main: Held::of(m.main_hand_id()),
-            off: Held::of(m.off_hand_id()),
+            main: Held::of(m.extra.main_hand_id()),
+            off: Held::of(m.extra.off_hand_id()),
             using: (m.extra.using_item > 0).then(|| {
-                Held::used(if m.extra.using_off_hand { m.off_hand_id() } else { m.main_hand_id() })
+                Held::used(if m.extra.using_off_hand { m.extra.off_hand_id() } else { m.extra.main_hand_id() })
             }),
             using_left: m.extra.using_off_hand != m.main_arm_left(),
             main_left: m.main_arm_left(),

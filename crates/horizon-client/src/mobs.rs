@@ -3805,6 +3805,12 @@ impl Mob {
     pub fn main_arm_left(&self) -> bool {
         self.extra.main_hand_left || self.extra.left_handed
     }
+    pub fn main_hand_id(&self) -> Option<&str> {
+        self.extra.main_hand_id()
+    }
+    pub fn off_hand_id(&self) -> Option<&str> {
+        self.extra.off_hand_id()
+    }
     /// The player hit this mob (melee): LivingEntity.hurt with knockback.
     pub fn hurt(
         &mut self,
