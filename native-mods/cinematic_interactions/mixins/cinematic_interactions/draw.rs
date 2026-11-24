@@ -85,7 +85,7 @@ fn cinematic_draw(game: &mut crate::game::Game<'_>, batch: &mut HudBatch) -> ::c
         let mut lines: Vec<(Text, u32)> = vec![(Text::literal(format!("\u{a7}6{}", ci::zone_title(kind, slot))), u32::MAX)];
         if let Some(carried) = game.carried.clone() {
             let fuel = &*carried.item == "minecraft:bucket" || game.items().get(&carried.item).is_some_and(|i| i.fuel.is_some());
-            let cookable = game.recipes().cooking.iter().any(|c| c.kind == ci::cook_type(kind) && c.ingredient.test(&carried));
+            let cookable = game.recipes().cooking.iter().any(|c| c.kind == ci::cook_type(kind) && c.ingredient.test_in(&game.loop_context, &carried));
             if slot == 1 && !fuel {
                 lines.push((Text::literal(format!("\u{a7}c{}", ci::NOT_FUEL)), u32::MAX));
             } else if slot == 2 {

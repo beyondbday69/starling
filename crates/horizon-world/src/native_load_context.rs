@@ -196,6 +196,19 @@ pub struct LoopContext {
     recipe_properties: Arc<HashMap<String, std::collections::HashSet<String>>>,
 }
 
+impl Default for LoopContext {
+    fn default() -> Self {
+        Self {
+            side: LoopSide::Server,
+            snapshot: Snapshot {
+                inputs: Arc::new(LoadInputs::new(BTreeMap::new(), PathBuf::new())),
+                settings: BTreeMap::new(),
+            },
+            recipe_properties: Default::default(),
+        }
+    }
+}
+
 #[path = "native_load_context/recipe_properties.rs"]
 mod recipe_properties;
 
