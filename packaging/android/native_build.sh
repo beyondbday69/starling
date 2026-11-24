@@ -17,7 +17,7 @@
 # ABI selects the Android architecture (default arm64-v8a); VARIANT can be --preview or --dev.
 set -euo pipefail
 
-MIXINS_GIT=https://github.com/horizon-rust/horizon-mixins
+MIXINS_GIT=https://github.com/YKKULTRA/horizon-mixins
 # Horizon's launcher's (launcher/src/native_mods.rs, MIXINS_REV).
 MIXINS_REV=5a64af938ec86b00d53d16a408aabc0038fb3e57
 
