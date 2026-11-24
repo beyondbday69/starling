@@ -632,7 +632,6 @@ impl Game<'_> {
             }
         }
         for tree in landed {
-            let turn = tree.turn(f64::INFINITY);
             let dim = &tree.felling.dimension;
             let [ox, oy, oz] = tree.cut;
 
@@ -640,17 +639,6 @@ impl Game<'_> {
             self.run_command_quietly(&format!(
                 "execute in {dim} run playsound minecraft:block.wood.fall block @a {ox} {oy} {oz} 1.2 0.8"
             ));
-
-            // Block break particles (level event 2001) at landing coordinates
-            for &(at, state) in &tree.blocks {
-                let center = turn.transform_point3(glam::DVec3::new(
-                    at[0] as f64 + 0.5,
-                    at[1] as f64 + 0.5,
-                    at[2] as f64 + 0.5,
-                ));
-                let land_pos = center.floor().as_ivec3().to_array();
-                self.level_event_at(2001, land_pos, state.0 as i32);
-            }
 
             // Enter target dimension if needed for entity spawning
             let back = self.dim;
@@ -682,7 +670,6 @@ impl Game<'_> {
                 self.run_command_quietly(&line);
             }
         }
-        let _ = self.process_level_events();
     }
 
     pub(crate) fn fallingtrees_geometry(
