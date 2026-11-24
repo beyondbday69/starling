@@ -332,6 +332,7 @@ mod shoulders;
 mod sign_edit;
 mod sniffers;
 pub(crate) mod sodium;
+pub(crate) mod sound_physics_remastered;
 mod social;
 mod spawner;
 mod spear;

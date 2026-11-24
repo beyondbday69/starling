@@ -1,0 +1,13 @@
+[package]
+name = "horizon-mod-sound-physics-remastered"
+version = "1.0.0"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+description = "Sound Physics Remastered for Horizon: direct-path occlusion raymarching, per-block materials, distance falloff and raytraced reverb estimation."
+
+# The mod's logic and its tests: the same file the bundle adds to the game.
+[lib]
+path = "mixins/sound_physics_remastered/runtime.rs"
+
+[workspace]

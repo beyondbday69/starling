@@ -2038,6 +2038,7 @@ impl Game<'_> {
         mod_api::dispatch_frame(self, mod_api::mods(), elapsed);
         let partial = (elapsed.as_secs_f32() * 20.0).clamp(0.0, 1.0);
         super::mod_loader::frame(self, partial);
+        self.sound_physics_remastered_frame();
         self.update_mod_player_eyes(partial);
     }
 
@@ -2836,6 +2837,9 @@ impl Game<'_> {
         if !mods.iter().any(|m| m.id == "sodium") {
             mods.push(Self::sodium_mod_entry());
         }
+        if !mods.iter().any(|m| m.id == "sound_physics_remastered") {
+            mods.push(Self::sound_physics_remastered_mod_entry());
+        }
         mod_api::dispatch_mods(self, mod_api::mods(), mods);
         // Mods built as shared libraries list themselves the same way, and are only known once
         // their folder has been read.
@@ -2869,6 +2873,10 @@ impl Game<'_> {
             buttons.extend(self.sodium_settings());
             return;
         }
+        if mod_id == "sound_physics_remastered" {
+            buttons.extend(self.sound_physics_remastered_settings());
+            return;
+        }
         mod_api::dispatch_settings(self, mod_api::mods(), mod_id, buttons);
         super::mod_loader::settings(self, mod_id, buttons);
     }
@@ -2896,6 +2904,10 @@ impl Game<'_> {
         }
         if mod_id == "sodium" {
             self.sodium_settings_click(button);
+            return;
+        }
+        if mod_id == "sound_physics_remastered" {
+            self.sound_physics_remastered_settings_click(button);
             return;
         }
         mod_api::dispatch_settings_click(self, mod_api::mods(), mod_id, button);

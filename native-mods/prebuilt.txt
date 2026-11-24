@@ -11,8 +11,9 @@ gyro
 fallingtrees
 distant_horizons
 sodium
+sound_physics_remastered
 wrench holdmyitems
 wrench holdmyitems zoom elytratrails livingmotion
 wrench holdmyitems zoom elytratrails livingmotion cinematic_interactions
-wrench holdmyitems zoom elytratrails livingmotion cinematic_interactions skins_3d gyro fallingtrees distant_horizons sodium
-cinematic_interactions skins_3d gyro fallingtrees distant_horizons sodium
+wrench holdmyitems zoom elytratrails livingmotion cinematic_interactions skins_3d gyro fallingtrees distant_horizons sodium sound_physics_remastered
+cinematic_interactions skins_3d gyro fallingtrees distant_horizons sodium sound_physics_remastered
