@@ -301,7 +301,6 @@ impl Game<'_> {
         self.ui
             .options
             .draw_contents(&self.settings, batch, &self.gui.atlas, cursor);
-        #[cfg(target_os = "android")]
         self.draw_wardrobe_preview(batch);
         self.draw_screen_phase(batch, horizon_client::screen_draw::RenderPhase::Foreground);
         self.ui
