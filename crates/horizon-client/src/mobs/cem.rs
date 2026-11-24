@@ -29,8 +29,39 @@ use horizon_optifine::cem::{
 };
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
+
+static CUSTOM_MODELS_ENABLED: AtomicBool = AtomicBool::new(true);
+static ANIMATIONS_ENABLED: AtomicBool = AtomicBool::new(true);
+static PLAYER_MODELS_ENABLED: AtomicBool = AtomicBool::new(true);
+
+pub fn set_custom_models_enabled(enabled: bool) {
+    CUSTOM_MODELS_ENABLED.store(enabled, Ordering::Relaxed);
+}
+
+pub fn custom_models_enabled() -> bool {
+    CUSTOM_MODELS_ENABLED.load(Ordering::Relaxed)
+}
+
+pub fn set_animations_enabled(enabled: bool) {
+    ANIMATIONS_ENABLED.store(enabled, Ordering::Relaxed);
+}
+
+pub fn animations_enabled() -> bool {
+    ANIMATIONS_ENABLED.load(Ordering::Relaxed)
+}
+
+pub fn set_player_models_enabled(enabled: bool) {
+    PLAYER_MODELS_ENABLED.store(enabled, Ordering::Relaxed);
+}
+
+pub fn player_models_enabled() -> bool {
+    PLAYER_MODELS_ENABLED.load(Ordering::Relaxed)
+}
 
 /// The CEM models of the enabled packs, by model layer (`zombie#main`).
 #[derive(Default)]
@@ -172,8 +203,8 @@ impl CemModels {
             }
             layers.insert(key, layer);
         }
-        let has_player_cem =
-            layers.contains_key("player#main") || layers.contains_key("player_slim#main");
+        let has_player_cem = player_models_enabled()
+            && (layers.contains_key("player#main") || layers.contains_key("player_slim#main"));
         horizon_client_render::skins::process_skin_transparency(has_player_cem);
         let own: HashMap<String, (&str, &str, &EntityModel)> = own
             .into_iter()

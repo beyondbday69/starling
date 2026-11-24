@@ -11,6 +11,36 @@ use crate::mesher::Vertex;
 use horizon_core::geometry::trig::Mth;
 use std::borrow::Cow;
 use std::f32::consts::PI;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static RANDOM_TEXTURES_ENABLED: AtomicBool = AtomicBool::new(true);
+static BLINKS_ENABLED: AtomicBool = AtomicBool::new(true);
+static EMISSIVE_ENABLED: AtomicBool = AtomicBool::new(true);
+
+pub fn set_random_textures_enabled(enabled: bool) {
+    RANDOM_TEXTURES_ENABLED.store(enabled, Ordering::Relaxed);
+}
+
+pub fn set_blinks_enabled(enabled: bool) {
+    BLINKS_ENABLED.store(enabled, Ordering::Relaxed);
+}
+
+pub fn set_emissive_enabled(enabled: bool) {
+    EMISSIVE_ENABLED.store(enabled, Ordering::Relaxed);
+}
+
+fn active_cem_layer<'a>(
+    cem: &'a super::cem::CemModels,
+    key: &str,
+) -> Option<&'a super::cem::CemLayer> {
+    if !super::cem::custom_models_enabled() {
+        return None;
+    }
+    if key.starts_with("player") && !super::cem::player_models_enabled() {
+        return None;
+    }
+    cem.layer(key)
+}
 
 /// A texture lookup into the shared atlas (name without namespace -> uv rect).
 pub type Atlas<'a> = &'a dyn Fn(&str) -> Option<[f32; 4]>;
@@ -1965,7 +1995,11 @@ pub fn drawn_textures(m: &Mob, data: &MobData) -> Vec<String> {
     let (model_key, texture) = body(m);
     let cem_key = cem_key(&model_key);
     let mut names = Vec::new();
-    push(&mut names, cem.layer(cem_key), texture.into_owned());
+    push(
+        &mut names,
+        active_cem_layer(&cem, cem_key),
+        texture.into_owned(),
+    );
     let mut all_layers = layers(m, m.age as f32);
     if m.species() == Species::Warden {
         for (model, texture, _) in super::warden::emissive_layers(m, 0.0) {
@@ -1980,8 +2014,7 @@ pub fn drawn_textures(m: &Mob, data: &MobData) -> Vec<String> {
     }
     let body_keys = [&*model_key, cem_key];
     for (i, layer) in all_layers.iter().enumerate() {
-        let custom = cem
-            .layer(&layer.model)
+        let custom = active_cem_layer(&cem, &layer.model)
             .filter(|_| paints_with_jem(&all_layers, i, body_keys));
         push(&mut names, custom, layer.texture.to_string());
     }
@@ -2023,7 +2056,7 @@ fn posed_body(
         .cem
         .read()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let custom = cem.layer(cem_key(&model_key));
+    let custom = active_cem_layer(&cem, cem_key(&model_key));
     let model = match custom {
         Some(c) => c.model.clone(),
         None => m
@@ -2034,7 +2067,8 @@ fn posed_body(
     };
     let mut poses = Poses::new(&model);
     anim::setup(m, &s, &mut poses, &data.animations);
-    if let Some(c) = custom
+    if super::cem::animations_enabled()
+        && let Some(c) = custom
         && let Some(animation) = &c.animation
     {
         animation.run(m, &s, &mut poses);
@@ -2134,8 +2168,12 @@ fn render_visible(
         .read()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let cem_key = cem_key(&model_key);
-    let custom_body = cem.layer(cem_key);
-    let body_animation = custom_body.and_then(|c| c.animation.as_ref());
+    let custom_body = active_cem_layer(&cem, cem_key);
+    let body_animation = if super::cem::animations_enabled() {
+        custom_body.and_then(|c| c.animation.as_ref())
+    } else {
+        None
+    };
     let model = match custom_body {
         Some(custom) => custom.model.clone(),
         // 3D skin layers: the player's own outer layer, one slab per painted
@@ -2158,12 +2196,14 @@ fn render_visible(
         .blinks
         .read()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let random_on = RANDOM_TEXTURES_ENABLED.load(Ordering::Relaxed);
+    let blinks_on = BLINKS_ENABLED.load(Ordering::Relaxed);
     let sprite = |texture: &str| {
-        let variant = (!random.is_empty())
+        let variant = (random_on && !random.is_empty())
             .then(|| super::random_textures::texture(m, &random, texture))
             .flatten()
             .filter(|v| atlas(v).is_some());
-        let frame = (!blinks.is_empty())
+        let frame = (blinks_on && !blinks.is_empty())
             .then(|| blinks.get(variant.unwrap_or(texture)))
             .flatten()
             .and_then(|b| {
@@ -2183,8 +2223,9 @@ fn render_visible(
         .emissive
         .read()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let emissive_on = EMISSIVE_ENABLED.load(Ordering::Relaxed);
     let emissive_uv = |drawn: &str| {
-        if emissive.is_empty() {
+        if !emissive_on || emissive.is_empty() {
             return None;
         }
         atlas(emissive.overlay(drawn)?)
@@ -2242,7 +2283,7 @@ fn render_visible(
                     // is the only difference from a plain draw.
                     (skin.models.tagged && (eyes_layer(m, layer) || !layer.full_bright)
                         || !layer.full_bright && !translucent_layer(m, layer))
-                        && cem.layer(&layer.model).is_none()
+                        && active_cem_layer(&cem, &layer.model).is_none()
                         && m.kind
                             .layer(&layer.model)
                             .is_none_or(|part| skin.supports(part))
@@ -2333,7 +2374,7 @@ fn render_visible(
     let mut layer_poses = Poses::pooled();
     let body_keys = [&*model_key, cem_key];
     for (i, layer) in all_layers.iter().enumerate() {
-        let custom = cem.layer(&layer.model);
+        let custom = active_cem_layer(&cem, &layer.model);
         // `layer.texture` stays the vanilla name (the villager hats below look for its
         // `/type/` folder).
         let texture = cem_texture(
@@ -2387,7 +2428,9 @@ fn render_visible(
         } else {
             layer_poses.reset(&part);
             anim::setup(m, &s, &mut layer_poses, &data.animations);
-            if let Some(animation) = custom.and_then(|c| c.animation.as_ref()) {
+            if super::cem::animations_enabled()
+                && let Some(animation) = custom.and_then(|c| c.animation.as_ref())
+            {
                 animation.run(m, &s, &mut layer_poses);
             }
         }

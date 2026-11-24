@@ -497,16 +497,15 @@ impl Game<'_> {
         });
     }
 
-    /// `horizon_client::game::totem::Game<'_>::item_activation_geometry` HEAD hook:
-    /// replaces `out` (the first-person hand vertex buffer from `hand_geometry`) with
-    /// the complete Hold My Items 5.1.1 first-person arms, 3D blocks, items, per-quad
-    /// animations, maps, and first-person particles.
-    pub(crate) fn holdmyitems_render_hands(&self, partial: f32, out: &mut Vec<Vertex>) {
+    /// Replaces `out` (the first-person hand vertex buffer from `hand_geometry`) with
+    /// the complete Hold My Items 5.2.0 first-person arms, 3D blocks, items, per-quad
+    /// animations, maps, and first-person particles. Returns `true` when `out` was replaced.
+    pub(crate) fn holdmyitems_render_hands(&self, partial: f32, out: &mut Vec<Vertex>) -> bool {
         if !enabled(self) {
-            return;
+            return false;
         }
         let Some(cfg) = active_config(self) else {
-            return;
+            return false;
         };
         if self.spectator()
             || self.ui.hide_gui
@@ -520,7 +519,7 @@ impl Game<'_> {
                 .is_none_or(|p| p.health.dead_or_dying())
             || self.screen == Screen::Dead
         {
-            return;
+            return false;
         }
 
         // Replace vanilla's `hand_geometry` vertices with HMI's first-person overhaul.
@@ -977,6 +976,7 @@ impl Game<'_> {
                 });
             }
         }
+        true
     }
 
     /// `native_camera_shake`: applies HMI camera pitch/roll/offset feedback during eating, drinking, walking, and landing.

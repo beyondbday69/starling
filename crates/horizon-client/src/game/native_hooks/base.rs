@@ -697,6 +697,9 @@ impl Game<'_> {
         context: &LifecycleContext,
         phase: ServerTickPhase,
     ) {
+        if phase == ServerTickPhase::End {
+            self.elytratrails_net_server_tick();
+        }
         self.fire_server_tick(context, phase);
     }
     /// Before an authoritative server level's tick pass. `dimension` is its ID.
@@ -827,6 +830,7 @@ impl Game<'_> {
     /// A command typed or clicked in chat, without its slash, before the
     /// server and Horizon's commands see it: set `ran` when the mod ran it.
     pub(in crate::game) fn native_command(&mut self, command: &str, ran: &mut bool) {
+        self.holdmyitems_command(command, ran);
         self.fire_command(command, ran);
     }
     /// The client's own commands (`RegisterClientCommandsEvent`), which
@@ -855,6 +859,7 @@ impl Game<'_> {
     /// The zoom a native mod asks for, applied while playing (the spyglass's
     /// own view wins): set `zoom` when it is none yet.
     pub(in crate::game) fn native_zoom(&self, zoom: &mut Option<mod_api::Zoom>) {
+        self.zoom_view(zoom);
         self.fire_zoom(zoom);
     }
     /// Computed world fog RGB, after ordinary effects and before upload. Title panoramas skip it.
@@ -887,6 +892,7 @@ impl Game<'_> {
     /// Horizon scales the sum by Distortion Effects and bounds it
     /// (`native_shake_matrix`).
     pub(in crate::game) fn native_camera_shake(&self, partial: f32, shake: &mut Shake) {
+        self.holdmyitems_shake(partial, shake);
         self.fire_camera_shake(partial, shake);
     }
     /// Final scaled third-person camera distance, before visual-shape collision clipping.

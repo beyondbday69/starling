@@ -297,8 +297,20 @@ impl Game<'_> {
                 continue;
             }
             // No mod moved the hand (always so without one): no matrices to build.
-            let [x, y, z] = render.translation;
-            let [pitch, yaw, roll] = render.rotation;
+            let [mut x, mut y, mut z] = render.translation;
+            let [mut pitch, mut yaw, mut roll] = render.rotation;
+            self.livingmotion_hand_pose(
+                hand,
+                item.as_ref(),
+                a,
+                attack,
+                &mut x,
+                &mut y,
+                &mut z,
+                &mut pitch,
+                &mut yaw,
+                &mut roll,
+            );
             let pose = [x, y, z, pitch, yaw, roll, render.scale];
             let to_world = if pose == [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0] {
                 to_world
@@ -473,6 +485,9 @@ impl Game<'_> {
                 block_entity_render::vertex_light(light),
                 &mut out,
             );
+        }
+        if self.holdmyitems_render_hands(a, &mut out) {
+            runs.clear();
         }
         // The hand has its own submit storage, which never uses improved
         // transparency (`LevelRenderer` alone calls `setUseImprovedTransparency`):

@@ -97,6 +97,7 @@ impl Game<'_> {
     }
     /// Once a frame, in a world or not, after Horizon's extras.
     pub(in crate::game) fn native_frame(&mut self, elapsed: Duration) {
+        self.entity_features_sync();
         self.holdmyitems_frame(elapsed);
         self.livingmotion_frame();
         let partial = (elapsed.as_secs_f32() * 20.0).clamp(0.0, 1.0);
@@ -235,7 +236,8 @@ impl Game<'_> {
     /// `native_fill` and `native_text`. Skip a corner `native_corner_shown`
     /// says is taken.
     pub(in crate::game) fn native_hud(&mut self, batch: &mut HudBatch, corners: &mut Corners) {
-        let _ = (batch, corners);
+        self.holdmyitems_hud(batch);
+        let _ = corners;
     }
     /// Before one of the HUD's layers, as `native_gui_layer_pre` is, with the game to change: Horizon's
     /// had `&mut self`, the split's has `&self`. Set `canceled` to hide the layer.
@@ -255,11 +257,13 @@ impl Game<'_> {
     /// (`key.keyboard.z`, `key.mouse.left`): keys on any screen (check
     /// `native_playing`), mouse buttons while playing. Repeats are left out.
     pub(in crate::game) fn native_key(&mut self, key: &str, pressed: bool) {
-        let _ = (key, pressed);
+        self.holdmyitems_key(key, pressed);
+        self.zoom_key(key, pressed);
+        self.livingmotion_key(key, pressed);
     }
     /// Wheel steps while playing: set `claimed` to keep them from the hotbar.
     pub(in crate::game) fn native_wheel(&mut self, steps: f32, claimed: &mut bool) {
-        let _ = (steps, claimed);
+        self.zoom_wheel(steps, claimed);
     }
     /// The commands `native_command` runs, by name and without their slash:
     /// push the ones that are yours. Asked when a connection starts and
@@ -267,7 +271,12 @@ impl Game<'_> {
     /// completes and lists them as the game's own; a name the game already
     /// has keeps that command's behaviour.
     pub(in crate::game) fn native_commands(&mut self, commands: &mut Vec<&'static str>) {
-        let _ = commands;
+        if !commands.contains(&"hmi") {
+            commands.push("hmi");
+        }
+        if !commands.contains(&"holdmyitems") {
+            commands.push("holdmyitems");
+        }
     }
     /// A player breaks the block `state` at `pos`, once the game allowed it (after Horizon's
     /// `break_block`): set `canceled` to keep the block. Server-side, for every player of the
@@ -337,6 +346,15 @@ impl Game<'_> {
     }
     /// Options > Mods lists the native mods: push yours.
     pub(in crate::game) fn native_mods(&mut self, mods: &mut Vec<NativeMod>) {
+        if !mods.iter().any(|m| m.id == "holdmyitems") {
+            mods.push(Self::holdmyitems_mod_entry());
+        }
+        if !mods.iter().any(|m| m.id == "entity_model_features") {
+            mods.push(Self::entity_model_features_mod_entry());
+        }
+        if !mods.iter().any(|m| m.id == "entity_texture_features") {
+            mods.push(Self::entity_texture_features_mod_entry());
+        }
         if !mods.iter().any(|m| m.id == "zoom") {
             Self::zoom_listed(mods);
         }
@@ -363,6 +381,14 @@ impl Game<'_> {
     pub(in crate::game) fn native_settings(&mut self, mod_id: &str, buttons: &mut Vec<String>) {
         if mod_id == "holdmyitems" {
             buttons.extend(self.holdmyitems_settings());
+            return;
+        }
+        if mod_id == "entity_model_features" {
+            buttons.extend(self.entity_model_features_settings());
+            return;
+        }
+        if mod_id == "entity_texture_features" {
+            buttons.extend(self.entity_texture_features_settings());
             return;
         }
         if mod_id == "zoom" {
@@ -395,6 +421,14 @@ impl Game<'_> {
     pub(in crate::game) fn native_settings_click(&mut self, mod_id: &str, button: usize) {
         if mod_id == "holdmyitems" {
             self.holdmyitems_settings_click(button);
+            return;
+        }
+        if mod_id == "entity_model_features" {
+            self.entity_model_features_settings_click(button);
+            return;
+        }
+        if mod_id == "entity_texture_features" {
+            self.entity_texture_features_settings_click(button);
             return;
         }
         if mod_id == "zoom" {

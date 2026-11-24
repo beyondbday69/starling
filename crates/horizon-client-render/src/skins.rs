@@ -846,15 +846,27 @@ pub fn lookup(
 
 pub static ALLOW_SKIN_TRANSPARENCY: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
+/// ETF skin transparency override: 0 = Auto (follows player CEM), 1 = Always ON, 2 = OFF.
+pub static SKIN_TRANSPARENCY_MODE: std::sync::atomic::AtomicU8 =
+    std::sync::atomic::AtomicU8::new(0);
 
 /// Enable or disable ETF player skin transparency.
 pub fn process_skin_transparency(allow: bool) {
     ALLOW_SKIN_TRANSPARENCY.store(allow, std::sync::atomic::Ordering::Relaxed);
 }
 
+/// Set ETF player skin transparency override mode (`0` = Auto, `1` = Always ON, `2` = OFF).
+pub fn set_skin_transparency_mode(mode: u8) {
+    SKIN_TRANSPARENCY_MODE.store(mode.min(2), std::sync::atomic::Ordering::Relaxed);
+}
+
 /// Whether ETF player skin transparency is currently permitted.
 pub fn allows_skin_transparency() -> bool {
-    ALLOW_SKIN_TRANSPARENCY.load(std::sync::atomic::Ordering::Relaxed)
+    match SKIN_TRANSPARENCY_MODE.load(std::sync::atomic::Ordering::Relaxed) {
+        1 => true,
+        2 => false,
+        _ => ALLOW_SKIN_TRANSPARENCY.load(std::sync::atomic::Ordering::Relaxed),
+    }
 }
 
 /// `SkinTextureDownloader.processLegacySkin` on RGBA pixels: 64x32 skins

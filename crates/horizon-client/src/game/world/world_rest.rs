@@ -151,7 +151,14 @@ pub(super) fn load_world_rest(
             mob_data.register_mod_spawn(&declaration.id, &declaration.rule);
         }
         mob_data.cem = std::sync::RwLock::new(Arc::new(if draws {
-            horizon_client::mobs::cem::CemModels::load(resource_root.source(), &mob_types)
+            let mut cem_types = mob_types.clone();
+            if let Some(player) = match entity_models {
+                Some(document) => perspective::player_type_with_document(root, document),
+                None => perspective::player_type(root),
+            } {
+                cem_types.insert("minecraft:player".into(), player);
+            }
+            horizon_client::mobs::cem::CemModels::load(resource_root.source(), &cem_types)
         } else {
             horizon_client::mobs::cem::CemModels::default()
         }));

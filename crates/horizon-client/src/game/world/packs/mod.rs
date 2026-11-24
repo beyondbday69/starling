@@ -771,9 +771,12 @@ pub(super) fn stage_pack(
     )?;
     pack.additional_data = super::pack_finders::data_packs(mod_sources).into();
     let textures = prepare_renderer_textures(&pack);
+    let mut cem_types = res.mob_types().clone();
+    if let Some(player) = res.player_type().clone() {
+        cem_types.insert("minecraft:player".into(), player);
+    }
     let cem = Arc::new(horizon_client::mobs::cem::CemModels::load(
-        &source,
-        res.mob_types(),
+        &source, &cem_types,
     ));
     let block_entity_shapes = res.block_entity_render().shapes_for(&source);
     let waypoint_styles = horizon_client::locator_bar::WaypointStyles::load(&source);
