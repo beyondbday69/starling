@@ -3,6 +3,7 @@
 
 use std::sync::{Mutex, Once};
 
+use super::Game;
 use horizon_client::starling_mod_api::NativeMod;
 
 pub const EMF_ID: &str = "entity_model_features";

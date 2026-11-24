@@ -851,6 +851,7 @@ impl Game<'_> {
                 out,
             );
         }
+        true
     }
 
     fn state_with_prop_opt(
@@ -976,7 +977,6 @@ impl Game<'_> {
                 });
             }
         }
-        true
     }
 
     /// `native_camera_shake`: applies HMI camera pitch/roll/offset feedback during eating, drinking, walking, and landing.

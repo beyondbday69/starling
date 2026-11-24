@@ -697,7 +697,7 @@ impl Game<'_> {
         context: &LifecycleContext,
         phase: ServerTickPhase,
     ) {
-        if phase == ServerTickPhase::End {
+        if matches!(phase, ServerTickPhase::ServerTickEnd { .. }) {
             self.elytratrails_net_server_tick();
         }
         self.fire_server_tick(context, phase);
