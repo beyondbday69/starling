@@ -10,8 +10,9 @@ skins_3d
 gyro
 fallingtrees
 distant_horizons
+sodium
 wrench holdmyitems
 wrench holdmyitems zoom elytratrails livingmotion
 wrench holdmyitems zoom elytratrails livingmotion cinematic_interactions
-wrench holdmyitems zoom elytratrails livingmotion cinematic_interactions skins_3d gyro fallingtrees distant_horizons
-cinematic_interactions skins_3d gyro fallingtrees distant_horizons
+wrench holdmyitems zoom elytratrails livingmotion cinematic_interactions skins_3d gyro fallingtrees distant_horizons sodium
+cinematic_interactions skins_3d gyro fallingtrees distant_horizons sodium

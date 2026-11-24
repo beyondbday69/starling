@@ -331,6 +331,7 @@ mod shield;
 mod shoulders;
 mod sign_edit;
 mod sniffers;
+pub(crate) mod sodium;
 mod social;
 mod spawner;
 mod spear;

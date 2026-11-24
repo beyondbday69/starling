@@ -1,0 +1,13 @@
+[package]
+name = "horizon-mod-sodium"
+version = "0.6.6"
+edition = "2024"
+license = "LGPL-3.0-only"
+publish = false
+description = "Sodium for Horizon: A modern rendering engine and graphics optimization mod."
+
+# The mod's logic and its tests: the same file the bundle adds to the game.
+[lib]
+path = "mixins/sodium/runtime.rs"
+
+[workspace]

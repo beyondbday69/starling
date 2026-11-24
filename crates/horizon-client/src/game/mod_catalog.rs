@@ -1201,7 +1201,18 @@ impl Game<'_> {
                 if !self.catalog.icons.contains_key(&p.id)
                     && !self.catalog.loading_icons.contains(&p.id)
                 {
-                    if let Some(url) = p.icon.clone() {
+                    let icon_src = p.icon.clone().or_else(|| {
+                        let candidate1 = format!("native-mods/{}/icon.png", p.id);
+                        let candidate2 = format!("horizon-native-mods/{}/icon.png", p.id);
+                        if std::path::Path::new(&candidate1).is_file() {
+                            Some(format!("file://{candidate1}"))
+                        } else if std::path::Path::new(&candidate2).is_file() {
+                            Some(format!("file://{candidate2}"))
+                        } else {
+                            None
+                        }
+                    });
+                    if let Some(url) = icon_src {
                         self.catalog.loading_icons.insert(p.id.clone());
                         let tx = self.catalog.icon_tx.clone();
                         let pid = p.id.clone();
@@ -1209,17 +1220,22 @@ impl Game<'_> {
                         std::thread::Builder::new()
                             .name("catalog icon".into())
                             .spawn(move || {
-                                if let Ok(path) = starling_catalog::browser::images::fetch(
+                                let bytes_opt = if let Some(local_path) = url.strip_prefix("file://") {
+                                    std::fs::read(local_path).ok()
+                                } else if let Ok(path) = starling_catalog::browser::images::fetch(
                                     &home,
                                     &url,
                                     starling_catalog::browser::images::ICON,
                                 ) {
-                                    if let Ok(bytes) = std::fs::read(&path) {
-                                        if let Some(rgba) =
-                                            horizon_client::pack_screen::load_icon(&bytes)
-                                        {
-                                            let _ = tx.send((pid, rgba));
-                                        }
+                                    std::fs::read(&path).ok()
+                                } else {
+                                    None
+                                };
+                                if let Some(bytes) = bytes_opt {
+                                    if let Some(rgba) =
+                                        horizon_client::pack_screen::load_icon(&bytes)
+                                    {
+                                        let _ = tx.send((pid, rgba));
                                     }
                                 }
                             })
