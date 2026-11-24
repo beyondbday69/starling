@@ -115,16 +115,16 @@ jobs:
       # them), so a native mod plays from a small library of its own beside them, which mod-builds' store builds
       # for this commit and profile (its store-base.yml runs this same build). The other ABIs have no store.
       - name: The game and the mod API as dylibs
-        if: matrix.abi == 'arm64-v8a' && !inputs.native_mods
+        if: matrix.abi == 'arm64-v8a' && inputs.native_mods == 'none'
         run: python3 tools/android_native_sdk.py prepare
       - name: Build the APK
         env:
-          RUSTFLAGS: ${{ matrix.abi == 'arm64-v8a' && !inputs.native_mods && '-C prefer-dynamic' || '' }}
+          RUSTFLAGS: ${{ matrix.abi == 'arm64-v8a' && inputs.native_mods == 'none' && '-C prefer-dynamic' || '' }}
           ABI: ${{ matrix.abi }}
           HORIZON_ANDROID_KEY_ALIAS: ${{ env.RELEASE_BUILD == 'true' && secrets.STARLING_KEY_ALIAS || 'horizon-debug' }}
           HORIZON_ANDROID_STORE_PASSWORD: ${{ secrets.STARLING_STORE_PASSWORD }}
           HORIZON_ANDROID_KEY_PASSWORD: ${{ secrets.STARLING_KEY_PASSWORD }}
-          MODS: ${{ inputs.native_mods || 'cinematic_interactions skins_3d gyro fallingtrees distant_horizons' }}
+          MODS: ${{ inputs.native_mods == 'none' && '' || inputs.native_mods || 'cinematic_interactions skins_3d gyro fallingtrees distant_horizons' }}
           PROFILE: ${{ env.RELEASE_BUILD == 'true' && 'fast' || 'quick' }}
           VARIANT: ${{ env.PREVIEW == 'true' && '--preview' || '' }}
         # Releases with the fast profile (fewer codegen units: a little quicker in game). With native mods, the APK
