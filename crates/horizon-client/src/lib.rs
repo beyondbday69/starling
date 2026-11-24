@@ -6,6 +6,7 @@
 extern crate self as horizon_client;
 pub use horizon_client_lib::carrier_store;
 pub use horizon_client_lib::*;
+pub use starling_mod_api as mod_api;
 #[cfg(target_os = "android")]
 pub mod android;
 // Horizon Android 0.7.8's launcher, before the game (ha_launcher/mod.rs).

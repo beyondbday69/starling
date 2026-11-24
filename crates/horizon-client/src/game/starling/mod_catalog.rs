@@ -2,7 +2,8 @@
 //! The in-game Resource Pack, Shader Pack, and Mod downloader / catalog.
 //! Allows players to search, view icons, read descriptions, browse all available
 //! versions, and install directly into `resourcepacks/` or `shaderpacks/` from
-//! within Minecraft without leaving the game or using an external launcher.use super::Game;
+//! within Minecraft without leaving the game or using an external launcher.
+use super::Game;
 use super::native_builds::{density, wrapped};
 use horizon_client::{
     font::Patch,
@@ -89,7 +90,7 @@ struct Shared {
     installing: Option<String>,
     line: String,
     fraction: f32,
-    finished: Option<(String, Result<Done, String>)>,
+    finished: Option<(String, std::result::Result<Done, String>)>,
 }
 
 pub(super) struct Catalog {
@@ -395,6 +396,7 @@ fn draw_list(
 ) {
     let (top, bottom) = (HEAD_H, ui.h - FOOT_H);
     let row_w = edge - MARGIN;
+    let text_w = row_w - ROW_BUTTON_W - 44.0;
     let rows = shared.feed.rows();
     let scrolled = card.list.offset;
     for i in list::rows_shown(scrolled, bottom - top, ROW_H, rows.len()) {
@@ -1533,7 +1535,7 @@ impl Game<'_> {
         let [w, h] = self.touch_size();
         let d = density(w as f32, h as f32);
         let scale = self.renderer.as_ref().map_or(1.0, |r| {
-            HudBatch::new([r.config.width, r.config.height]).scale
+            HudBatch::new_old([r.config.width, r.config.height]).scale
         });
         let at = [cursor.0 * scale / d, cursor.1 * scale / d];
         self.catalog_act_at(at);

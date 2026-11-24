@@ -10,7 +10,7 @@ fn cinematic_campfire_tick(game: &mut crate::game::Game<'_>) {
     }
     if let Some(n) = ci::take_move_to() {
         let aim = game.forced_hit.take();
-        game.forced_hit = Some(crate::game::Hit { pos: n, face: [0, 1, 0], point: [f64::from(n[0]) + 0.5, f64::from(n[1]) + 1.0, f64::from(n[2]) + 0.5] });
+        game.forced_hit = Some(crate::game::Hit { pos: n, face: [0, 1, 0], point: [f64::from(n[0]) + 0.5, f64::from(n[1]) + 1.0, f64::from(n[2]) + 0.5], inside: false });
         game.remote_use_block(horizon_client::first_person::Hand::Main);
         game.forced_hit = aim;
     }
@@ -28,7 +28,7 @@ fn cinematic_campfire_tick(game: &mut crate::game::Game<'_>) {
     }
     let (point, face) = at.unwrap_or(([f64::from(t[0]) + 0.5, f64::from(t[1]) + 0.4375, f64::from(t[2]) + 0.5], [0, 1, 0]));
     let aim = game.forced_hit.take();
-    game.forced_hit = Some(crate::game::Hit { pos: t, face, point });
+    game.forced_hit = Some(crate::game::Hit { pos: t, face, point, inside: false });
     ci::set_own_use(true);
     game.remote_use_block(horizon_client::first_person::Hand::Main);
     ci::set_own_use(false);

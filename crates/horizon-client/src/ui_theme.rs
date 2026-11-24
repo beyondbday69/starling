@@ -83,6 +83,10 @@ pub mod color {
         hex(p().on_accent, 255)
     }
     // Starling's overlays (touch controls, imports, setup) take these as constants.
+    pub const BG: u32 = hex(P.page, 255);
+    pub const BORDER: u32 = hex(P.rule, 255);
+    pub const RAISED: u32 = hex(P.ink, 20);
+    pub const TEXT: u32 = hex(P.ink, 255);
     pub const MUTED: u32 = hex(P.ink_soft, 255);
     pub const ACCENT: u32 = hex(P.accent, 255);
     pub const ON_ACCENT: u32 = hex(P.on_accent, 255);

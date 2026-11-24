@@ -1061,6 +1061,11 @@ impl Game<'_> {
     ) -> Result<(), String> {
         self.place_recipe(book_id, all)
     }
+    /// The name of a block.
+    pub(in crate::game) fn native_block(&self, pos: [i32; 3]) -> String {
+        let state = self.world.block(pos[0], pos[1], pos[2]);
+        self.res.facts().get(state).name.to_string()
+    }
     /// A block's collision boxes.
     pub(in crate::game) fn native_block_collision(&self, pos: [i32; 3]) -> Vec<[f64; 6]> {
         self.block_collision(pos)

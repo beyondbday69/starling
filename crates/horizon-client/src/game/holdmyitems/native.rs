@@ -22,7 +22,7 @@ use crate::items::ItemStack;
 use crate::mesher::Vertex;
 use crate::spear::Kinetic;
 use horizon_assets::item_model::{DisplayContext, FoilType};
-use horizon_world::consumable::UseAnimation;
+use horizon_core::use_animation::UseAnimation;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
@@ -90,7 +90,7 @@ fn load_bundled_scripts(game: &Game<'_>, state: &mut State) {
     }
     state.scripts_loaded = true;
     state.hmi.overrides = hmi::LuaOverrides::default();
-    if let Some(built_dir) = game.native_built_data(hmi::ID) {
+    if let Some(built_dir) = game.native_data(hmi::ID) {
         for file in [
             "hand_pose.lua",
             "hand_relative_pose.lua",
@@ -192,7 +192,7 @@ impl Game<'_> {
         }
         let registry = self.pack.assets.registry;
         let is_block = registry.default_state(&id).is_some();
-        let is_enchanted = stack.has_foil(true) || stack.has_any_enchantments();
+        let is_enchanted = stack.has_foil(Some(true)) || stack.has_any_enchantments();
         let view = item_render::stack_view(stack);
         let components = self.pack.item_renderer.models.components(&view);
         let is_charged_crossbow = stack.data().is_some_and(|d| !d.charged.is_empty());
@@ -511,7 +511,7 @@ impl Game<'_> {
         if self.spectator()
             || self.ui.hide_gui
             || self.sleeping.is_some()
-            || !self.camera_type.first_person()
+            || !self.camera_type.is_first_person()
             || self.scoping()
             || self.screen != Screen::Playing
             || self
@@ -587,7 +587,7 @@ impl Game<'_> {
                 let arm_world = to_world
                     * to_glam(eval.arm_pose)
                     * first_person::player_arm_pose(left, 0.0, 0.0);
-                self.first_person_arm(left, arm_world, packed_light, out);
+                self.first_person_arm(left, arm_world, packed_light, 0.0, out);
             }
 
             // 2. Render the held item, 3D block, or map if non-empty
@@ -1013,12 +1013,7 @@ impl Game<'_> {
             .as_ref()
             .and_then(|s| hmi::hand_light_for_item(&s.item));
         if let Some((rgb, radius, intensity)) = main_light.or(off_light) {
-            lights.push(NativeColoredLight {
-                at: eye,
-                rgb,
-                radius,
-                intensity,
-            });
+            lights.push(NativeColoredLight::new(eye, rgb, radius, intensity));
         }
     }
 

@@ -414,7 +414,7 @@ impl Game<'_> {
         let settings = self.elytratrails_settings();
         let multiplayer = self.remote.is_some() || self.lan.is_some();
         let others_shown = settings.others && multiplayer;
-        let own_shown = settings.own && (settings.first_person || !self.camera_type.first_person());
+        let own_shown = settings.own && (settings.first_person || !self.camera_type.is_first_person());
         let origin = self
             .player
             .as_ref()

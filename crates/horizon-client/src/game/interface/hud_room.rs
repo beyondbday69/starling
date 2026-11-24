@@ -215,8 +215,8 @@ impl Game<'_> {
         // Combat feel Legacy hides the attack indicator unless the player keeps it.
         // The 3D crosshair (F3) takes the 2D one's place.
         // Hud.extractCrosshair: a spectator only sees it over something to open.
-        let mod_crosshair = self.camera_type == perspective::CameraType::ThirdPersonBack
-            && super::super::mod_loader::camera_offset(self, 0.0)
+        let mod_crosshair = self.camera_type == horizon_client::camera::CameraType::ThirdPersonBack
+            && crate::game::mod_loader::camera_offset(self, 0.0)
                 .is_some_and(|o| o.active != 0 && o.crosshair != 0);
         if (self.camera_type.is_first_person() || mod_crosshair)
             && (!spectator || self.spectator_crosshair())

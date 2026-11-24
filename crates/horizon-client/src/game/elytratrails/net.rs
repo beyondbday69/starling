@@ -96,7 +96,7 @@ impl Game<'_> {
         let active: HashSet<u128> = self
             .native_server_players()
             .iter()
-            .map(|p| p.uuid)
+            .map(|p| p.uuid())
             .collect();
         let changed = with_net(|net| {
             let dropped = net.server.len();
@@ -111,7 +111,7 @@ impl Game<'_> {
         }
         let table = with_net(|net| encode(&net.server));
         for player in self.native_server_players() {
-            let _ = self.native_net_send_to_player(player.uuid, CHANNEL, &table);
+            let _ = self.native_net_send_to_player(player.uuid(), CHANNEL, &table);
         }
     }
 

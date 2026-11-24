@@ -111,7 +111,8 @@ impl Host for GameHost<'_, '_> {
 
     fn block_name(&self, pos: [i32; 3]) -> Option<String> {
         self.game.native_player()?;
-        Some(self.game.native_block(pos))
+        let state = self.game.world.block(pos[0], pos[1], pos[2]);
+        Some(self.game.res.facts().get(state).name.to_string())
     }
 
     fn face_is_sturdy(&self, pos: [i32; 3], side: usize) -> bool {
@@ -126,7 +127,11 @@ impl Host for GameHost<'_, '_> {
     }
 
     fn is_water(&self, pos: [i32; 3]) -> bool {
-        self.game.native_player().is_some() && self.game.native_block(pos) == "minecraft:water"
+        if self.game.native_player().is_none() {
+            return false;
+        }
+        let state = self.game.world.block(pos[0], pos[1], pos[2]);
+        self.game.res.facts().get(state).fluid == horizon_client::blocks::Fluid::Water
     }
 
     fn player(&self) -> Option<PlayerInfo> {

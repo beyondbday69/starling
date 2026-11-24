@@ -567,6 +567,7 @@ impl Game<'_> {
                 s,
                 held_stack.as_ref(),
                 &mut self.world.random,
+                None,
             );
             drops.extend(d);
         }
@@ -644,7 +645,7 @@ impl Game<'_> {
             let back = self.dim;
             let target_dim = super::Dim::from_id(dim);
             let switched = if back != target_dim {
-                self.enter_level(None, target_dim).is_ok()
+                self.enter_level(target_dim).is_ok()
             } else {
                 false
             };
@@ -655,14 +656,13 @@ impl Game<'_> {
             if block_drops {
                 for stack in tree.drops {
                     if &*stack.item != "minecraft:air" {
-                        let motion = super::dispenser::new_item_motion();
-                        self.spawn_item(stack, stump_pos, motion, 0);
+                        self.spawn_item_own(stack, stump_pos, 0);
                     }
                 }
             }
 
             if switched {
-                let _ = self.enter_level(None, back);
+                let _ = self.enter_level(back);
             }
 
             // Held axe receives durability wear per felled log

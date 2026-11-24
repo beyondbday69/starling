@@ -4,6 +4,10 @@
 mod tests;
 use super::*;
 impl Ingredient {
+    /// `test` with the default loop context.
+    pub fn test(&self, stack: &ItemStack) -> bool {
+        self.test_in(&horizon_world::native_load_context::LoopContext::default(), stack)
+    }
     /// `test` with the loop context the game already holds.
     pub fn test_in(
         &self,

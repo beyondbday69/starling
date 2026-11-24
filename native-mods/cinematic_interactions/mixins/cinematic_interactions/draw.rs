@@ -542,7 +542,7 @@ fn cinematic_draw(game: &mut crate::game::Game<'_>, batch: &mut HudBatch) -> ::c
             let on = fire.as_ref().and_then(|c| c.items.get(slot).cloned().flatten());
             let full = fire.as_ref().is_some_and(|c| c.items.iter().all(|i| i.is_some()));
             if let Some(food) = game.carried.clone() {
-                if game.recipes().cook("minecraft:campfire_cooking", &food).is_none() {
+                if game.recipes().cook(&Default::default(), "minecraft:campfire_cooking", &food).is_none() {
                     lines.push((Text::literal("\u{a7}cThis can't be cooked on a campfire"), u32::MAX));
                 } else if full {
                     lines.push((Text::literal("\u{a7}cNo free spot on the fire"), u32::MAX));

@@ -112,7 +112,7 @@ fn cinematic_press(game: &mut crate::game::Game<'_>, right: bool) -> ::core::ops
                 if !right
                     && ci::surface_hover(ci::ndc((x, y), batch.width, batch.height)).is_some()
                     && let Some(food) = game.carried.clone()
-                    && game.recipes().cook("minecraft:campfire_cooking", &food).is_some()
+                    && game.recipes().cook(&Default::default(), "minecraft:campfire_cooking", &food).is_some()
                 {
                     ci::request_place(ci::table().0);
                 }

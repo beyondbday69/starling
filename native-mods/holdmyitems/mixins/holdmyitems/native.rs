@@ -1006,12 +1006,7 @@ impl Game<'_> {
             .as_ref()
             .and_then(|s| hmi::hand_light_for_item(&s.item));
         if let Some((rgb, radius, intensity)) = main_light.or(off_light) {
-            lights.push(NativeColoredLight {
-                at: eye,
-                rgb,
-                radius,
-                intensity,
-            });
+            lights.push(NativeColoredLight::new(eye, rgb, radius, intensity));
         }
     }
 
