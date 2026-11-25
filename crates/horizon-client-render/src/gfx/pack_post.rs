@@ -5045,6 +5045,7 @@ impl PackPost {
                 c.groups.clear();
             }
         }
+        self.fsr.invalidate_sources();
     }
 
     fn resize(&mut self, device: &wgpu::Device, size: [u32; 2]) {

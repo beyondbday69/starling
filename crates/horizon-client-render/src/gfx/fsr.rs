@@ -25,11 +25,11 @@ pub struct FsrPipeline {
     pub intermediate_target: Option<wgpu::TextureView>,
     pub intermediate_size: [u32; 2],
     pub last_constants: Option<FsrConstants>,
-    pub cached_easu_bind_group: Option<wgpu::BindGroup>,
+    pub cached_easu_bind_group: Option<(usize, [u32; 2], wgpu::BindGroup)>,
     pub cached_rcas_bind_group: Option<wgpu::BindGroup>,
-    pub cached_rcas_standalone_bind_group: Option<wgpu::BindGroup>,
-    pub cached_integer_bind_group: Option<wgpu::BindGroup>,
-    pub cached_sgsr_bind_group: Option<wgpu::BindGroup>,
+    pub cached_rcas_standalone_bind_group: Option<(usize, [u32; 2], wgpu::BindGroup)>,
+    pub cached_integer_bind_group: Option<(usize, [u32; 2], wgpu::BindGroup)>,
+    pub cached_sgsr_bind_group: Option<(usize, [u32; 2], wgpu::BindGroup)>,
 }
 
 impl FsrPipeline {
@@ -224,16 +224,21 @@ impl FsrPipeline {
         }
     }
 
+    /// Drops cached bind groups that reference external source texture views.
+    pub fn invalidate_sources(&mut self) {
+        self.cached_easu_bind_group = None;
+        self.cached_rcas_standalone_bind_group = None;
+        self.cached_integer_bind_group = None;
+        self.cached_sgsr_bind_group = None;
+    }
+
     /// Resizes the intermediate render target to `dst_size`.
     pub fn resize(&mut self, device: &wgpu::Device, dst_size: [u32; 2]) {
         if self.intermediate_size == dst_size && self.intermediate_target.is_some() {
             return;
         }
-        self.cached_easu_bind_group = None;
+        self.invalidate_sources();
         self.cached_rcas_bind_group = None;
-        self.cached_rcas_standalone_bind_group = None;
-        self.cached_integer_bind_group = None;
-        self.cached_sgsr_bind_group = None;
         self.intermediate_size = dst_size;
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("FSR intermediate target"),
@@ -286,27 +291,36 @@ impl FsrPipeline {
         }
 
         // Pass 1: EASU (src -> intermediate)
-        if self.cached_easu_bind_group.is_none() {
-            self.cached_easu_bind_group = Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("FSR EASU Bind Group"),
-                layout: &self.bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: self.uniform_buffer.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::TextureView(src),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: wgpu::BindingResource::Sampler(&self.sampler),
-                    },
-                ],
-            }));
+        let src_key = (src as *const wgpu::TextureView as usize, src_size);
+        if self
+            .cached_easu_bind_group
+            .as_ref()
+            .is_none_or(|(k, s, _)| (*k, *s) != src_key)
+        {
+            self.cached_easu_bind_group = Some((
+                src_key.0,
+                src_key.1,
+                device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("FSR EASU Bind Group"),
+                    layout: &self.bind_group_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: self.uniform_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::TextureView(src),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: wgpu::BindingResource::Sampler(&self.sampler),
+                        },
+                    ],
+                }),
+            ));
         }
-        let easu_bind_group = self.cached_easu_bind_group.as_ref().unwrap();
+        let (_, _, easu_bind_group) = self.cached_easu_bind_group.as_ref().unwrap();
 
         {
             let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -396,9 +410,16 @@ impl FsrPipeline {
             self.last_constants = Some(constants);
         }
 
-        if self.cached_rcas_standalone_bind_group.is_none() {
-            self.cached_rcas_standalone_bind_group =
-                Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
+        let src_key = (src as *const wgpu::TextureView as usize, dst_size);
+        if self
+            .cached_rcas_standalone_bind_group
+            .as_ref()
+            .is_none_or(|(k, s, _)| (*k, *s) != src_key)
+        {
+            self.cached_rcas_standalone_bind_group = Some((
+                src_key.0,
+                src_key.1,
+                device.create_bind_group(&wgpu::BindGroupDescriptor {
                     label: Some("FSR RCAS Standalone Bind Group"),
                     layout: &self.bind_group_layout,
                     entries: &[
@@ -415,9 +436,10 @@ impl FsrPipeline {
                             resource: wgpu::BindingResource::Sampler(&self.sampler),
                         },
                     ],
-                }));
+                }),
+            ));
         }
-        let rcas_bind_group = self.cached_rcas_standalone_bind_group.as_ref().unwrap();
+        let (_, _, rcas_bind_group) = self.cached_rcas_standalone_bind_group.as_ref().unwrap();
 
         let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("FSR RCAS Standalone Pass"),
@@ -459,9 +481,16 @@ impl FsrPipeline {
             self.last_constants = Some(constants);
         }
 
-        if self.cached_integer_bind_group.is_none() {
-            self.cached_integer_bind_group =
-                Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
+        let src_key = (src as *const wgpu::TextureView as usize, src_size);
+        if self
+            .cached_integer_bind_group
+            .as_ref()
+            .is_none_or(|(k, s, _)| (*k, *s) != src_key)
+        {
+            self.cached_integer_bind_group = Some((
+                src_key.0,
+                src_key.1,
+                device.create_bind_group(&wgpu::BindGroupDescriptor {
                     label: Some("Shader Integer Scaling Bind Group"),
                     layout: &self.bind_group_layout,
                     entries: &[
@@ -478,9 +507,10 @@ impl FsrPipeline {
                             resource: wgpu::BindingResource::Sampler(&self.sampler),
                         },
                     ],
-                }));
+                }),
+            ));
         }
-        let bind_group = self.cached_integer_bind_group.as_ref().unwrap();
+        let (_, _, bind_group) = self.cached_integer_bind_group.as_ref().unwrap();
 
         let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Shader Integer Scaling Pass"),
@@ -525,9 +555,16 @@ impl FsrPipeline {
             self.last_constants = Some(constants);
         }
 
-        if self.cached_sgsr_bind_group.is_none() {
-            self.cached_sgsr_bind_group =
-                Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
+        let src_key = (src as *const wgpu::TextureView as usize, src_size);
+        if self
+            .cached_sgsr_bind_group
+            .as_ref()
+            .is_none_or(|(k, s, _)| (*k, *s) != src_key)
+        {
+            self.cached_sgsr_bind_group = Some((
+                src_key.0,
+                src_key.1,
+                device.create_bind_group(&wgpu::BindGroupDescriptor {
                     label: Some("SGSR v1 Bind Group"),
                     layout: &self.bind_group_layout,
                     entries: &[
@@ -544,9 +581,10 @@ impl FsrPipeline {
                             resource: wgpu::BindingResource::Sampler(&self.sampler),
                         },
                     ],
-                }));
+                }),
+            ));
         }
-        let bind_group = self.cached_sgsr_bind_group.as_ref().unwrap();
+        let (_, _, bind_group) = self.cached_sgsr_bind_group.as_ref().unwrap();
 
         let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("SGSR v1 Pass"),
