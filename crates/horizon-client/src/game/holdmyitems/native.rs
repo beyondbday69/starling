@@ -314,6 +314,16 @@ impl Game<'_> {
     }
 
     #[inline]
+    fn attack_held(&self) -> bool {
+        self.left || self.pad.holds_action("key.attack")
+    }
+
+    #[inline]
+    fn use_held(&self) -> bool {
+        self.right || self.pad.holds_action("key.use")
+    }
+
+    #[inline]
     fn is_hmi_breaking_block(&self) -> bool {
         if !self.is_hmi_actively_playing() || self.using.is_some() {
             return false;
@@ -323,7 +333,7 @@ impl Game<'_> {
         }
         self.mining.is_some()
             || self.clicks.destroying.active
-            || (self.left
+            || (self.attack_held()
                 && self.pick().is_some_and(|h| {
                     !self
                         .res
@@ -358,8 +368,8 @@ impl Game<'_> {
         let flags = self.classify_stack(stack, 0.0);
         let is_main = hand == Hand::Main;
         let breaking = self.is_hmi_breaking_block();
-        let left_now = self.left || breaking || (is_main && self.clicks.destroying.active);
-        let right_now = self.right;
+        let left_now = self.attack_held() || breaking || (is_main && self.clicks.destroying.active);
+        let right_now = self.use_held();
         with_state(|s| {
             let continuous_hold = if is_main {
                 let cont = breaking || (left_now && s.left_continued);
@@ -386,8 +396,8 @@ impl Game<'_> {
         }
         self.sanitize_hmi_mouse_state();
         let breaking = self.is_hmi_breaking_block();
-        let left_now = self.left || breaking || self.clicks.destroying.active;
-        let right_now = self.right;
+        let left_now = self.attack_held() || breaking || self.clicks.destroying.active;
+        let right_now = self.use_held();
         let effects = &self.potions.effects;
         let haste = effects
             .amplifier("haste")
@@ -439,8 +449,8 @@ impl Game<'_> {
 
         let actively_playing = self.is_hmi_actively_playing();
         let breaking = self.is_hmi_breaking_block();
-        let left_now = self.left || breaking || self.clicks.destroying.active;
-        let right_now = self.right;
+        let left_now = self.attack_held() || breaking || self.clicks.destroying.active;
+        let right_now = self.use_held();
         let dt = if self.pause {
             0.0
         } else {

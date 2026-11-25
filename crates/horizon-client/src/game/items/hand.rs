@@ -257,7 +257,6 @@ impl Game<'_> {
     /// `LivingEntity.swing` with `getModifiedSwingDuration`: the item's
     /// `on_entity_swing` Part first, which may keep the swing from starting.
     pub(super) fn swing_hand(&mut self, hand: Hand, animation: SwingAnimation) {
-        self.holdmyitems_swing_hand(hand);
         self.try_swing_hand(hand, animation);
     }
     /// Returns false when the interaction policy or item vetoes the swing and its packet.
@@ -272,6 +271,7 @@ impl Game<'_> {
         if self.native_entity_swing_event(hand) {
             return false;
         }
+        self.holdmyitems_swing_hand(hand);
         let effects = &self.potions.effects;
         let dig_speed = effects
             .amplifier("haste")
