@@ -205,5 +205,22 @@ impl Game<'_> {
         for (key, value) in settings.stored() {
             self.native_set_setting(ID, key, &value);
         }
+        self.apply_sodium_settings(&settings);
+    }
+
+    pub(crate) fn apply_sodium_settings(&mut self, settings: &SodiumSettings) {
+        use crate::graphics::EntityCullingMode;
+        self.settings.horizon.entity_culling = if settings.entity_culling {
+            EntityCullingMode::Asynchronous
+        } else {
+            EntityCullingMode::Off
+        };
+        self.settings.entity_distance = match settings.entity_distance {
+            32 => 0.5,
+            64 => 1.0,
+            96 => 1.5,
+            128 => 2.0,
+            _ => 4.0,
+        };
     }
 }

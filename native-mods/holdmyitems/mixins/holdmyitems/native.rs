@@ -1,30 +1,32 @@
+#![allow(warnings)]
+#![allow(clippy::all)]
+
 // Hold My Items (HMI 5.2.0) adapter to `crate::game::Game<'_>`
 // (Horizon Nightly c9d474dd9116e84c243f8992d75c11314df56f06, see horizon-mixin.toml).
 // Injected as `crate::game::holdmyitems_native` (`file = "crates/horizon-client/src/game.rs"`).
 
-use super::holdmyitems::{
+use super::runtime::{
     self as hmi, Config, HmiParticle, HmiState, ItemFlags, LoadedConfig, Mat4f, ModelPartAnimator,
     ParticleBlend, ParticleSpace, PlayerFrameInput, SettingsEffect, UseKind,
 };
-use super::maps;
-use super::native_hooks::{NativeColoredLight, NativeMod, NativeShake};
-use super::{Dim, Game, Screen};
-use horizon_assets::item_model::{DisplayContext, FoilType};
-use horizon_client::block_entity_render::{diffuse_lights, vertex_light};
-use horizon_client::first_person::{self, Hand};
-use horizon_client::hud::HudBatch;
-use horizon_client::item_render::{
+use crate::block_entity_render::{diffuse_lights, vertex_light};
+use crate::first_person::{self, Hand};
+use crate::game::maps;
+use crate::game::native_hooks::{NativeColoredLight, NativeMod, NativeShake};
+use crate::game::{Dim, Game, Screen};
+use crate::hud::HudBatch;
+use crate::item_render::{
     self, ItemQuad, ItemRenderState, ItemSink, LayerGeometry, WorldSink, transform_normal,
 };
-use horizon_client::items::ItemStack;
-use horizon_client::mesher::Vertex;
-use horizon_client::spear::Kinetic;
-use horizon_world::consumable::UseAnimation;
+use crate::items::ItemStack;
+use crate::mesher::Vertex;
+use crate::spear::Kinetic;
+use horizon_assets::item_model::{DisplayContext, FoilType};
+use horizon_core::use_animation::UseAnimation;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
-const BUNDLED_RESOURCEPACK: &[u8] =
-    horizon_client::native_data!("holdmyitems", "holdmyitems-pack.zip");
+const BUNDLED_RESOURCEPACK: &[u8] = crate::native_data!("holdmyitems", "holdmyitems-pack.zip");
 const BUNDLED_PACK_FILENAME: &str = "holdmyitems-pack.zip";
 const BUNDLED_PACK_ID: &str = "file/holdmyitems-pack.zip";
 
@@ -42,6 +44,7 @@ struct State {
     /// refreshed each frame in `holdmyitems_frame(&mut self)` so `holdmyitems_render_hands(&self)`
     /// can pose and emit them without needing `&mut self`.
     cached_maps: [Option<(i32, Vec<Vertex>)>; 2],
+    cached_prop_states: std::collections::HashMap<(u32, &'static str, &'static str), Option<horizon_world::registry::BlockStateId>>,
 }
 
 static STATE: OnceLock<Mutex<State>> = OnceLock::new();
@@ -143,7 +146,7 @@ impl ItemSink for HmiAnimatedSink<'_, '_> {
 
 impl Game<'_> {
     fn ensure_bundled_hmi_pack(&mut self) {
-        let packs_dir = super::packs::packs_dir();
+        let packs_dir = crate::game::packs::packs_dir();
         let _ = std::fs::create_dir_all(&packs_dir);
         let pack_path = packs_dir.join(BUNDLED_PACK_FILENAME);
         let needs_write = std::fs::metadata(&pack_path)
@@ -190,39 +193,38 @@ impl Game<'_> {
         }
         let registry = self.pack.assets.registry;
         let is_block = registry.default_state(&id).is_some();
-        let is_enchanted = stack.has_foil(true) || stack.has_any_enchantments();
+        let is_enchanted = stack.has_foil(Some(true)) || stack.has_any_enchantments();
         let view = item_render::stack_view(stack);
         let components = self.pack.item_renderer.models.components(&view);
         let is_charged_crossbow = stack.data().is_some_and(|d| !d.charged.is_empty());
 
         let short = id.strip_prefix("minecraft:").unwrap_or(&id);
-        let use_kind = if Kinetic::of(&id).is_some()
-            || components.get("minecraft:kinetic_weapon").is_some()
-        {
-            UseKind::Spear
-        } else if short == "bow" {
-            UseKind::Bow
-        } else if short == "crossbow" {
-            UseKind::Crossbow
-        } else if short == "trident" {
-            UseKind::Trident
-        } else if short == "brush" {
-            UseKind::Brush
-        } else if short == "spyglass" {
-            UseKind::Spyglass
-        } else if short == "goat_horn" {
-            UseKind::TootHorn
-        } else if components.get("minecraft:blocks_attacks").is_some() || short == "shield" {
-            UseKind::Block
-        } else if let Some(consumable) = components.get("minecraft:consumable") {
-            match first_person::consumable_animation(consumable) {
-                UseAnimation::Drink => UseKind::Drink,
-                UseAnimation::TootHorn => UseKind::TootHorn,
-                _ => UseKind::Eat,
-            }
-        } else {
-            UseKind::None
-        };
+        let use_kind =
+            if Kinetic::of(&id).is_some() || components.get("minecraft:kinetic_weapon").is_some() {
+                UseKind::Spear
+            } else if short == "bow" {
+                UseKind::Bow
+            } else if short == "crossbow" {
+                UseKind::Crossbow
+            } else if short == "trident" {
+                UseKind::Trident
+            } else if short == "brush" {
+                UseKind::Brush
+            } else if short == "spyglass" {
+                UseKind::Spyglass
+            } else if short == "goat_horn" {
+                UseKind::TootHorn
+            } else if components.get("minecraft:blocks_attacks").is_some() || short == "shield" {
+                UseKind::Block
+            } else if let Some(consumable) = components.get("minecraft:consumable") {
+                match first_person::consumable_animation(consumable) {
+                    UseAnimation::Drink => UseKind::Drink,
+                    UseAnimation::TootHorn => UseKind::TootHorn,
+                    _ => UseKind::Eat,
+                }
+            } else {
+                UseKind::None
+            };
 
         let is_cooling_down = use_kind == UseKind::Block && self.shield_cooldown > 0;
 
@@ -263,8 +265,7 @@ impl Game<'_> {
         let vy = p.velocity.y as f32;
         let vz = p.velocity.z as f32;
         let speed = (vx * vx + vz * vz).sqrt();
-        let crawling =
-            p.pose == horizon_client::pose::Pose::Swimming && !p.fluids.was_touching_water;
+        let crawling = p.pose == crate::pose::Pose::Swimming && !p.fluids.was_touching_water;
         let heights = self.heights.interpolated(partial);
         let vis = self.visible_hand_items();
         let main_scale = vis[0].as_ref().map_or(1.0, |s| {
@@ -314,6 +315,16 @@ impl Game<'_> {
     }
 
     #[inline]
+    fn attack_held(&self) -> bool {
+        self.left || self.pad.holds_action("key.attack")
+    }
+
+    #[inline]
+    fn use_held(&self) -> bool {
+        self.right || self.pad.holds_action("key.use")
+    }
+
+    #[inline]
     fn is_hmi_breaking_block(&self) -> bool {
         if !self.is_hmi_actively_playing() || self.using.is_some() {
             return false;
@@ -323,7 +334,13 @@ impl Game<'_> {
         }
         self.mining.is_some()
             || self.clicks.destroying.active
-            || (self.left && self.pick().is_some_and(|h| !self.res.facts().is_air(self.world.block(h.pos[0], h.pos[1], h.pos[2]))))
+            || (self.attack_held()
+                && self.pick().is_some_and(|h| {
+                    !self
+                        .res
+                        .facts()
+                        .is_air(self.world.block(h.pos[0], h.pos[1], h.pos[2]))
+                }))
     }
 
     /// Sanitizes continuous animation hold state when screens, dialogs, or pause occur.
@@ -338,7 +355,7 @@ impl Game<'_> {
     }
 
     /// `horizon_client::game::hand::Game<'_>::swing_hand` HEAD hook.
-    pub(super) fn holdmyitems_swing_hand(&mut self, hand: Hand) {
+    pub(crate) fn holdmyitems_swing_hand(&mut self, hand: Hand) {
         if !enabled(self) {
             return;
         }
@@ -352,8 +369,8 @@ impl Game<'_> {
         let flags = self.classify_stack(stack, 0.0);
         let is_main = hand == Hand::Main;
         let breaking = self.is_hmi_breaking_block();
-        let left_now = self.left || breaking || (is_main && self.clicks.destroying.active);
-        let right_now = self.right;
+        let left_now = self.attack_held() || breaking || (is_main && self.clicks.destroying.active);
+        let right_now = self.use_held();
         with_state(|s| {
             let continuous_hold = if is_main {
                 let cont = breaking || (left_now && s.left_continued);
@@ -374,14 +391,14 @@ impl Game<'_> {
     /// `native_tick` (20 TPS): syncs haste/fatigue amplifiers and sanitizes input state.
     /// Swing progression itself is stepped in `holdmyitems_frame` via `dt` so it never
     /// desynchronizes or double-steps across threads.
-    pub(super) fn holdmyitems_tick(&mut self) {
+    pub(crate) fn holdmyitems_tick(&mut self) {
         if !enabled(self) || self.player.is_none() {
             return;
         }
         self.sanitize_hmi_mouse_state();
         let breaking = self.is_hmi_breaking_block();
-        let left_now = self.left || breaking || self.clicks.destroying.active;
-        let right_now = self.right;
+        let left_now = self.attack_held() || breaking || self.clicks.destroying.active;
+        let right_now = self.use_held();
         let effects = &self.potions.effects;
         let haste = effects
             .amplifier("haste")
@@ -394,6 +411,7 @@ impl Game<'_> {
             if !right_now {
                 s.right_continued = false;
             }
+            s.hmi.block_breaking = breaking;
             s.hmi.last_haste = haste;
             s.hmi.last_fatigue = fatigue;
         });
@@ -401,7 +419,7 @@ impl Game<'_> {
 
     /// `native_frame`: steps HMI spring-damper physics, plays switch/bell/flower sounds,
     /// and pre-caches local map vertices when a filled map is held.
-    pub(super) fn holdmyitems_frame(&mut self, elapsed: Duration) {
+    pub(crate) fn holdmyitems_frame(&mut self, elapsed: Duration) {
         if !enabled(self) {
             return;
         }
@@ -433,8 +451,8 @@ impl Game<'_> {
 
         let actively_playing = self.is_hmi_actively_playing();
         let breaking = self.is_hmi_breaking_block();
-        let left_now = self.left || breaking || self.clicks.destroying.active;
-        let right_now = self.right;
+        let left_now = self.attack_held() || breaking || self.clicks.destroying.active;
+        let right_now = self.use_held();
         let dt = if self.pause {
             0.0
         } else {
@@ -476,36 +494,42 @@ impl Game<'_> {
 
         // Pre-cache filled map geometry in local map space (`Mat4::IDENTITY`) while we have `&mut self`.
         let vis = self.visible_hand_items();
-        let mut map_caches: [Option<(i32, Vec<Vertex>)>; 2] = [None, None];
-        for (slot_idx, maybe_stack) in vis.iter().enumerate() {
-            if let Some(stack) = maybe_stack
-                && let Some(map_id) = maps::map_id(stack)
-            {
-                let mut verts = Vec::new();
-                self.held_map(glam::Mat4::IDENTITY, map_id, 0xF0F0, &mut verts);
-                map_caches[slot_idx] = Some((map_id, verts));
-            }
-        }
         with_state(|s| {
-            s.cached_maps = map_caches;
+            for (slot_idx, maybe_stack) in vis.iter().enumerate() {
+                if let Some(stack) = maybe_stack
+                    && let Some(map_id) = maps::map_id(stack)
+                {
+                    if let Some((cached_id, ref mut verts)) = &mut s.cached_maps[slot_idx] {
+                        if *cached_id == map_id {
+                            verts.clear();
+                            self.held_map(glam::Mat4::IDENTITY, map_id, 0xF0F0, verts);
+                            continue;
+                        }
+                    }
+                    let mut verts = Vec::with_capacity(32);
+                    self.held_map(glam::Mat4::IDENTITY, map_id, 0xF0F0, &mut verts);
+                    s.cached_maps[slot_idx] = Some((map_id, verts));
+                } else {
+                    s.cached_maps[slot_idx] = None;
+                }
+            }
         });
     }
 
-    /// `horizon_client::game::totem::Game<'_>::item_activation_geometry` HEAD hook:
-    /// replaces `out` (the first-person hand vertex buffer from `hand_geometry`) with
-    /// the complete Hold My Items 5.1.1 first-person arms, 3D blocks, items, per-quad
-    /// animations, maps, and first-person particles.
-    pub(super) fn holdmyitems_render_hands(&self, partial: f32, out: &mut Vec<Vertex>) {
+    /// Replaces `out` (the first-person hand vertex buffer from `hand_geometry`) with
+    /// the complete Hold My Items 5.2.0 first-person arms, 3D blocks, items, per-quad
+    /// animations, maps, and first-person particles. Returns `true` when `out` was replaced.
+    pub(crate) fn holdmyitems_render_hands(&self, partial: f32, out: &mut Vec<Vertex>) -> bool {
         if !enabled(self) {
-            return;
+            return false;
         }
         let Some(cfg) = active_config(self) else {
-            return;
+            return false;
         };
         if self.spectator()
             || self.ui.hide_gui
             || self.sleeping.is_some()
-            || !self.camera_type.first_person()
+            || !self.camera_type.is_first_person()
             || self.scoping()
             || self.screen != Screen::Playing
             || self
@@ -514,7 +538,7 @@ impl Game<'_> {
                 .is_none_or(|p| p.health.dead_or_dying())
             || self.screen == Screen::Dead
         {
-            return;
+            return false;
         }
 
         // Replace vanilla's `hand_geometry` vertices with HMI's first-person overhaul.
@@ -581,7 +605,7 @@ impl Game<'_> {
                 let arm_world = to_world
                     * to_glam(eval.arm_pose)
                     * first_person::player_arm_pose(left, 0.0, 0.0);
-                self.first_person_arm(left, arm_world, packed_light, out);
+                self.first_person_arm(left, arm_world, packed_light, 0.0, out);
             }
 
             // 2. Render the held item, 3D block, or map if non-empty
@@ -706,8 +730,8 @@ impl Game<'_> {
 
                 let mut particle_mat = block_mat;
                 if !right_arm {
-                    particle_mat = particle_mat
-                        * glam::Mat4::from_translation(glam::Vec3::new(1.0, 0.0, 0.0));
+                    particle_mat =
+                        particle_mat * glam::Mat4::from_translation(glam::Vec3::new(1.0, 0.0, 0.0));
                 }
                 self.emit_hmi_particles(
                     main_hand,
@@ -794,9 +818,12 @@ impl Game<'_> {
                 self.submit_item_hmi(&state, world_pose, packed_light, &eval.animator, out);
                 let after_item = out.len();
 
-                if this_flags.is_enchanted_tool() && cfg.enchanted_outlines && after_item > before_item {
+                if this_flags.is_enchanted_tool()
+                    && cfg.enchanted_outlines
+                    && after_item > before_item
+                {
                     let quad_count = (after_item - before_item) / 4;
-                    let mut outline_verts = Vec::with_capacity(after_item - before_item);
+                    out.reserve(after_item - before_item);
                     for q in 0..quad_count {
                         let base = before_item + q * 4;
                         let p0 = glam::Vec3::from_array(out[base].pos);
@@ -817,10 +844,9 @@ impl Game<'_> {
                             v.light = outline_light;
                             v.layer = crate::gfx::TRANSLUCENT_ITEM_OVERLAY;
                             v.normal = [0, 0, 0, 0];
-                            outline_verts.push(v);
+                            out.push(v);
                         }
                     }
-                    out.extend(outline_verts);
                 }
 
                 self.emit_hmi_particles(
@@ -843,18 +869,26 @@ impl Game<'_> {
                 out,
             );
         }
+        true
     }
 
     fn state_with_prop_opt(
         &self,
         state: horizon_world::registry::BlockStateId,
-        key: &str,
-        val: &str,
+        key: &'static str,
+        val: &'static str,
     ) -> Option<horizon_world::registry::BlockStateId> {
+        if let Some(cached) = with_state(|s| s.cached_prop_states.get(&(state.0, key, val)).copied()) {
+            return cached;
+        }
         let reg = self.pack.assets.registry;
         let mut s = reg.state(state)?.clone();
         s.properties.insert(key.to_owned(), val.to_owned());
-        reg.id(&s)
+        let res = reg.id(&s);
+        with_state(|st| {
+            st.cached_prop_states.insert((state.0, key, val), res);
+        });
+        res
     }
 
     fn submit_item_hmi(
@@ -911,67 +945,61 @@ impl Game<'_> {
         packed_light: u32,
         out: &mut Vec<Vertex>,
     ) {
-        let particles: Vec<HmiParticle> = with_state(|s| {
-            s.hmi
-                .particles
-                .iter()
-                .filter(|p| !p.dead && p.main_hand == main_hand && p.space == space)
-                .cloned()
-                .collect()
-        });
-        if particles.is_empty() {
-            return;
-        }
         let sprites = &self.gui.atlas.sprites;
-        for p in particles {
-            let Some(rect) = sprites.get(p.sprite).copied() else {
-                continue;
-            };
-            let local = view_space_parent
-                * glam::Mat4::from_translation(glam::Vec3::new(p.x, p.y, p.z))
-                * glam::Mat4::from_scale(glam::Vec3::splat(p.scale));
-            let (scale_vec, _, center_view) = local.to_scale_rotation_translation();
-            let half = match p.blend {
-                ParticleBlend::Additive => 0.12 * scale_vec.x.abs(),
-                ParticleBlend::Translucent => 0.14 * scale_vec.x.abs(),
-            };
-            let a_byte = match p.blend {
-                ParticleBlend::Additive => ((p.alpha * 0.35).clamp(0.0, 255.0) as u32) & 0xFF,
-                ParticleBlend::Translucent => (p.alpha.clamp(0.0, 255.0) as u32) & 0xFF,
-            };
-            let r = (p.tint_rgb >> 16) & 0xFF;
-            let g = (p.tint_rgb >> 8) & 0xFF;
-            let b = p.tint_rgb & 0xFF;
-            let color = (a_byte << 24) | (b << 16) | (g << 8) | r;
-            let light = if p.blend == ParticleBlend::Additive || p.sprite == "particle/firefly" {
-                vertex_light(0xFF)
-            } else {
-                packed_light
-            };
-            let corners = [
-                ([half, half, 0.0], [rect.u1, rect.v0]),
-                ([-half, half, 0.0], [rect.u0, rect.v0]),
-                ([-half, -half, 0.0], [rect.u0, rect.v1]),
-                ([half, -half, 0.0], [rect.u1, rect.v1]),
-            ];
-            for (offset, uv) in corners {
-                let pos_view = center_view + glam::Vec3::from_array(offset);
-                let pos_world = to_world.transform_point3(pos_view).to_array();
-                out.push(Vertex {
-                    normal: [0, 0, 127, 0],
-                    pos: pos_world,
-                    uv,
-                    layer: crate::gfx::TRANSLUCENT_ITEM_OVERLAY,
-                    color,
-                    light,
-                    glint_uv: [0.0, 0.0],
-                });
+        with_state(|s| {
+            for p in &s.hmi.particles {
+                if p.dead || p.main_hand != main_hand || p.space != space {
+                    continue;
+                }
+                let Some(rect) = sprites.get(p.sprite).copied() else {
+                    continue;
+                };
+                let local = view_space_parent
+                    * glam::Mat4::from_translation(glam::Vec3::new(p.x, p.y, p.z))
+                    * glam::Mat4::from_scale(glam::Vec3::splat(p.scale));
+                let (scale_vec, _, center_view) = local.to_scale_rotation_translation();
+                let half = match p.blend {
+                    ParticleBlend::Additive => 0.12 * scale_vec.x.abs(),
+                    ParticleBlend::Translucent => 0.14 * scale_vec.x.abs(),
+                };
+                let a_byte = match p.blend {
+                    ParticleBlend::Additive => ((p.alpha * 0.35).clamp(0.0, 255.0) as u32) & 0xFF,
+                    ParticleBlend::Translucent => (p.alpha.clamp(0.0, 255.0) as u32) & 0xFF,
+                };
+                let r = (p.tint_rgb >> 16) & 0xFF;
+                let g = (p.tint_rgb >> 8) & 0xFF;
+                let b = p.tint_rgb & 0xFF;
+                let color = (a_byte << 24) | (b << 16) | (g << 8) | r;
+                let light = if p.blend == ParticleBlend::Additive || p.sprite == "particle/firefly" {
+                    vertex_light(0xFF)
+                } else {
+                    packed_light
+                };
+                let corners = [
+                    ([half, half, 0.0], [rect.u1, rect.v0]),
+                    ([-half, half, 0.0], [rect.u0, rect.v0]),
+                    ([-half, -half, 0.0], [rect.u0, rect.v1]),
+                    ([half, -half, 0.0], [rect.u1, rect.v1]),
+                ];
+                for (offset, uv) in corners {
+                    let pos_view = center_view + glam::Vec3::from_array(offset);
+                    let pos_world = to_world.transform_point3(pos_view).to_array();
+                    out.push(Vertex {
+                        normal: [0, 0, 127, 0],
+                        pos: pos_world,
+                        uv,
+                        layer: crate::gfx::TRANSLUCENT_ITEM_OVERLAY,
+                        color,
+                        light,
+                        glint_uv: [0.0, 0.0],
+                    });
+                }
             }
-        }
+        });
     }
 
     /// `native_camera_shake`: applies HMI camera pitch/roll/offset feedback during eating, drinking, walking, and landing.
-    pub(super) fn holdmyitems_shake(&self, _partial: f32, shake: &mut NativeShake) {
+    pub(crate) fn holdmyitems_shake(&self, _partial: f32, shake: &mut NativeShake) {
         if !enabled(self) || !self.native_playing() {
             return;
         }
@@ -988,7 +1016,7 @@ impl Game<'_> {
     }
 
     /// `native_visuals`: emits dynamic camera-local colored light when holding a light source.
-    pub(super) fn holdmyitems_visuals(&self, lights: &mut Vec<NativeColoredLight>) {
+    pub(crate) fn holdmyitems_visuals(&self, lights: &mut Vec<NativeColoredLight>) {
         if !enabled(self) {
             return;
         }
@@ -998,9 +1026,7 @@ impl Game<'_> {
         let Some(eye) = self.eye_position() else {
             return;
         };
-        let main_light = self
-            .held()
-            .and_then(|s| hmi::hand_light_for_item(&s.item));
+        let main_light = self.held().and_then(|s| hmi::hand_light_for_item(&s.item));
         let off_light = self
             .offhand
             .as_ref()
@@ -1011,7 +1037,7 @@ impl Game<'_> {
     }
 
     /// `native_key`: tracks the Inspect keybind (`key.holdmyitems.inspect`, default C).
-    pub(super) fn holdmyitems_key(&mut self, key: &str, pressed: bool) {
+    pub(crate) fn holdmyitems_key(&mut self, key: &str, pressed: bool) {
         if !enabled(self) {
             with_state(|s| s.inspect_down = false);
             return;
@@ -1022,18 +1048,24 @@ impl Game<'_> {
     }
 
     /// `native_hud`: renders any queued HMI debug lines.
-    pub(super) fn holdmyitems_hud(&mut self, batch: &mut HudBatch) {
+    pub(crate) fn holdmyitems_hud(&mut self, batch: &mut HudBatch) {
         if !enabled(self) {
             return;
         }
         let lines = with_state(|s| std::mem::take(&mut s.hmi.debug_lines));
         for (idx, line) in lines.iter().enumerate() {
-            self.native_text(batch, line, [10.0, 10.0 + (idx as f32) * 10.0], 0xFFFFFF, true);
+            self.native_text(
+                batch,
+                line,
+                [10.0, 10.0 + (idx as f32) * 10.0],
+                0xFFFFFF,
+                true,
+            );
         }
     }
 
     /// `native_command`: handles `/hmi` and `/holdmyitems` commands.
-    pub(super) fn holdmyitems_command(&mut self, command: &str, ran: &mut bool) {
+    pub(crate) fn holdmyitems_command(&mut self, command: &str, ran: &mut bool) {
         if *ran {
             return;
         }
@@ -1127,7 +1159,7 @@ impl Game<'_> {
     }
 
     /// `native_mods`: lists Hold My Items 5.2.0 in `Options > Mods`.
-    pub(super) fn holdmyitems_mod_entry() -> NativeMod {
+    pub(crate) fn holdmyitems_mod_entry() -> NativeMod {
         NativeMod {
             id: hmi::ID.to_owned(),
             title: hmi::TITLE.to_owned(),
@@ -1141,12 +1173,12 @@ impl Game<'_> {
     }
 
     /// `native_settings`: returns button labels for `Options > Mods > Hold My Items`.
-    pub(super) fn holdmyitems_settings(&self) -> Vec<String> {
+    pub(crate) fn holdmyitems_settings(&self) -> Vec<String> {
         hmi::settings_labels(&loaded_config(self))
     }
 
     /// `native_settings_click`: toggles settings and writes `config.json`.
-    pub(super) fn holdmyitems_settings_click(&mut self, button: usize) {
+    pub(crate) fn holdmyitems_settings_click(&mut self, button: usize) {
         match hmi::settings_click(&loaded_config(self), button) {
             Some(SettingsEffect::Save(cfg)) => {
                 self.native_set_setting(hmi::ID, hmi::CONFIG_FILE, &cfg.to_json());

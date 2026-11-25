@@ -3303,6 +3303,10 @@ pub fn table_take(root: &str, dim: &str, pos: [i32; 3]) -> Option<[Option<(Strin
 }
 
 /// The kept tables of the world being played (for drawing their items).
+pub fn has_kept_tables() -> bool {
+    !tables().2.is_empty()
+}
+
 pub fn kept_tables() -> Vec<KeptTable> {
     tables().2.clone()
 }

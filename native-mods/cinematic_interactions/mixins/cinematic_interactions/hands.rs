@@ -88,7 +88,7 @@ fn cinematic_hands(game: &mut crate::game::Game<'_>, alpha: f64) -> ::core::ops:
     let light = game.world.light(lit[0], lit[1], lit[2]);
     let packed = (u32::from(light >> 4) * 16) | ((u32::from(light & 15) * 16) << 8);
     let item_light = horizon_client::block_entity_render::vertex_light(light);
-    let mut out = Vec::new();
+    let mut out = Vec::with_capacity(512);
     // The arms, with the player's own skin and its sleeves.
     if !game.own_invisible() {
         let slim = game.player_model.as_ref().is_some_and(|m| m.slim);
@@ -124,7 +124,7 @@ fn cinematic_hands(game: &mut crate::game::Game<'_>, alpha: f64) -> ::core::ops:
     }
     let white = game.gui.atlas.font.white();
     let uv = [(white.u0 + white.u1) * 0.5, (white.v0 + white.v1) * 0.5];
-    let mut quads: Vec<([glam::DVec3; 4], u32)> = Vec::new();
+    let mut quads: Vec<([glam::DVec3; 4], u32)> = Vec::with_capacity(64);
     let presence = ci::presence(now);
     if furnace {
         // The furnace's items, lying in its openings as the jar's beds hold them.

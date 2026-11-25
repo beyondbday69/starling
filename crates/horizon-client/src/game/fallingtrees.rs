@@ -355,6 +355,7 @@ pub(crate) struct ActiveTree {
     pub(crate) felling: Felling,
     pub(crate) blocks: Vec<([i32; 3], BlockStateId)>,
     pub(crate) drops: Vec<ItemStack>,
+    pub(crate) baked_vertices: Vec<Vertex>,
     pub(crate) cut: [i32; 3],
     pub(crate) toward: [f64; 3],
     pub(crate) start_time: f64,
@@ -381,7 +382,7 @@ impl ActiveTree {
         .clamp(0.0, 1.0);
         let pivot = self.pivot();
         let way = glam::DVec3::new(self.toward[0], 0.0, self.toward[2]);
-        let axis = glam::DVec3::Y.cross(way).normalize();
+        let axis = glam::DVec3::Y.cross(way).try_normalize().unwrap_or(glam::DVec3::X);
         glam::DMat4::from_translation(pivot)
             * glam::DMat4::from_axis_angle(axis, self.angle * f * f)
             * glam::DMat4::from_translation(-pivot - glam::DVec3::Y)
@@ -584,10 +585,38 @@ impl Game<'_> {
 
         // 5. Initial wood cracking sound
         let dim = self.fallingtrees_dimension_id().to_string();
-        self.run_command_quietly(&format!(
-            "execute in {dim} run playsound minecraft:block.wood.break block @a {} {} {} 1.0 0.7",
-            pos[0], pos[1], pos[2]
-        ));
+        self.audio.play_unshared(
+            "minecraft:block.wood.break",
+            Some([pos[0] as f64 + 0.5, pos[1] as f64 + 0.5, pos[2] as f64 + 0.5]),
+            1.0,
+            0.7,
+        );
+
+        // Pre-bake tree vertices once so per-frame rendering only transforms baked vertices
+        let mut baked_vertices = Vec::with_capacity(blocks.len() * 24);
+        for &(at, state) in &blocks {
+            let corner = glam::DVec3::from_array(at.map(f64::from));
+            let pose = glam::DMat4::from_translation(corner).as_mat4();
+            let light = self.world.light(at[0], at[1], at[2]);
+            let packed = (u32::from(light >> 4) * 16) | ((u32::from(light & 15) * 16) << 8);
+            let seed = BlockPos::new(at[0], at[1], at[2]);
+            let tint = self.particle_sprite(state, at).map(|(_, tint)| tint);
+            let start = baked_vertices.len();
+            self.block_model_vertices(
+                state,
+                horizon_core::random::position_seed(seed),
+                pose,
+                packed,
+                false,
+                &mut baked_vertices,
+            );
+            if let Some(tint) = tint {
+                let tint = horizon_client::mobs::render::abgr(tint);
+                for vertex in &mut baked_vertices[start..] {
+                    vertex.color = horizon_client::hud_layout::multiply(vertex.color, tint);
+                }
+            }
+        }
 
         // 6. Queue active falling tree
         let axe = (settings.wear_axe && !self.creative).then_some(held_item);
@@ -604,6 +633,7 @@ impl Game<'_> {
             felling,
             blocks,
             drops,
+            baked_vertices,
             cut: pos,
             toward,
             start_time,
@@ -628,8 +658,12 @@ impl Game<'_> {
             let mut s = STATE.lock().unwrap_or_else(|e| e.into_inner());
             let mut i = 0;
             while i < s.active.len() {
-                if now - s.active[i].start_time >= s.active[i].fall_ticks {
+                let elapsed = now - s.active[i].start_time;
+                if elapsed >= s.active[i].fall_ticks {
                     landed.push(s.active.remove(i));
+                } else if elapsed < -100.0 || elapsed > s.active[i].fall_ticks + 200.0 {
+                    // Prune orphaned/time-warped falling trees to prevent memory leaks
+                    s.active.remove(i);
                 } else {
                     i += 1;
                 }
@@ -640,9 +674,12 @@ impl Game<'_> {
             let [ox, oy, oz] = tree.cut;
 
             // Wood impact crash sound
-            self.run_command_quietly(&format!(
-                "execute in {dim} run playsound minecraft:block.wood.fall block @a {ox} {oy} {oz} 1.2 0.8"
-            ));
+            self.audio.play_unshared(
+                "minecraft:block.wood.fall",
+                Some([ox as f64 + 0.5, oy as f64 + 0.5, oz as f64 + 0.5]),
+                1.2,
+                0.8,
+            );
 
             // Enter target dimension if needed for entity spawning
             let back = self.dim;
@@ -690,31 +727,21 @@ impl Game<'_> {
             if t < 0.0 || t >= tree.fall_ticks {
                 continue;
             }
-            let turn = glam::DMat4::from_translation(-camera) * tree.turn(t);
-            for &(at, state) in &tree.blocks {
-                let corner = glam::DVec3::from_array(at.map(f64::from));
-                let pose = (turn * glam::DMat4::from_translation(corner)).as_mat4();
-                let light = self.world.light(at[0], at[1], at[2]);
-                let packed = (u32::from(light >> 4) * 16) | ((u32::from(light & 15) * 16) << 8);
-                let seed = BlockPos::new(at[0], at[1], at[2]);
-                let tint = self.particle_sprite(state, at).map(|(_, tint)| tint);
-                let start = out.len();
-                self.block_model_vertices(
-                    state,
-                    horizon_core::random::position_seed(seed),
-                    pose,
-                    packed,
-                    false,
-                    out,
-                );
-                if let Some(tint) = tint {
-                    let tint = horizon_client::mobs::render::abgr(tint);
-                    for vertex in &mut out[start..] {
-                        vertex.color = horizon_client::hud_layout::multiply(vertex.color, tint);
-                    }
-                }
+            let turn = (glam::DMat4::from_translation(-camera) * tree.turn(t)).as_mat4();
+            out.reserve(tree.baked_vertices.len());
+            for v in &tree.baked_vertices {
+                let mut vertex = *v;
+                let pos_cam = turn.transform_point3(glam::Vec3::from_array(vertex.pos));
+                vertex.pos = pos_cam.to_array();
+                out.push(vertex);
             }
         }
+    }
+
+    /// Clears any in-flight falling trees on disconnect or world change.
+    pub(crate) fn fallingtrees_clear() {
+        let mut s = STATE.lock().unwrap_or_else(|e| e.into_inner());
+        s.active.clear();
     }
 }
 

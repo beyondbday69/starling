@@ -2250,7 +2250,7 @@ pub mod engine {
     pub struct Near {
         pub center: (i32, i32),
         pub radius: i32,
-        pub loaded: HashSet<(i32, i32)>,
+        pub loaded: Arc<HashSet<(i32, i32)>>,
     }
 
     impl Near {
@@ -2512,7 +2512,13 @@ pub mod engine {
             let now = Instant::now();
             self.player = player;
             let shape = self.shared.settings.lock().unwrap().shape;
-            let near_changed = **self.shared.near.lock().unwrap() != near;
+            let near_changed = {
+                let current_near = self.shared.near.lock().unwrap();
+                current_near.center != near.center
+                    || current_near.radius != near.radius
+                    || (!Arc::ptr_eq(&current_near.loaded, &near.loaded)
+                        && *current_near.loaded != *near.loaded)
+            };
             let moved = self.planned_at.is_none_or(|(at, p)| {
                 let d = (p[0] - player[0]).hypot(p[1] - player[1]);
                 d >= 16.0 || (d > 0.0 && now - at > Duration::from_secs(2))
@@ -2624,9 +2630,9 @@ pub mod engine {
             self.near_sections = near_sections;
             self.plan = Some(plan);
             self.shape = Some(shape);
-            // Sections far from everything wanted leave memory.
+            // Sections far from everything wanted leave memory if persisted on disk.
             let mut store = self.shared.store.lock().unwrap();
-            if store.sections.len() > self.wanted.len() * 3 + 256 {
+            if self.shared.dir.is_some() && store.sections.len() > self.wanted.len() * 3 + 256 {
                 let keep: Vec<i64> = store
                     .sections
                     .keys()

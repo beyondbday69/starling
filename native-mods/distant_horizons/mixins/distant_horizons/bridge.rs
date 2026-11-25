@@ -30,7 +30,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// Chunks put in the LODs per frame at most; the rest wait for later frames.
-const CHUNKS_PER_FRAME: usize = 48;
+const CHUNKS_PER_FRAME: usize = 24;
 /// How often loaded chunks are checked for new and changed ones.
 const SCAN_EVERY: Duration = Duration::from_millis(250);
 /// How often one chunk may be read again after it changed.
@@ -469,7 +469,7 @@ struct Session {
     pending: Vec<(i32, i32)>,
     last_scan: Option<Instant>,
     near_revision: Option<u64>,
-    loaded: HashSet<(i32, i32)>,
+    loaded: Arc<HashSet<(i32, i32)>>,
 }
 
 thread_local! {
@@ -570,7 +570,7 @@ fn start(game: &mut Game<'_>, key: WorldKey, settings: &Settings) -> Session {
         pending: Vec::new(),
         last_scan: None,
         near_revision: None,
-        loaded: HashSet::new(),
+        loaded: Arc::new(HashSet::new()),
     }
 }
 
@@ -633,7 +633,7 @@ pub(super) fn frame(game: &mut Game<'_>) {
     let revision = game.world.chunks.membership_revision();
     if session.near_revision != Some(revision) {
         session.near_revision = Some(revision);
-        session.loaded = game.world.chunks.keys().copied().collect();
+        session.loaded = Arc::new(game.world.chunks.keys().copied().collect());
     }
     let near = Near {
         center: game.streaming.center,

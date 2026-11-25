@@ -23,6 +23,11 @@ pub struct FsrPipeline {
     pub intermediate_texture: Option<wgpu::Texture>,
     pub intermediate_target: Option<wgpu::TextureView>,
     pub intermediate_size: [u32; 2],
+    pub last_constants: Option<FsrConstants>,
+    pub cached_easu_bind_group: Option<wgpu::BindGroup>,
+    pub cached_rcas_bind_group: Option<wgpu::BindGroup>,
+    pub cached_rcas_standalone_bind_group: Option<wgpu::BindGroup>,
+    pub cached_integer_bind_group: Option<wgpu::BindGroup>,
 }
 
 impl FsrPipeline {
@@ -181,6 +186,11 @@ impl FsrPipeline {
             intermediate_texture: None,
             intermediate_target: None,
             intermediate_size: [0, 0],
+            last_constants: None,
+            cached_easu_bind_group: None,
+            cached_rcas_bind_group: None,
+            cached_rcas_standalone_bind_group: None,
+            cached_integer_bind_group: None,
         }
     }
 
@@ -189,6 +199,10 @@ impl FsrPipeline {
         if self.intermediate_size == dst_size && self.intermediate_target.is_some() {
             return;
         }
+        self.cached_easu_bind_group = None;
+        self.cached_rcas_bind_group = None;
+        self.cached_rcas_standalone_bind_group = None;
+        self.cached_integer_bind_group = None;
         self.intermediate_size = dst_size;
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("FSR intermediate target"),
@@ -235,27 +249,33 @@ impl FsrPipeline {
             sharpness: sharpness.clamp(0.0, 1.0),
             _pad: 0.0,
         };
-        queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&constants));
+        if self.last_constants != Some(constants) {
+            queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&constants));
+            self.last_constants = Some(constants);
+        }
 
         // Pass 1: EASU (src -> intermediate)
-        let easu_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("FSR EASU Bind Group"),
-            layout: &self.bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: self.uniform_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(src),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
-                },
-            ],
-        });
+        if self.cached_easu_bind_group.is_none() {
+            self.cached_easu_bind_group = Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("FSR EASU Bind Group"),
+                layout: &self.bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: self.uniform_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(src),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    },
+                ],
+            }));
+        }
+        let easu_bind_group = self.cached_easu_bind_group.as_ref().unwrap();
 
         {
             let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -272,29 +292,36 @@ impl FsrPipeline {
                 ..Default::default()
             });
             rp.set_pipeline(&self.easu_pipeline);
-            rp.set_bind_group(0, &easu_bind_group, &[]);
+            rp.set_bind_group(0, easu_bind_group, &[]);
             rp.draw(0..3, 0..1);
         }
 
         // Pass 2: RCAS (intermediate -> dst)
-        let rcas_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("FSR RCAS Bind Group"),
-            layout: &self.bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: self.uniform_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(intermediate),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
-                },
-            ],
-        });
+        if self.cached_rcas_bind_group.is_none() {
+            let intermediate = self
+                .intermediate_target
+                .as_ref()
+                .expect("intermediate target allocated");
+            self.cached_rcas_bind_group = Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("FSR RCAS Bind Group"),
+                layout: &self.bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: self.uniform_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(intermediate),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    },
+                ],
+            }));
+        }
+        let rcas_bind_group = self.cached_rcas_bind_group.as_ref().unwrap();
 
         {
             let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -311,14 +338,14 @@ impl FsrPipeline {
                 ..Default::default()
             });
             rp.set_pipeline(&self.rcas_pipeline);
-            rp.set_bind_group(0, &rcas_bind_group, &[]);
+            rp.set_bind_group(0, rcas_bind_group, &[]);
             rp.draw(0..3, 0..1);
         }
     }
 
     /// Executes standalone RCAS sharpening directly from `src` to `dst` at `size`.
     pub fn run_rcas(
-        &self,
+        &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
@@ -333,26 +360,33 @@ impl FsrPipeline {
             sharpness: sharpness.clamp(0.0, 1.0),
             _pad: 0.0,
         };
-        queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&constants));
+        if self.last_constants != Some(constants) {
+            queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&constants));
+            self.last_constants = Some(constants);
+        }
 
-        let rcas_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("FSR RCAS Standalone Bind Group"),
-            layout: &self.bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: self.uniform_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(src),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
-                },
-            ],
-        });
+        if self.cached_rcas_standalone_bind_group.is_none() {
+            self.cached_rcas_standalone_bind_group =
+                Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("FSR RCAS Standalone Bind Group"),
+                    layout: &self.bind_group_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: self.uniform_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::TextureView(src),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: wgpu::BindingResource::Sampler(&self.sampler),
+                        },
+                    ],
+                }));
+        }
+        let rcas_bind_group = self.cached_rcas_standalone_bind_group.as_ref().unwrap();
 
         let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("FSR RCAS Standalone Pass"),
@@ -368,13 +402,13 @@ impl FsrPipeline {
             ..Default::default()
         });
         rp.set_pipeline(&self.rcas_pipeline);
-        rp.set_bind_group(0, &rcas_bind_group, &[]);
+        rp.set_bind_group(0, rcas_bind_group, &[]);
         rp.draw(0..3, 0..1);
     }
 
     /// Executes integer scaling directly from `src` at `src_size` to `dst` at `dst_size`.
     pub fn run_integer(
-        &self,
+        &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
@@ -389,26 +423,33 @@ impl FsrPipeline {
             sharpness: 0.0,
             _pad: 0.0,
         };
-        queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&constants));
+        if self.last_constants != Some(constants) {
+            queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&constants));
+            self.last_constants = Some(constants);
+        }
 
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Shader Integer Scaling Bind Group"),
-            layout: &self.bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: self.uniform_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(src),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
-                },
-            ],
-        });
+        if self.cached_integer_bind_group.is_none() {
+            self.cached_integer_bind_group =
+                Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("Shader Integer Scaling Bind Group"),
+                    layout: &self.bind_group_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: self.uniform_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::TextureView(src),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: wgpu::BindingResource::Sampler(&self.sampler),
+                        },
+                    ],
+                }));
+        }
+        let bind_group = self.cached_integer_bind_group.as_ref().unwrap();
 
         let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Shader Integer Scaling Pass"),
@@ -424,7 +465,7 @@ impl FsrPipeline {
             ..Default::default()
         });
         rp.set_pipeline(&self.integer_pipeline);
-        rp.set_bind_group(0, &bind_group, &[]);
+        rp.set_bind_group(0, bind_group, &[]);
         rp.draw(0..3, 0..1);
     }
 }

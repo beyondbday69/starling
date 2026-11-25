@@ -12308,24 +12308,20 @@ impl Renderer {
                 indices: self.indices.clone(),
                 quads: cloud_quads,
             }));
-            // Below the screen's size `final` works at the world's size too (a program reading
-            // the buffers by pixel lines up), and the picture goes up sharper than a stretch.
-            let upscale = self.world_post.upscales_pack();
+            // Route post-processing directly to display target at window resolution:
+            // FSR 1.0 EASU reconstructs and upsamples from render scale, RCAS sharpens,
+            // or integer scaling / linear blit scales cleanly to the native view target.
             post.run(
                 &self.device,
                 &self.queue,
                 &mut encoder,
                 color,
                 depth,
-                if upscale { color } else { &view_target },
+                &view_target,
                 frame,
                 &frame.pack,
                 size,
-                if upscale {
-                    size
-                } else {
-                    [self.config.width, self.config.height]
-                },
+                [self.config.width, self.config.height],
                 pages,
                 &mut terrain,
             );
@@ -12333,10 +12329,6 @@ impl Renderer {
             // here until the next shader-pack frame (or forever once the pack is off).
             self.pack_pages.clear();
             self.pack_post = Some((dimension, Some(post)));
-            if upscale {
-                self.world_post
-                    .finish_pack(&mut encoder, &view_target, self.own_timing.as_mut());
-            }
         } else if let Some((color, depth)) = &scaled
             && native_post
             && let Some(native) = &mut self.native

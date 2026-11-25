@@ -5920,7 +5920,7 @@ impl PackPost {
                         size,
                         window,
                     );
-                } else if size != window {
+                } else if upscaling != crate::graphics::ShaderUpscaling::Off && size != window {
                     self.fsr.run(
                         device,
                         queue,
@@ -5931,7 +5931,7 @@ impl PackPost {
                         window,
                         sharpness,
                     );
-                } else if sharpness > 0.0 {
+                } else if upscaling != crate::graphics::ShaderUpscaling::Off && sharpness > 0.0 {
                     self.fsr.run_rcas(
                         device,
                         queue,

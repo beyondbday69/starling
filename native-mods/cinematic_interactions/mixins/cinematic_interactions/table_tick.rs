@@ -7,6 +7,9 @@ fn cinematic_table_tick(game: &mut crate::game::Game<'_>, paused: bool) {
     }
     let root = game.world_root.display().to_string();
     ci::tables_load(&root);
+    if !ci::has_kept_tables() {
+        return;
+    }
     let dim = format!("{:?}", game.dim);
     for t in ci::kept_tables() {
         if t.dim != dim || !game.world.loaded(t.pos[0], t.pos[2]) || &*game.block_name(t.pos) == "minecraft:crafting_table" {

@@ -44,6 +44,7 @@ struct State {
     /// refreshed each frame in `holdmyitems_frame(&mut self)` so `holdmyitems_render_hands(&self)`
     /// can pose and emit them without needing `&mut self`.
     cached_maps: [Option<(i32, Vec<Vertex>)>; 2],
+    cached_prop_states: std::collections::HashMap<(u32, &'static str, &'static str), Option<horizon_world::registry::BlockStateId>>,
 }
 
 static STATE: OnceLock<Mutex<State>> = OnceLock::new();
@@ -410,6 +411,7 @@ impl Game<'_> {
             if !right_now {
                 s.right_continued = false;
             }
+            s.hmi.block_breaking = breaking;
             s.hmi.last_haste = haste;
             s.hmi.last_fatigue = fatigue;
         });
@@ -492,18 +494,25 @@ impl Game<'_> {
 
         // Pre-cache filled map geometry in local map space (`Mat4::IDENTITY`) while we have `&mut self`.
         let vis = self.visible_hand_items();
-        let mut map_caches: [Option<(i32, Vec<Vertex>)>; 2] = [None, None];
-        for (slot_idx, maybe_stack) in vis.iter().enumerate() {
-            if let Some(stack) = maybe_stack
-                && let Some(map_id) = maps::map_id(stack)
-            {
-                let mut verts = Vec::new();
-                self.held_map(glam::Mat4::IDENTITY, map_id, 0xF0F0, &mut verts);
-                map_caches[slot_idx] = Some((map_id, verts));
-            }
-        }
         with_state(|s| {
-            s.cached_maps = map_caches;
+            for (slot_idx, maybe_stack) in vis.iter().enumerate() {
+                if let Some(stack) = maybe_stack
+                    && let Some(map_id) = maps::map_id(stack)
+                {
+                    if let Some((cached_id, ref mut verts)) = &mut s.cached_maps[slot_idx] {
+                        if *cached_id == map_id {
+                            verts.clear();
+                            self.held_map(glam::Mat4::IDENTITY, map_id, 0xF0F0, verts);
+                            continue;
+                        }
+                    }
+                    let mut verts = Vec::with_capacity(32);
+                    self.held_map(glam::Mat4::IDENTITY, map_id, 0xF0F0, &mut verts);
+                    s.cached_maps[slot_idx] = Some((map_id, verts));
+                } else {
+                    s.cached_maps[slot_idx] = None;
+                }
+            }
         });
     }
 
@@ -814,7 +823,7 @@ impl Game<'_> {
                     && after_item > before_item
                 {
                     let quad_count = (after_item - before_item) / 4;
-                    let mut outline_verts = Vec::with_capacity(after_item - before_item);
+                    out.reserve(after_item - before_item);
                     for q in 0..quad_count {
                         let base = before_item + q * 4;
                         let p0 = glam::Vec3::from_array(out[base].pos);
@@ -835,10 +844,9 @@ impl Game<'_> {
                             v.light = outline_light;
                             v.layer = crate::gfx::TRANSLUCENT_ITEM_OVERLAY;
                             v.normal = [0, 0, 0, 0];
-                            outline_verts.push(v);
+                            out.push(v);
                         }
                     }
-                    out.extend(outline_verts);
                 }
 
                 self.emit_hmi_particles(
@@ -867,13 +875,20 @@ impl Game<'_> {
     fn state_with_prop_opt(
         &self,
         state: horizon_world::registry::BlockStateId,
-        key: &str,
-        val: &str,
+        key: &'static str,
+        val: &'static str,
     ) -> Option<horizon_world::registry::BlockStateId> {
+        if let Some(cached) = with_state(|s| s.cached_prop_states.get(&(state.0, key, val)).copied()) {
+            return cached;
+        }
         let reg = self.pack.assets.registry;
         let mut s = reg.state(state)?.clone();
         s.properties.insert(key.to_owned(), val.to_owned());
-        reg.id(&s)
+        let res = reg.id(&s);
+        with_state(|st| {
+            st.cached_prop_states.insert((state.0, key, val), res);
+        });
+        res
     }
 
     fn submit_item_hmi(
@@ -930,63 +945,57 @@ impl Game<'_> {
         packed_light: u32,
         out: &mut Vec<Vertex>,
     ) {
-        let particles: Vec<HmiParticle> = with_state(|s| {
-            s.hmi
-                .particles
-                .iter()
-                .filter(|p| !p.dead && p.main_hand == main_hand && p.space == space)
-                .cloned()
-                .collect()
-        });
-        if particles.is_empty() {
-            return;
-        }
         let sprites = &self.gui.atlas.sprites;
-        for p in particles {
-            let Some(rect) = sprites.get(p.sprite).copied() else {
-                continue;
-            };
-            let local = view_space_parent
-                * glam::Mat4::from_translation(glam::Vec3::new(p.x, p.y, p.z))
-                * glam::Mat4::from_scale(glam::Vec3::splat(p.scale));
-            let (scale_vec, _, center_view) = local.to_scale_rotation_translation();
-            let half = match p.blend {
-                ParticleBlend::Additive => 0.12 * scale_vec.x.abs(),
-                ParticleBlend::Translucent => 0.14 * scale_vec.x.abs(),
-            };
-            let a_byte = match p.blend {
-                ParticleBlend::Additive => ((p.alpha * 0.35).clamp(0.0, 255.0) as u32) & 0xFF,
-                ParticleBlend::Translucent => (p.alpha.clamp(0.0, 255.0) as u32) & 0xFF,
-            };
-            let r = (p.tint_rgb >> 16) & 0xFF;
-            let g = (p.tint_rgb >> 8) & 0xFF;
-            let b = p.tint_rgb & 0xFF;
-            let color = (a_byte << 24) | (b << 16) | (g << 8) | r;
-            let light = if p.blend == ParticleBlend::Additive || p.sprite == "particle/firefly" {
-                vertex_light(0xFF)
-            } else {
-                packed_light
-            };
-            let corners = [
-                ([half, half, 0.0], [rect.u1, rect.v0]),
-                ([-half, half, 0.0], [rect.u0, rect.v0]),
-                ([-half, -half, 0.0], [rect.u0, rect.v1]),
-                ([half, -half, 0.0], [rect.u1, rect.v1]),
-            ];
-            for (offset, uv) in corners {
-                let pos_view = center_view + glam::Vec3::from_array(offset);
-                let pos_world = to_world.transform_point3(pos_view).to_array();
-                out.push(Vertex {
-                    normal: [0, 0, 127, 0],
-                    pos: pos_world,
-                    uv,
-                    layer: crate::gfx::TRANSLUCENT_ITEM_OVERLAY,
-                    color,
-                    light,
-                    glint_uv: [0.0, 0.0],
-                });
+        with_state(|s| {
+            for p in &s.hmi.particles {
+                if p.dead || p.main_hand != main_hand || p.space != space {
+                    continue;
+                }
+                let Some(rect) = sprites.get(p.sprite).copied() else {
+                    continue;
+                };
+                let local = view_space_parent
+                    * glam::Mat4::from_translation(glam::Vec3::new(p.x, p.y, p.z))
+                    * glam::Mat4::from_scale(glam::Vec3::splat(p.scale));
+                let (scale_vec, _, center_view) = local.to_scale_rotation_translation();
+                let half = match p.blend {
+                    ParticleBlend::Additive => 0.12 * scale_vec.x.abs(),
+                    ParticleBlend::Translucent => 0.14 * scale_vec.x.abs(),
+                };
+                let a_byte = match p.blend {
+                    ParticleBlend::Additive => ((p.alpha * 0.35).clamp(0.0, 255.0) as u32) & 0xFF,
+                    ParticleBlend::Translucent => (p.alpha.clamp(0.0, 255.0) as u32) & 0xFF,
+                };
+                let r = (p.tint_rgb >> 16) & 0xFF;
+                let g = (p.tint_rgb >> 8) & 0xFF;
+                let b = p.tint_rgb & 0xFF;
+                let color = (a_byte << 24) | (b << 16) | (g << 8) | r;
+                let light = if p.blend == ParticleBlend::Additive || p.sprite == "particle/firefly" {
+                    vertex_light(0xFF)
+                } else {
+                    packed_light
+                };
+                let corners = [
+                    ([half, half, 0.0], [rect.u1, rect.v0]),
+                    ([-half, half, 0.0], [rect.u0, rect.v0]),
+                    ([-half, -half, 0.0], [rect.u0, rect.v1]),
+                    ([half, -half, 0.0], [rect.u1, rect.v1]),
+                ];
+                for (offset, uv) in corners {
+                    let pos_view = center_view + glam::Vec3::from_array(offset);
+                    let pos_world = to_world.transform_point3(pos_view).to_array();
+                    out.push(Vertex {
+                        normal: [0, 0, 127, 0],
+                        pos: pos_world,
+                        uv,
+                        layer: crate::gfx::TRANSLUCENT_ITEM_OVERLAY,
+                        color,
+                        light,
+                        glint_uv: [0.0, 0.0],
+                    });
+                }
             }
-        }
+        });
     }
 
     /// `native_camera_shake`: applies HMI camera pitch/roll/offset feedback during eating, drinking, walking, and landing.

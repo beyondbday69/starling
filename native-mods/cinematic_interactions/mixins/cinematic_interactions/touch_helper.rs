@@ -45,6 +45,15 @@ fn cinematic_touch(
     static LAST_TAP_RIGHT: Mutex<Option<(Instant, (f32, f32))>> = Mutex::new(None);
 
     if !ci::controls() || game.screen != crate::game::Screen::Inventory || ci::walking(Instant::now()) {
+        let mut touches = TOUCHES.lock().unwrap();
+        if touches.iter().any(Option::is_some) {
+            *touches = EMPTY_TOUCHES;
+            *LAST_TAP_LEFT.lock().unwrap() = None;
+            *LAST_TAP_RIGHT.lock().unwrap() = None;
+            ci::set_lmb_held(false);
+            ci::set_rmb_held(false);
+            ci::set_rmb_dragging(false);
+        }
         return ::core::ops::ControlFlow::Continue(());
     }
 
