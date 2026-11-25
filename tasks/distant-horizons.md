@@ -31,10 +31,13 @@
   - Distant Generation: On / Off
   - Cave Culling: On / Off
   - Generation Shape: Circle / Square
+  - Rough Terrain First: On / Off
+  - Generation Lock: 128x128, 256x256, 512x512, 1024x1024
+  - Load Further: Off (Default) / On
   - Progress Bar: While Loading / Always / Off
   - Debug Detail Colors: On / Off
-- **Chat Commands & Autocompletion:** Supports `/dh` commands (`distance`, `quality`, `generation`, `caves`, `shape`, `bar`, `startgen`, `stopgen`, `debug`, `on|off`, `save`, `clear`) using Horizon's modern `chat_tree` and `native_commands`.
-- **Unit Tests:** 15/15 unit and engine integration tests passing (quadtree propagation, section meshing, LOD save/load, pre-generation queue/cancel, circle vs square shape filtering).
+- **Chat Commands & Autocompletion:** Supports `/dh` commands (`distance`, `quality`, `generation`, `caves`, `rough`, `lock`, `further`, `shape`, `bar`, `startgen`, `stopgen`, `debug`, `on|off`, `save`, `clear`) using Horizon's modern `chat_tree` and `native_commands`.
+- **Unit Tests:** 16/16 unit and engine integration tests passing (quadtree propagation, section meshing, LOD save/load, pre-generation queue/cancel, circle vs square shape filtering, rough terrain progressive generation and generation lock limits).
 
 ### 2.4. Shader Pack Support & Environmental Fog Scaling
 - **Uniform `far` / `detail_distance`:** In `game.rs:16107`, scaled `detail_distance` from near streaming radius `(self.streaming.radius * 16)` to the full LOD boundary `(self.terrain_distance() * 16) as f32`. Shader packs (e.g. Complementary Reimagined) using uniform `far` for atmospheric fog and depth reconstruction now shade distant LOD terrain across the full 1024m–2048m horizon without premature clipping or fog drowning.
@@ -53,6 +56,19 @@
 - **GenerationShape Enum:** Offers strictly 2 options (`GenerationShape::Circle` default, `GenerationShape::Square`).
 - **Euclidean SDF Filtering:** In `runtime.rs`, implemented `pos::euclidean_signed_block_distance` calculating exact box-to-point signed Euclidean distance from player coordinates to section bounding boxes. `DetailPlan::sections` and `walk` filter sections outside the radius, rendering a smooth circular perimeter for `Circle` and Chebyshev boundary for `Square`.
 - **Concentric Outward Pre-Generation (Zero Randomness):** `start_pregen` sorts unmeshed sections strictly by `closest_distance_to_player(s, px, pz)`. Worker threads generate sections in concentric waves expanding outward from the player's feet, completely eliminating erratic cross-quadrant jumping.
+
+### 2.7. Progressive Rough-First Generation & Generation Lock Bounds
+- **Rough Terrain First (16x Faster Silhouette Loading):**
+  - Implemented 2-pass progressive terrain sampling (`generate_rough_missing`).
+  - Pass 1 samples world generator columns on a coarse stride (4x4 columns, 256 samples/section vs 4096), broadcasting initial hill and mountain heights with `gen_step::ROUGH (2)`.
+  - Sections immediately mesh and upload to the GPU so mountains, valleys, and horizons render instantly.
+  - Pass 2 (`Job::Refine`) refines rough columns in the background to full `gen_step::SURFACE (5)` detail and updates the mesh seamlessly.
+- **Generation Lock & Load Further Control:**
+  - Configurable generation boundary lock: `128x128`, `256x256`, `512x512`, `1024x1024` chunks (default `128x128`).
+  - `Load Further` toggle (defaults to **OFF**).
+  - When `Load Further` is OFF, procedural distant generation and LOD plans are strictly clamped to the selected lock size.
+  - Enabling `Load Further` unlocks distant generation out to the full LOD render distance.
+  - Controllable via Settings menu buttons and `/dh rough [on|off]`, `/dh lock [128|256|512|1024]`, `/dh further [on|off]`.
 
 ---
 

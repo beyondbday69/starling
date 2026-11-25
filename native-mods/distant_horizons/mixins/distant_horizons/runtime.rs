@@ -240,6 +240,7 @@ pub mod full_point {
 pub mod gen_step {
     pub const DOWN_SAMPLED: i8 = -1;
     pub const EMPTY: i8 = 0;
+    pub const ROUGH: i8 = 2;
     pub const SURFACE: i8 = 5;
     pub const FEATURES: i8 = 8;
     pub const LIGHT: i8 = 9;
@@ -401,6 +402,16 @@ impl FullDataSource {
             .iter()
             .filter(|&&s| s == gen_step::EMPTY)
             .count()
+    }
+    /// Columns with only rough hill terrain (`ROUGH`), which the detailed generator may refine.
+    pub fn rough_columns(&self) -> usize {
+        self.gen_steps
+            .iter()
+            .filter(|&&s| s == gen_step::ROUGH)
+            .count()
+    }
+    pub fn has_rough_columns(&self) -> bool {
+        self.gen_steps.iter().any(|&s| s == gen_step::ROUGH)
     }
 
     /// `updateFromDataSource`: merges `input`, of this section, one of its
@@ -950,6 +961,99 @@ pub fn generate_missing(
     for x in 0..pos::WIDTH {
         for z in 0..pos::WIDTH {
             if source.gen_steps[index(x, z)] != gen_step::EMPTY {
+                continue;
+            }
+            runs.clear();
+            sampler.column(
+                base_x + x * width + width / 2,
+                base_z + z * width + width / 2,
+                &mut runs,
+            );
+            let column = column_from_runs(&mut source.mapping, &runs, min_build, max_build);
+            source.set_column(x, z, column, gen_step::SURFACE);
+            filled += 1;
+        }
+    }
+    filled
+}
+
+/// Rough distant hill terrain generation: samples a coarse grid (stride)
+/// and fills empty column blocks with rough surface data (`gen_step::ROUGH`).
+/// Runs 16x faster (stride 4) to populate surrounding hills and mountain silhouettes immediately.
+pub fn generate_rough_missing(
+    source: &mut FullDataSource,
+    sampler: &mut dyn ColumnSampler,
+    min_build: i32,
+    max_build: i32,
+    stride: usize,
+) -> usize {
+    let width = pos::data_width(source.pos);
+    let (base_x, base_z) = (
+        pos::min_corner_block_x(source.pos),
+        pos::min_corner_block_z(source.pos),
+    );
+    let mut runs = Vec::new();
+    let mut filled = 0;
+    let s = stride.max(1) as i32;
+    for gx in (0..pos::WIDTH).step_by(s as usize) {
+        for gz in (0..pos::WIDTH).step_by(s as usize) {
+            let has_empty = (0..s).any(|dx| {
+                (0..s).any(|dz| {
+                    let x = gx + dx;
+                    let z = gz + dz;
+                    x < pos::WIDTH
+                        && z < pos::WIDTH
+                        && source.gen_steps[index(x, z)] == gen_step::EMPTY
+                })
+            });
+            if !has_empty {
+                continue;
+            }
+            runs.clear();
+            let sample_x = (gx + s / 2).min(pos::WIDTH - 1);
+            let sample_z = (gz + s / 2).min(pos::WIDTH - 1);
+            sampler.column(
+                base_x + sample_x * width + width / 2,
+                base_z + sample_z * width + width / 2,
+                &mut runs,
+            );
+            let column = column_from_runs(&mut source.mapping, &runs, min_build, max_build);
+            for dx in 0..s {
+                for dz in 0..s {
+                    let x = gx + dx;
+                    let z = gz + dz;
+                    if x < pos::WIDTH
+                        && z < pos::WIDTH
+                        && source.gen_steps[index(x, z)] == gen_step::EMPTY
+                    {
+                        source.set_column(x, z, column.clone(), gen_step::ROUGH);
+                        filled += 1;
+                    }
+                }
+            }
+        }
+    }
+    filled
+}
+
+/// Refines rough terrain or missing columns to full detailed `SURFACE` level.
+pub fn generate_detailed_missing(
+    source: &mut FullDataSource,
+    sampler: &mut dyn ColumnSampler,
+    min_build: i32,
+    max_build: i32,
+) -> usize {
+    let width = pos::data_width(source.pos);
+    let (base_x, base_z) = (
+        pos::min_corner_block_x(source.pos),
+        pos::min_corner_block_z(source.pos),
+    );
+    let mut runs = Vec::new();
+    let mut filled = 0;
+    for x in 0..pos::WIDTH {
+        for z in 0..pos::WIDTH {
+            let step = source.gen_steps[index(x, z)];
+            if step != gen_step::EMPTY && step != gen_step::ROUGH {
                 continue;
             }
             runs.clear();
@@ -1992,10 +2096,18 @@ pub struct Settings {
     pub progress_bar: ProgressBarMode,
     /// Generation and LOD coverage shape around the player.
     pub shape: GenerationShape,
+    /// Progressive generation: rough hill terrain first, then detailed.
+    pub rough_terrain: bool,
+    /// Index into `LOCK_SIZES` (128, 256, 512, 1024 chunks).
+    pub lock_size_index: usize,
+    /// If false (default), generation is locked within lock_size. If true, allows loading further.
+    pub load_further: bool,
 }
 
 /// LOD render distances, in chunks (`lodChunkRenderDistanceRadius`).
 pub const DISTANCES: [i32; 5] = [64, 128, 256, 512, 1024];
+/// Generation lock sizes, in chunks (e.g. 128x128, 256x256, 512x512, 1024x1024).
+pub const LOCK_SIZES: [i32; 4] = [128, 256, 512, 1024];
 
 impl Default for Settings {
     fn default() -> Self {
@@ -2008,6 +2120,9 @@ impl Default for Settings {
             debug: false,
             progress_bar: ProgressBarMode::WhileLoading,
             shape: GenerationShape::Circle,
+            rough_terrain: true,
+            lock_size_index: 0,
+            load_further: false,
         }
     }
 }
@@ -2043,6 +2158,12 @@ impl Settings {
             Some("circle") => GenerationShape::Circle,
             _ => d.shape,
         };
+        let rough_terrain = flag("rough_terrain", d.rough_terrain);
+        let lock_size_index = get("lock")
+            .and_then(|v| v.trim().parse::<i32>().ok())
+            .and_then(|v| LOCK_SIZES.iter().position(|&s| s == v))
+            .unwrap_or(d.lock_size_index);
+        let load_further = flag("load_further", d.load_further);
         Self {
             enabled: flag("enabled", d.enabled),
             distance,
@@ -2052,6 +2173,9 @@ impl Settings {
             debug: flag("debug", d.debug),
             progress_bar,
             shape,
+            rough_terrain,
+            lock_size_index,
+            load_further,
         }
     }
     pub fn stored(&self) -> Vec<(&'static str, String)> {
@@ -2064,10 +2188,23 @@ impl Settings {
             ("debug", self.debug.to_string()),
             ("progress_bar", self.progress_bar.name().to_owned()),
             ("shape", self.shape.name().to_owned()),
+            ("rough_terrain", self.rough_terrain.to_string()),
+            ("lock", self.generation_lock_chunks().to_string()),
+            ("load_further", self.load_further.to_string()),
         ]
     }
     pub fn radius_chunks(&self) -> i32 {
         DISTANCES[self.distance]
+    }
+    pub fn generation_lock_chunks(&self) -> i32 {
+        LOCK_SIZES[self.lock_size_index]
+    }
+    pub fn effective_radius_chunks(&self) -> i32 {
+        if self.load_further {
+            self.radius_chunks()
+        } else {
+            self.radius_chunks().min(self.generation_lock_chunks())
+        }
     }
     pub fn labels(&self) -> Vec<String> {
         let on = |b: bool| if b { "ON" } else { "OFF" };
@@ -2077,6 +2214,13 @@ impl Settings {
             format!("Horizontal quality: {}", self.quality.label()),
             format!("Distant generation: {}", on(self.generation)),
             format!("Cave culling: {}", on(self.cave_culling)),
+            format!("Rough terrain first: {}", on(self.rough_terrain)),
+            format!(
+                "Generation lock: {}x{}",
+                self.generation_lock_chunks(),
+                self.generation_lock_chunks()
+            ),
+            format!("Load further: {}", on(self.load_further)),
             format!("Debug detail colours: {}", on(self.debug)),
             format!("Progress bar: {}", self.progress_bar.label()),
             format!("Generation shape: {}", self.shape.label()),
@@ -2095,15 +2239,18 @@ impl Settings {
             }
             3 => self.generation = !self.generation,
             4 => self.cave_culling = !self.cave_culling,
-            5 => self.debug = !self.debug,
-            6 => {
+            5 => self.rough_terrain = !self.rough_terrain,
+            6 => self.lock_size_index = (self.lock_size_index + 1) % LOCK_SIZES.len(),
+            7 => self.load_further = !self.load_further,
+            8 => self.debug = !self.debug,
+            9 => {
                 let i = ProgressBarMode::ALL
                     .iter()
                     .position(|&m| m == self.progress_bar)
                     .unwrap_or(0);
                 self.progress_bar = ProgressBarMode::ALL[(i + 1) % ProgressBarMode::ALL.len()];
             }
-            7 => {
+            10 => {
                 let i = GenerationShape::ALL
                     .iter()
                     .position(|&s| s == self.shape)
@@ -2174,6 +2321,37 @@ impl Settings {
                 }
                 Some(format!("{} {}", args[0], v))
             }
+            ["rough", v] => {
+                let on = match *v {
+                    "on" => true,
+                    "off" => false,
+                    _ => return None,
+                };
+                self.rough_terrain = on;
+                Some(format!("Rough terrain first: {}", if on { "ON" } else { "OFF" }))
+            }
+            ["lock", n] => {
+                let n: i32 = n.parse().ok()?;
+                let i = LOCK_SIZES
+                    .iter()
+                    .position(|&d| d >= n)
+                    .unwrap_or(LOCK_SIZES.len() - 1);
+                self.lock_size_index = i;
+                Some(format!(
+                    "Generation lock: {}x{}",
+                    self.generation_lock_chunks(),
+                    self.generation_lock_chunks()
+                ))
+            }
+            ["further", v] | ["loadfurther", v] => {
+                let on = match *v {
+                    "on" => true,
+                    "off" => false,
+                    _ => return None,
+                };
+                self.load_further = on;
+                Some(format!("Load further: {}", if on { "ON" } else { "OFF" }))
+            }
             _ => None,
         }
     }
@@ -2197,6 +2375,9 @@ pub const COMMANDS: &[(&str, &[&str])] = &[
     ("generation", &["on", "off"]),
     ("caves", &["on", "off"]),
     ("debug", &["on", "off"]),
+    ("rough", &["on", "off"]),
+    ("lock", &["128", "256", "512", "1024"]),
+    ("further", &["on", "off"]),
 ];
 
 /// `LodUtil.DEBUG_DETAIL_LEVEL_COLORS`, by data detail level.
@@ -2283,6 +2464,8 @@ pub mod engine {
         Chunk(u64),
         /// Load or generate a section, then mesh it.
         Section(i64),
+        /// Refine rough hill terrain to detailed blocks.
+        Refine(i64),
         /// Mesh a section again (its data or the near area changed).
         Mesh(i64),
         /// Merge a section's changed children into it
@@ -2318,6 +2501,8 @@ pub mod engine {
         /// Sections to load or generate, queued or being worked on: not
         /// queued twice, and meshed when done, so no `Mesh` job is needed.
         sections: HashSet<i64>,
+        /// Sections queued for detailed refinement after rough hill generation.
+        refines: HashSet<i64>,
         /// Sections queued to mesh again.
         meshes: HashSet<i64>,
         /// Sections queued to take their children's changes: which children
@@ -2339,6 +2524,9 @@ pub mod engine {
         pub generation: bool,
         pub debug: bool,
         pub shape: GenerationShape,
+        pub rough_terrain: bool,
+        pub generation_lock: i32,
+        pub load_further: bool,
     }
 
     /// Closest Euclidean distance from point (px, pz) to the bounding box of section `pos`.
@@ -2417,6 +2605,7 @@ pub mod engine {
                     heap: BinaryHeap::new(),
                     sequence: 0,
                     sections: HashSet::new(),
+                    refines: HashSet::new(),
                     meshes: HashSet::new(),
                     propagate: HashMap::new(),
                     chunks: HashMap::new(),
@@ -2701,11 +2890,25 @@ pub mod engine {
         pub fn start_pregen(&mut self) -> usize {
             let (px, pz) = (self.player[0], self.player[1]);
             *self.shared.wanted.lock().unwrap() = self.wanted.clone();
+            let settings = *self.shared.settings.lock().unwrap();
+            let lock_blocks = settings.generation_lock * 16;
             let mut unmeshed: Vec<i64> = self
                 .wanted
                 .iter()
                 .copied()
                 .filter(|s| !self.shown.contains(s) && !self.blank.contains(s))
+                .filter(|&s| {
+                    if settings.load_further {
+                        true
+                    } else {
+                        let cx = pos::center_block_x(s);
+                        let cz = pos::center_block_z(s);
+                        match settings.shape {
+                            GenerationShape::Circle => (cx as f64).hypot(cz as f64) <= lock_blocks as f64,
+                            GenerationShape::Square => cx.abs().max(cz.abs()) <= lock_blocks,
+                        }
+                    }
+                })
                 .collect();
             // Concentric sorting: closest to player first
             unmeshed.sort_by_key(|&s| closest_distance_to_player(s, px, pz));
@@ -2743,6 +2946,9 @@ pub mod engine {
                 match item.job {
                     Job::Section(s) => {
                         q.sections.remove(&s);
+                    }
+                    Job::Refine(s) => {
+                        q.refines.remove(&s);
                     }
                     _ => retained.push(item),
                 }
@@ -2784,6 +2990,7 @@ pub mod engine {
         let mut q = shared.queue.lock().unwrap();
         let duplicate = match job {
             Job::Section(s) => !q.sections.insert(s),
+            Job::Refine(s) => q.sections.contains(&s) || !q.refines.insert(s),
             Job::Mesh(s) => q.sections.contains(&s) || !q.meshes.insert(s),
             _ => false,
         };
@@ -2840,10 +3047,33 @@ pub mod engine {
                         _ => None,
                     };
                     if shared.wanted.lock().unwrap().contains(&s) {
-                        prepare(shared, s, generator);
+                        let rough = prepare(shared, s, generator);
                         mesh(shared, s);
+                        if rough {
+                            push(
+                                shared,
+                                Job::Refine(s),
+                                (1 << 19) | i64::from(pos::detail_level(s)),
+                            );
+                        }
                     }
                     shared.queue.lock().unwrap().sections.remove(&s);
+                }
+                Job::Refine(s) => {
+                    shared.queue.lock().unwrap().refines.remove(&s);
+                    let settings = *shared.settings.lock().unwrap();
+                    if settings.generation && sampler.is_none() {
+                        sampler = shared.host.sampler();
+                    }
+                    let generator = match &mut sampler {
+                        Some(s) if settings.generation => Some(&mut **s as &mut dyn ColumnSampler),
+                        _ => None,
+                    };
+                    if shared.wanted.lock().unwrap().contains(&s) {
+                        if prepare_detailed(shared, s, generator) {
+                            mesh(shared, s);
+                        }
+                    }
                 }
                 Job::Mesh(s) => {
                     shared.queue.lock().unwrap().meshes.remove(&s);
@@ -2976,7 +3206,12 @@ pub mod engine {
 
     /// Loads section `s`, then fills what it lacks: from its parent, scaled
     /// up, and from the generator when there is one.
-    fn prepare<H: Host>(shared: &Shared<H>, s: i64, generator: Option<&mut dyn ColumnSampler>) {
+    /// Returns true if the section was generated as rough hill terrain.
+    fn prepare<H: Host>(
+        shared: &Shared<H>,
+        s: i64,
+        generator: Option<&mut dyn ColumnSampler>,
+    ) -> bool {
         let blocks = shared.host.blocks();
         let (current, parent) = {
             let mut store = shared.store.lock().unwrap();
@@ -2988,17 +3223,47 @@ pub mod engine {
             (current, parent)
         };
         if current.missing_columns() == 0 {
-            return;
+            return false;
         }
+        let settings = *shared.settings.lock().unwrap();
         let mut updated = (*current).clone();
         let mut changed = false;
+        let mut is_rough = false;
+
+        // Check Generation Lock boundary
+        let allowed = if settings.load_further {
+            true
+        } else {
+            let lock_blocks = settings.generation_lock * 16;
+            let cx = pos::center_block_x(s);
+            let cz = pos::center_block_z(s);
+            match settings.shape {
+                GenerationShape::Circle => (cx as f64).hypot(cz as f64) <= lock_blocks as f64,
+                GenerationShape::Square => cx.abs().max(cz.abs()) <= lock_blocks,
+            }
+        };
+
         if let Some(generator) = generator {
-            let (min_y, max_y) = shared.host.build_height();
-            let mut generated = FullDataSource::empty(s);
-            generated.gen_steps = updated.gen_steps.clone();
-            if generate_missing(&mut generated, generator, min_y, max_y) > 0 {
-                shared.generated.fetch_add(1, Ordering::Relaxed);
-                changed |= updated.update_from(&generated, blocks);
+            if allowed {
+                let (min_y, max_y) = shared.host.build_height();
+                let mut generated = FullDataSource::empty(s);
+                generated.gen_steps = updated.gen_steps.clone();
+
+                if settings.rough_terrain {
+                    // Pass 1: fast rough hill terrain (stride 4, 16x faster)
+                    if generate_rough_missing(&mut generated, generator, min_y, max_y, 4) > 0 {
+                        shared.generated.fetch_add(1, Ordering::Relaxed);
+                        changed |= updated.update_from(&generated, blocks);
+                        is_rough = true;
+                    }
+                } else {
+                    if generate_missing(&mut generated, generator, min_y, max_y) > 0 {
+                        shared.generated.fetch_add(1, Ordering::Relaxed);
+                        changed |= updated.update_from(&generated, blocks);
+                    }
+                }
+            } else if let Some(parent) = parent {
+                changed |= updated.update_from(&parent, blocks);
             }
         } else if let Some(parent) = parent {
             changed |= updated.update_from(&parent, blocks);
@@ -3019,6 +3284,63 @@ pub mod engine {
                 apply(shared, s, &updated);
             }
         }
+        is_rough
+    }
+
+    /// Refines rough hill terrain in section `s` to full detailed surface blocks.
+    fn prepare_detailed<H: Host>(
+        shared: &Shared<H>,
+        s: i64,
+        generator: Option<&mut dyn ColumnSampler>,
+    ) -> bool {
+        let Some(generator) = generator else {
+            return false;
+        };
+        let blocks = shared.host.blocks();
+        let current = {
+            let mut store = shared.store.lock().unwrap();
+            section(shared, &mut store, s)
+        };
+        if !current.has_rough_columns() {
+            return false;
+        }
+        let settings = *shared.settings.lock().unwrap();
+        if !settings.load_further {
+            let lock_blocks = settings.generation_lock * 16;
+            let cx = pos::center_block_x(s);
+            let cz = pos::center_block_z(s);
+            let allowed = match settings.shape {
+                GenerationShape::Circle => (cx as f64).hypot(cz as f64) <= lock_blocks as f64,
+                GenerationShape::Square => cx.abs().max(cz.abs()) <= lock_blocks,
+            };
+            if !allowed {
+                return false;
+            }
+        }
+
+        let mut updated = (*current).clone();
+        let (min_y, max_y) = shared.host.build_height();
+        let mut generated = FullDataSource::empty(s);
+        generated.gen_steps = updated.gen_steps.clone();
+        if generate_detailed_missing(&mut generated, generator, min_y, max_y) > 0 {
+            shared.generated.fetch_add(1, Ordering::Relaxed);
+            if updated.update_from(&generated, blocks) {
+                let mut store = shared.store.lock().unwrap();
+                if store
+                    .sections
+                    .get(&s)
+                    .is_some_and(|n| Arc::ptr_eq(n, &current))
+                {
+                    store.sections.insert(s, Arc::new(updated));
+                    store.dirty.insert(s);
+                    return true;
+                } else {
+                    drop(store);
+                    return apply(shared, s, &updated);
+                }
+            }
+        }
+        false
     }
 
     fn mesh<H: Host>(shared: &Shared<H>, s: i64) {
@@ -3527,11 +3849,17 @@ mod tests {
         s.click(5);
         s.click(6);
         s.click(7);
+        s.click(8);
+        s.click(9);
+        s.click(10);
         let stored: std::collections::HashMap<_, _> = s.stored().into_iter().collect();
         let read = Settings::read(|k| stored.get(k).cloned());
         assert_eq!(read, s);
         assert_eq!(read.radius_chunks(), 512);
         assert_eq!(read.quality, HorizontalQuality::High);
+        assert!(!read.rough_terrain);
+        assert_eq!(read.generation_lock_chunks(), 256);
+        assert!(read.load_further);
         assert!(read.debug);
         assert_eq!(read.progress_bar, ProgressBarMode::Always);
         assert_eq!(read.shape, GenerationShape::Square);
@@ -3544,6 +3872,12 @@ mod tests {
         assert_eq!(c.progress_bar, ProgressBarMode::Off);
         assert!(c.command(&["shape", "square"]).is_some());
         assert_eq!(c.shape, GenerationShape::Square);
+        assert!(c.command(&["rough", "off"]).is_some());
+        assert!(!c.rough_terrain);
+        assert!(c.command(&["lock", "512"]).is_some());
+        assert_eq!(c.generation_lock_chunks(), 512);
+        assert!(c.command(&["further", "on"]).is_some());
+        assert!(c.load_further);
         assert!(c.command(&["nonsense"]).is_none());
     }
 
@@ -3577,6 +3911,32 @@ mod tests {
     }
 
     #[test]
+    fn rough_terrain_generation_and_lock_limits() {
+        let mut source = FullDataSource::empty(pos::encode(6, 0, 0));
+        let mut sampler = FakeSampler;
+        let filled = generate_rough_missing(&mut source, &mut sampler, -64, 320, 4);
+        assert_eq!(filled, COLUMNS);
+        assert_eq!(source.rough_columns(), COLUMNS);
+        assert!(source.has_rough_columns());
+
+        let refined = generate_detailed_missing(&mut source, &mut sampler, -64, 320);
+        assert_eq!(refined, COLUMNS);
+        assert_eq!(source.rough_columns(), 0);
+        assert_eq!(source.missing_columns(), 0);
+
+        let mut s = Settings::default();
+        assert_eq!(s.generation_lock_chunks(), 128);
+        assert!(!s.load_further);
+        assert_eq!(s.effective_radius_chunks(), 128);
+
+        s.distance = 3;
+        assert_eq!(s.effective_radius_chunks(), 128);
+
+        s.load_further = true;
+        assert_eq!(s.effective_radius_chunks(), 512);
+    }
+
+    #[test]
     fn pregen_queues_and_cancels_jobs() {
         let settings = engine::WorkSettings {
             render: RenderSettings {
@@ -3587,6 +3947,9 @@ mod tests {
             generation: true,
             debug: false,
             shape: GenerationShape::Circle,
+            rough_terrain: true,
+            generation_lock: 128,
+            load_further: true,
         };
         let mut e = engine::Engine::new(
             FakeHost { blocks: blocks() },
@@ -3647,6 +4010,9 @@ mod tests {
             generation: true,
             debug: false,
             shape: GenerationShape::Square,
+            rough_terrain: false,
+            generation_lock: 128,
+            load_further: true,
         };
         let dir = std::env::temp_dir().join(format!("dh-engine-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);

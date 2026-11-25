@@ -506,6 +506,9 @@ fn work_settings(game: &Game<'_>, settings: &Settings) -> WorkSettings {
         generation: settings.generation,
         debug: settings.debug,
         shape: settings.shape,
+        rough_terrain: settings.rough_terrain,
+        generation_lock: settings.generation_lock_chunks(),
+        load_further: settings.load_further,
     }
 }
 
@@ -616,7 +619,7 @@ pub(super) fn frame(game: &mut Game<'_>) {
     }
     let mut session = session.unwrap_or_else(|| start(game, key, &settings));
     session.engine.set_settings(work_settings(game, &settings));
-    RADIUS.set(settings.radius_chunks());
+    RADIUS.set(settings.effective_radius_chunks());
     let host = session.engine.host();
     if settings.generation
         && host.source.lock().unwrap().is_none()
@@ -640,7 +643,7 @@ pub(super) fn frame(game: &mut Game<'_>) {
         radius: game.streaming.radius,
         loaded: session.loaded.clone(),
     };
-    let plan = DetailPlan::new(settings.quality, settings.radius_chunks());
+    let plan = DetailPlan::new(settings.quality, settings.effective_radius_chunks());
     let (meshes, removed) = session.engine.update([player.x, player.z], plan, near);
     if let Some(renderer) = &mut game.renderer {
         let mut tiles = Vec::with_capacity(meshes.len());
@@ -808,7 +811,7 @@ pub(super) fn command(game: &mut Game<'_>, command: &str) -> bool {
                     *host.source.lock().unwrap() = generator(game);
                 }
                 let queued = session.engine.start_pregen();
-                Some((queued, settings.radius_chunks()))
+                Some((queued, settings.effective_radius_chunks()))
             });
             match res {
                 Some((queued, radius)) => format!(
