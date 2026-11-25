@@ -499,7 +499,7 @@ impl Game<'_> {
                 if let Some(stack) = maybe_stack
                     && let Some(map_id) = maps::map_id(stack)
                 {
-                    if let Some((cached_id, ref mut verts)) = &mut s.cached_maps[slot_idx] {
+                    if let Some((cached_id, verts)) = &mut s.cached_maps[slot_idx] {
                         if *cached_id == map_id {
                             verts.clear();
                             self.held_map(glam::Mat4::IDENTITY, map_id, 0xF0F0, verts);
