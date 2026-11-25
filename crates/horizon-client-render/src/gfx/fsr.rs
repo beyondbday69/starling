@@ -410,7 +410,7 @@ impl FsrPipeline {
             self.last_constants = Some(constants);
         }
 
-        let src_key = (src as *const wgpu::TextureView as usize, dst_size);
+        let src_key = (src as *const wgpu::TextureView as usize, size);
         if self
             .cached_rcas_standalone_bind_group
             .as_ref()
