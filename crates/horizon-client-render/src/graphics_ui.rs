@@ -568,7 +568,7 @@ pub fn rows() -> Vec<(Page, Vec<(&'static str, Vec<Setting>)>)> {
                     h(
                         H::ShaderUpscaling,
                         High,
-                        "Upscales shader packs using FSR 1.0 (EASU+RCAS), CAS, or Integer (Nearest). Off: native render resolution.",
+                        "Upscales shader packs using FSR 1.0 (EASU+RCAS), SGSR v1 (Snapdragon), CAS, or Integer (Nearest). Off: native render resolution.",
                     ),
                     h(
                         H::ShaderUpscaleMode,
@@ -1112,6 +1112,7 @@ impl H {
                 match g.shader_upscaling {
                     ShaderUpscaling::Off => lang::get("Off"),
                     ShaderUpscaling::Fsr => "FSR 1.0".to_string(),
+                    ShaderUpscaling::Sgsr => "SGSR v1 (Snapdragon)".to_string(),
                     ShaderUpscaling::Cas => "CAS".to_string(),
                     ShaderUpscaling::Integer => "Integer (Nearest)".to_string(),
                 },
@@ -1277,6 +1278,7 @@ impl H {
                     &[
                         ShaderUpscaling::Off,
                         ShaderUpscaling::Fsr,
+                        ShaderUpscaling::Sgsr,
                         ShaderUpscaling::Cas,
                         ShaderUpscaling::Integer,
                     ],
@@ -3287,6 +3289,13 @@ mod tests {
         let mut s = Settings::default();
         let upscaling = Item::Horizon(H::ShaderUpscaling);
         assert_eq!(upscaling.label(&s, &NONE).plain(), "Shader Upscaling: FSR 1.0");
+
+        upscaling.cycle(&mut s, false, [854, 480], &NONE);
+        assert_eq!(s.horizon.shader_upscaling, ShaderUpscaling::Sgsr);
+        assert_eq!(
+            upscaling.label(&s, &NONE).plain(),
+            "Shader Upscaling: SGSR v1 (Snapdragon)"
+        );
 
         upscaling.cycle(&mut s, false, [854, 480], &NONE);
         assert_eq!(s.horizon.shader_upscaling, ShaderUpscaling::Cas);

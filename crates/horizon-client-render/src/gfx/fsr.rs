@@ -17,6 +17,7 @@ pub struct FsrPipeline {
     pub easu_pipeline: wgpu::RenderPipeline,
     pub rcas_pipeline: wgpu::RenderPipeline,
     pub integer_pipeline: wgpu::RenderPipeline,
+    pub sgsr_pipeline: wgpu::RenderPipeline,
     pub bind_group_layout: wgpu::BindGroupLayout,
     pub sampler: wgpu::Sampler,
     pub uniform_buffer: wgpu::Buffer,
@@ -28,6 +29,7 @@ pub struct FsrPipeline {
     pub cached_rcas_bind_group: Option<wgpu::BindGroup>,
     pub cached_rcas_standalone_bind_group: Option<wgpu::BindGroup>,
     pub cached_integer_bind_group: Option<wgpu::BindGroup>,
+    pub cached_sgsr_bind_group: Option<wgpu::BindGroup>,
 }
 
 impl FsrPipeline {
@@ -157,6 +159,32 @@ impl FsrPipeline {
             cache: None,
         });
 
+        let sgsr_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("SGSR v1 Pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_fsr"),
+                compilation_options: Default::default(),
+                buffers: &[],
+            },
+            primitive: Default::default(),
+            depth_stencil: None,
+            multisample: Default::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_sgsr"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
+
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("FSR Linear Sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -180,6 +208,7 @@ impl FsrPipeline {
             easu_pipeline,
             rcas_pipeline,
             integer_pipeline,
+            sgsr_pipeline,
             bind_group_layout,
             sampler,
             uniform_buffer,
@@ -191,6 +220,7 @@ impl FsrPipeline {
             cached_rcas_bind_group: None,
             cached_rcas_standalone_bind_group: None,
             cached_integer_bind_group: None,
+            cached_sgsr_bind_group: None,
         }
     }
 
@@ -203,6 +233,7 @@ impl FsrPipeline {
         self.cached_rcas_bind_group = None;
         self.cached_rcas_standalone_bind_group = None;
         self.cached_integer_bind_group = None;
+        self.cached_sgsr_bind_group = None;
         self.intermediate_size = dst_size;
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("FSR intermediate target"),
@@ -465,6 +496,72 @@ impl FsrPipeline {
             ..Default::default()
         });
         rp.set_pipeline(&self.integer_pipeline);
+        rp.set_bind_group(0, bind_group, &[]);
+        rp.draw(0..3, 0..1);
+    }
+
+    /// Executes Qualcomm SGSR v1 single-pass spatial upscaling from `src` at `src_size`
+    /// directly to `dst` at `dst_size` without an intermediate render target.
+    #[allow(clippy::too_many_arguments)]
+    pub fn run_sgsr(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        src: &wgpu::TextureView,
+        dst: &wgpu::TextureView,
+        src_size: [u32; 2],
+        dst_size: [u32; 2],
+        sharpness: f32,
+    ) {
+        let constants = FsrConstants {
+            src_size: [src_size[0] as f32, src_size[1] as f32],
+            dst_size: [dst_size[0] as f32, dst_size[1] as f32],
+            sharpness: sharpness.clamp(0.0, 1.0),
+            _pad: 0.0,
+        };
+        if self.last_constants != Some(constants) {
+            queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&constants));
+            self.last_constants = Some(constants);
+        }
+
+        if self.cached_sgsr_bind_group.is_none() {
+            self.cached_sgsr_bind_group =
+                Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("SGSR v1 Bind Group"),
+                    layout: &self.bind_group_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: self.uniform_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::TextureView(src),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: wgpu::BindingResource::Sampler(&self.sampler),
+                        },
+                    ],
+                }));
+        }
+        let bind_group = self.cached_sgsr_bind_group.as_ref().unwrap();
+
+        let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("SGSR v1 Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: dst,
+                resolve_target: None,
+                depth_slice: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            ..Default::default()
+        });
+        rp.set_pipeline(&self.sgsr_pipeline);
         rp.set_bind_group(0, bind_group, &[]);
         rp.draw(0..3, 0..1);
     }

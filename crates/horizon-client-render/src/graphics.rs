@@ -586,13 +586,15 @@ pub enum ShaderUpscaling {
     Off,
     #[default]
     Fsr,
+    Sgsr,
     Cas,
     Integer,
 }
 impl ShaderUpscaling {
-    pub const ALL: [ShaderUpscaling; 4] = [
+    pub const ALL: [ShaderUpscaling; 5] = [
         ShaderUpscaling::Off,
         ShaderUpscaling::Fsr,
+        ShaderUpscaling::Sgsr,
         ShaderUpscaling::Cas,
         ShaderUpscaling::Integer,
     ];
@@ -600,6 +602,7 @@ impl ShaderUpscaling {
         match self {
             ShaderUpscaling::Off => "off",
             ShaderUpscaling::Fsr => "fsr",
+            ShaderUpscaling::Sgsr => "sgsr",
             ShaderUpscaling::Cas => "cas",
             ShaderUpscaling::Integer => "integer",
         }
@@ -608,6 +611,7 @@ impl ShaderUpscaling {
         match self {
             ShaderUpscaling::Off => "Off",
             ShaderUpscaling::Fsr => "FSR 1.0",
+            ShaderUpscaling::Sgsr => "SGSR v1 (Snapdragon)",
             ShaderUpscaling::Cas => "CAS",
             ShaderUpscaling::Integer => "Integer (Nearest)",
         }
@@ -616,6 +620,7 @@ impl ShaderUpscaling {
         match s.trim().to_ascii_lowercase().as_str() {
             "off" => ShaderUpscaling::Off,
             "fsr" | "fsr1" | "fsr1.0" => ShaderUpscaling::Fsr,
+            "sgsr" | "sgsr1" | "sgsrv1" => ShaderUpscaling::Sgsr,
             "cas" => ShaderUpscaling::Cas,
             "integer" | "nearest" => ShaderUpscaling::Integer,
             _ => ShaderUpscaling::default(),
@@ -2442,6 +2447,10 @@ mod tests {
         assert_eq!(
             Graphics::parse("shaderUpscaling:fsr\n").shader_upscaling,
             ShaderUpscaling::Fsr
+        );
+        assert_eq!(
+            Graphics::parse("shaderUpscaling:sgsr\n").shader_upscaling,
+            ShaderUpscaling::Sgsr
         );
         assert_eq!(
             Graphics::parse("shaderUpscaling:integer\n").shader_upscaling,

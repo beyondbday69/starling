@@ -358,3 +358,120 @@ fn fs_integer(in: VertexOutput) -> @location(0) vec4<f32> {
     let clamped = clamp(src_pos, vec2<i32>(0, 0), max(max_coord, vec2<i32>(0, 0)));
     return textureLoad(input_texture, clamped, 0);
 }
+
+/// Qualcomm SGSR v1 fast 2-lobe Lanczos polynomial kernel.
+/// Zero-crossings at d2 = 1.0 and d2 = 4.0 (clamped at 4.0).
+fn sgsr_fast_lanczos2(d2: f32) -> f32 {
+    var wA = d2 - 4.0;
+    let wB = d2 * wA - wA;
+    wA = wA * wA;
+    return wB * wA;
+}
+
+/// Evaluates SGSR v1 edge-directed weight for a tap at offset `off` relative to `pp`.
+fn sgsr_weight(
+    off: vec2<f32>,
+    pp: vec2<f32>,
+    dir: vec2<f32>,
+    edge_strength: f32,
+) -> f32 {
+    let delta = off - pp;
+    // Rotate/stretch along detected edge direction for crisp diagonal and straight lines
+    let proj = dot(delta, dir);
+    let perp = delta - dir * proj;
+    let stretch = mix(1.0, 0.5, edge_strength);
+    let scaled = dir * (proj * stretch) + perp * mix(1.0, 1.35, edge_strength);
+    let d2 = min(dot(scaled, scaled), 4.0);
+    return sgsr_fast_lanczos2(d2);
+}
+
+/// Qualcomm Snapdragon Game Super Resolution v1 (SGSR v1) single-pass spatial upscaler.
+/// Edge-directed 12-tap FastLanczos2 reconstruction + anti-ringing clamp in 1 pass,
+/// tuned for Adreno 7xx and Mali TBDR mobile GPUs.
+@fragment
+fn fs_sgsr(in: VertexOutput) -> @location(0) vec4<f32> {
+    let dst_pixel = in.position.xy;
+    let src_pos = (dst_pixel * constants.src_size) / constants.dst_size - vec2<f32>(0.5, 0.5);
+    let base = vec2<i32>(floor(src_pos));
+    let pp = src_pos - vec2<f32>(base);
+
+    // 12-tap neighborhood around base 2x2 quad:
+    //       b c
+    //     d e f g
+    //     h i j k
+    //       l m
+    let b = fetch_src(base + vec2<i32>(0, -1));
+    let c = fetch_src(base + vec2<i32>(1, -1));
+    let d = fetch_src(base + vec2<i32>(-1, 0));
+    let e = fetch_src(base + vec2<i32>(0, 0));
+    let f = fetch_src(base + vec2<i32>(1, 0));
+    let g = fetch_src(base + vec2<i32>(2, 0));
+    let h = fetch_src(base + vec2<i32>(-1, 1));
+    let i_tap = fetch_src(base + vec2<i32>(0, 1));
+    let j = fetch_src(base + vec2<i32>(1, 1));
+    let k = fetch_src(base + vec2<i32>(2, 1));
+    let l = fetch_src(base + vec2<i32>(0, 2));
+    let m = fetch_src(base + vec2<i32>(1, 2));
+
+    let b_l = fsr_luma(b.rgb);
+    let c_l = fsr_luma(c.rgb);
+    let d_l = fsr_luma(d.rgb);
+    let e_l = fsr_luma(e.rgb);
+    let f_l = fsr_luma(f.rgb);
+    let g_l = fsr_luma(g.rgb);
+    let h_l = fsr_luma(h.rgb);
+    let i_l = fsr_luma(i_tap.rgb);
+    let j_l = fsr_luma(j.rgb);
+    let k_l = fsr_luma(k.rgb);
+    let l_l = fsr_luma(l.rgb);
+    let m_l = fsr_luma(m.rgb);
+
+    // Edge gradient & direction analysis (SgsrEdgeDirection)
+    let gx = (f_l - d_l) + (j_l - h_l) + (g_l - e_l) + (k_l - i_l);
+    let gy = (i_l - b_l) + (j_l - c_l) + (l_l - e_l) + (m_l - f_l);
+    let grad_len = length(vec2<f32>(gx, gy));
+    // Edge direction is perpendicular to gradient
+    let dir = select(vec2<f32>(1.0, 0.0), vec2<f32>(-gy, gx) / grad_len, grad_len > 1e-4);
+
+    // Map sharpness [0, 1] -> SGSR EdgeSharpness [1.0, 2.5]
+    let edge_sharpness = mix(1.0, 2.5, clamp(constants.sharpness, 0.0, 1.0));
+    let edge_strength = clamp((grad_len - (8.0 / 255.0)) * edge_sharpness, 0.0, 1.0);
+
+    let wb = sgsr_weight(vec2<f32>(0.0, -1.0), pp, dir, edge_strength);
+    let wc = sgsr_weight(vec2<f32>(1.0, -1.0), pp, dir, edge_strength);
+    let wd = sgsr_weight(vec2<f32>(-1.0, 0.0), pp, dir, edge_strength);
+    let we = sgsr_weight(vec2<f32>(0.0, 0.0), pp, dir, edge_strength);
+    let wf = sgsr_weight(vec2<f32>(1.0, 0.0), pp, dir, edge_strength);
+    let wg = sgsr_weight(vec2<f32>(2.0, 0.0), pp, dir, edge_strength);
+    let wh = sgsr_weight(vec2<f32>(-1.0, 1.0), pp, dir, edge_strength);
+    let wi = sgsr_weight(vec2<f32>(0.0, 1.0), pp, dir, edge_strength);
+    let wj = sgsr_weight(vec2<f32>(1.0, 1.0), pp, dir, edge_strength);
+    let wk = sgsr_weight(vec2<f32>(2.0, 1.0), pp, dir, edge_strength);
+    let wl = sgsr_weight(vec2<f32>(0.0, 2.0), pp, dir, edge_strength);
+    let wm = sgsr_weight(vec2<f32>(1.0, 2.0), pp, dir, edge_strength);
+
+    let w_sum = wb + wc + wd + we + wf + wg + wh + wi + wj + wk + wl + wm;
+    let c_sum = b.rgb * wb
+        + c.rgb * wc
+        + d.rgb * wd
+        + e.rgb * we
+        + f.rgb * wf
+        + g.rgb * wg
+        + h.rgb * wh
+        + i_tap.rgb * wi
+        + j.rgb * wj
+        + k.rgb * wk
+        + l.rgb * wl
+        + m.rgb * wm;
+
+    var out_rgb = select(e.rgb, c_sum / w_sum, abs(w_sum) > 1e-5);
+
+    // Anti-ringing clamp against center 2x2 quad
+    let min_rgb = min(min(e.rgb, f.rgb), min(i_tap.rgb, j.rgb));
+    let max_rgb = max(max(e.rgb, f.rgb), max(i_tap.rgb, j.rgb));
+    out_rgb = clamp(out_rgb, min_rgb, max_rgb);
+
+    // Bilinear alpha from center 2x2 quad
+    let out_a = mix(mix(e.a, f.a, pp.x), mix(i_tap.a, j.a, pp.x), pp.y);
+    return vec4<f32>(max(out_rgb, vec3<f32>(0.0)), clamp(out_a, 0.0, 1.0));
+}

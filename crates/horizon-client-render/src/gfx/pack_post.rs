@@ -1314,6 +1314,7 @@ pub(super) fn set_shader_upscaling(upscaling: crate::graphics::ShaderUpscaling, 
         crate::graphics::ShaderUpscaling::Fsr => 1,
         crate::graphics::ShaderUpscaling::Cas => 2,
         crate::graphics::ShaderUpscaling::Integer => 3,
+        crate::graphics::ShaderUpscaling::Sgsr => 4,
     };
     SHADER_UPSCALING.store(mode, std::sync::atomic::Ordering::Relaxed);
     FSR_SHARPNESS.store(
@@ -1327,6 +1328,7 @@ pub(super) fn global_shader_upscaling() -> (crate::graphics::ShaderUpscaling, f3
         0 => crate::graphics::ShaderUpscaling::Off,
         2 => crate::graphics::ShaderUpscaling::Cas,
         3 => crate::graphics::ShaderUpscaling::Integer,
+        4 => crate::graphics::ShaderUpscaling::Sgsr,
         _ => crate::graphics::ShaderUpscaling::Fsr,
     };
     let sharpness = f32::from_bits(FSR_SHARPNESS.load(std::sync::atomic::Ordering::Relaxed));
@@ -5920,6 +5922,17 @@ impl PackPost {
                         size,
                         window,
                     );
+                } else if upscaling == crate::graphics::ShaderUpscaling::Sgsr && size != window {
+                    self.fsr.run_sgsr(
+                        device,
+                        queue,
+                        encoder,
+                        &targets.final_out.1,
+                        screen,
+                        size,
+                        window,
+                        sharpness,
+                    );
                 } else if upscaling != crate::graphics::ShaderUpscaling::Off && size != window {
                     self.fsr.run(
                         device,
@@ -5974,6 +5987,10 @@ impl PackPost {
             if upscaling == crate::graphics::ShaderUpscaling::Integer {
                 self.fsr
                     .run_integer(device, queue, encoder, colortex0, screen, size, window);
+            } else if upscaling == crate::graphics::ShaderUpscaling::Sgsr && size != window {
+                self.fsr.run_sgsr(
+                    device, queue, encoder, colortex0, screen, size, window, sharpness,
+                );
             } else if upscaling != crate::graphics::ShaderUpscaling::Off && size != window {
                 self.fsr.run(
                     device, queue, encoder, colortex0, screen, size, window, sharpness,
