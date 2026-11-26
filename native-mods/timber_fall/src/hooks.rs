@@ -14,7 +14,10 @@
 //! - the config file is parsed by the pure `TimberConfig::parse`, but the mod has no
 //!   file-read API here, so the adapter runs on defaults;
 //! - leaf loot uses fixed vanilla-style chances and a roll derived from the landing
-//!   position; Fortune and shears are not modelled.
+//!   position; Fortune and shears are not modelled;
+//! - FX plays sounds only: particles need a registered particle provider, which this mod
+//!   does not own, and vanilla block-state level events cannot be expressed from a
+//!   `BlockState` handle (no numeric state id is exposed).
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
@@ -22,9 +25,9 @@ use std::sync::{Mutex, MutexGuard};
 
 use mod_api::{
     BlockShapeKind, BlockState, BlockUpdateFlags, BreakBlockEvent, CameraShakeEvent, ClientHost,
-    EntityRef, Flow, Host, HostSide, Identifier, ItemStack, LevelRef, LevelTickPostEvent,
+    EntityRef, Flow, Hooks, Host, HostSide, Identifier, ItemStack, LevelRef, LevelTickPostEvent,
     LightCoords, ModelInstance, ModelRef, Overlay, PlayerBreakSpeedEvent, PlayerRef, ServerHost,
-    ServerStoppingEvent, SoundSource, SubmitCustomGeometryEvent, WorldDrawContext,
+    ServerStoppingEvent, SoundSource, SubmitCustomGeometryEvent,
 };
 
 use crate::chop::{ChopContext, ToolState, chop_speed_multiplier};
@@ -35,7 +38,7 @@ use crate::runtime::{
     FxEvent, StartFallOutcome, StartFallRequest, TickOutputs, TimberClientMirror,
     TimberWorldRuntime, TwoByTwoCutTracker,
 };
-use crate::scanner::{BlockKind, BlockPos, TreeSpecies, scan_tree};
+use crate::scanner::{BlockKind, BlockPos, BlockReader, TreeSpecies, scan_tree};
 
 /// Ticks between two break-speed scans of the same block.
 const BREAK_SPEED_CACHE_TICKS: i64 = 20;
@@ -402,8 +405,6 @@ impl TimberFallMod {
                 );
             }
             FxEvent::LeafBurstParticles { hinge, .. } => {
-                let at = [hinge.x, hinge.y + 3, hinge.z];
-                emit_block_particles(host, level, at, "minecraft:oak_leaves");
                 let _ = level.play_sound(
                     host,
                     "minecraft:block.grass.break",
@@ -422,11 +423,13 @@ impl TimberFallMod {
                     0.9,
                     0.8,
                 );
-                emit_block_particles(
+                let _ = level.play_sound(
                     host,
-                    level,
-                    [hinge.x, hinge.y, hinge.z],
-                    "minecraft:oak_log",
+                    "minecraft:block.wood.break",
+                    hinge_center(hinge),
+                    SoundSource::Blocks,
+                    0.7,
+                    0.5,
                 );
             }
         }
@@ -696,16 +699,6 @@ fn leaf_roll(at: [f64; 3], variant: u16, salt: u64) -> f32 {
 
 fn hinge_center(hinge: BlockPos) -> [f64; 3] {
     [hinge.x as f64 + 0.5, hinge.y as f64, hinge.z as f64 + 0.5]
-}
-
-fn emit_block_particles(host: &mut dyn ServerHost, level: LevelRef, at: [i32; 3], block: &str) {
-    let Some(block_key) = host.block_key(block) else {
-        return;
-    };
-    let Some(state) = host.block_state_id(block) else {
-        return;
-    };
-    let _ = level.block_event(host, at, block_key, 2001, state as i32);
 }
 
 /// The level's dimension name hashed to the runtime's opaque u64 key.

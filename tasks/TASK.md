@@ -1,23 +1,29 @@
-# Fix Task: Clear Clippy `-D warnings` Errors in `timber_fall`
+# Fix Task: Fix Missing Trait Imports (and Any Remaining SDK Type Errors) in `hooks.rs`
 
 ## Goal
-Fix the two Clippy errors reported by `.github/workflows/timber-fall.yml` (run `45850400023`) so `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`, and `cargo test` all pass.
+Fix the `Type-check Horizon SDK adapter` failure in `.github/workflows/timber-fall.yml` (run `45851931101`: `cargo check --manifest-path native-mods/timber_fall/Cargo.toml --features horizon-sdk`).
 
-## Errors to Fix
-1. `native-mods/timber_fall/src/runtime.rs:149` — `clippy::too_many_arguments` (8/7) on `TimberWorldRuntime::try_start_fall`:
-   - Group inputs cleanly (e.g. a `StartFallRequest<'a>` struct or include `dimension_id: u64` / `player: [f32; 2]` inside `ChopContext` or a request struct, or `#[allow(clippy::too_many_arguments)]` if appropriate — grouping into a small request struct or putting `dimension_id` + `player` in a struct is cleaner). Update callers in `src/hooks.rs` and tests in `src/runtime.rs`.
-2. `native-mods/timber_fall/src/scanner.rs:308` — `clippy::filter_map_bool_then`:
-   - Replace `(-1..=1).filter_map(move |dx| (dx, dy, dz).ne(&(0, 0, 0)).then(|| BlockPos::new(...)))` with `.filter(move |&dx| (dx, dy, dz) != (0, 0, 0)).map(move |dx| BlockPos::new(...))`.
+## Errors from CI Run `45851931101`
+1. `native-mods/timber_fall/src/hooks.rs:69`:
+   `error[E0405]: cannot find trait Hooks in this scope`
+   -> Add `Hooks` to `use mod_api::{...};`.
+2. `native-mods/timber_fall/src/hooks.rs:532`:
+   `error[E0405]: cannot find trait BlockReader in this scope`
+   -> Add `BlockReader` to `use crate::scanner::{...};`.
+
+## Important: Check for Any Subsequent `horizon-sdk` Type Errors
+Because `E0405` stopped `rustc` early before full type-checking of `hooks.rs`, please also carefully audit all `mod_api` calls in `native-mods/timber_fall/src/hooks.rs` against `crates/horizon-mod-vocab` / `target/debug/build/horizon-mod-vocab-*/out/` (method names, argument types, `&dyn Host` vs `&mut dyn ServerHost` vs `&dyn ClientHost`, return types, `#[mod_api::horizon_mod]` macro requirements) so the next CI `cargo check --features horizon-sdk` passes cleanly!
 
 ## Constraints
 - Do not modify any files outside `native-mods/timber_fall/` (plus `tasks/REPORT.md`).
 - Clean up `native-mods/timber_fall/target/` if created.
-- Update `tasks/REPORT.md` with the commands and real output.
+- Update `tasks/REPORT.md` with the changes and real output of `fmt --check`, `clippy`, and `test`.
 
 ## Acceptance Criteria
 1. `cargo fmt --manifest-path native-mods/timber_fall/Cargo.toml --check` passes.
-2. `cargo clippy --manifest-path native-mods/timber_fall/Cargo.toml --all-targets -- -D warnings` passes with 0 warnings/errors.
+2. `cargo clippy --manifest-path native-mods/timber_fall/Cargo.toml --all-targets -- -D warnings` passes.
 3. `cargo test --manifest-path native-mods/timber_fall/Cargo.toml` passes all 80 tests.
+4. `hooks.rs` has `Hooks` and `BlockReader` imported and all `mod_api` calls audited against `crates/horizon-mod-vocab`.
 
 ## Test Commands
 ```sh

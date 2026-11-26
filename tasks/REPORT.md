@@ -706,3 +706,65 @@ the run.
 ## Blockers
 
 None.
+
+---
+
+# Fix Report — `horizon-sdk` Imports and Full API Audit in `hooks.rs`
+
+## Files changed
+
+- `native-mods/timber_fall/src/hooks.rs`
+  - Added `Hooks` to the `mod_api` imports (the `impl Hooks` failed with E0405).
+  - Added `BlockReader` to the `crate::scanner` imports (the reader impl failed with E0405).
+  - Removed the particle emission from `play_fx`: it called
+    `LevelRef::block_event(2001, state as i32)`, but `BlockState` is a handle with a
+    process-local ordinal, not vanilla's numeric state id (E0605), and `block_event`
+    queues a block's `triggerEvent`, not a `Level2Event`. The API exposes no numeric state
+    id or public particle key, so FX now plays the verified sounds only, and the module
+    docs say particles need a registered particle provider.
+  - Removed the now-unused `WorldDrawContext` import.
+- `tasks/REPORT.md` (this section).
+
+`Cargo.lock` and every other file are unchanged; `target/` was removed after the runs.
+
+## API audit and real output
+
+The full SDK build was type-checked locally, reusing the root workspace's already-built
+`mod_vocab` artifacts (`CARGO_TARGET_DIR=/root/starling/target`) instead of rebuilding them
+in 1.9 GiB of RAM. The first pass downloaded one missing cached crate (`anyhow`); that
+touches only the Cargo cache, not the repo.
+
+```
+$ CARGO_TARGET_DIR=/root/starling/target cargo check --manifest-path native-mods/timber_fall/Cargo.toml --features horizon-sdk -j1
+    Checking timber_fall v0.1.0 (/root/starling/native-mods/timber_fall)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.52s
+
+$ cargo fmt --manifest-path native-mods/timber_fall/Cargo.toml --check
+fmt ok
+
+$ cargo clippy --manifest-path native-mods/timber_fall/Cargo.toml --all-targets -- -D warnings
+    Checking timber_fall v0.1.0 (/root/starling/native-mods/timber_fall)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.37s
+
+$ cargo test --manifest-path native-mods/timber_fall/Cargo.toml
+running 80 tests
+test result: ok. 80 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+Every `mod_api` call was checked against the generated host/trait signatures, including
+`level.dimension().id(host)`, `LevelRef::{block_state, set_block, block_shape, spawn_item,
+entities_in, game_time, play_sound}`, `PlayerRef::{level, selected_slot, inventory,
+is_creative, may_build, set_inventory_slot, add_exhaustion}`, `EntityRef::{position,
+is_crouching, hurt}`, `ItemKey::id`, `host.{block_key, block_state_id, block_state_string,
+item_key, max_damage}`, `HostSide::{Server, Client}`, and the render calls. The feature
+check now compiles with no warnings.
+
+## Untested
+
+- In-game behaviour remains unverified; only compilation and the pure-Rust tests were run.
+
+## Blockers
+
+None.
