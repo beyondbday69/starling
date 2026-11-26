@@ -1,0 +1,19 @@
+[package]
+name = "timber_fall"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Timber Fall: tree detection and configuration for the native Horizon mod."
+
+[lib]
+path = "src/lib.rs"
+
+# Standalone workspace: the core crate has no engine dependency, so its tests run without
+# a Horizon build. `horizon-sdk` adds the optional mod API for the in-game adapter.
+[workspace]
+
+[features]
+horizon-sdk = ["dep:horizon-mod-api"]
+
+[dependencies]
+horizon-mod-api = { path = "../../crates/horizon-mod-api", optional = true }

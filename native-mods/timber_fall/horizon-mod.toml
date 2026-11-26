@@ -1,0 +1,8 @@
+id = "timber_fall"
+name = "Timber Fall"
+version = "0.1.0"
+description = "Chop a tree's base and the whole tree tips over like a real one, then drops its logs where it lands."
+authors = []
+api = "0.2"
+side = "both"
+capabilities = ["registries"]
