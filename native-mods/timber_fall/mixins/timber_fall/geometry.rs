@@ -1,8 +1,10 @@
-// native_hooks::Game::native_submit_custom_geometry (a hook point): draws each active
-// falling tree as rotated model instances around its stump hinge.
-fn timber_fall_geometry(
-    game: &crate::game::Game<'_>,
-    draw: &mut horizon_client::world_geometry::WorldGeometry,
+// block_item_display_geometry (a hook point): draws every active falling tree's blocks as
+// rotated vanilla block models, without the standalone-model lookup.
+fn timber_fall_display_geometry(
+    game: &mut crate::game::Game<'_>,
+    camera: glam::DVec3,
+    partial: f64,
+    out: &mut Vec<horizon_client::mesher::Vertex>,
 ) {
-    game.timber_fall_geometry(draw);
+    game.timber_fall_render(camera, partial, out);
 }

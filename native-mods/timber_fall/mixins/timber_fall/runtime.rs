@@ -5,14 +5,13 @@
 // Everything here is self-contained: `horizon-mixins` copies this file into
 // `crates/horizon-client/src/game.rs`, so it may only use what the game crate itself has.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashSet, VecDeque};
 use std::sync::Mutex;
 
 use super::Game;
 use crate::items::{BlockLootRoll, ItemStack};
-use crate::mod_api::{
-    Identifier, LightCoords, ModelInstance, ModelRef, NativeMod, Overlay,
-};
+use crate::mod_api::NativeMod;
+use horizon_client::mesher::Vertex;
 use horizon_core::position::BlockPos;
 use horizon_world::registry::BlockStateId;
 use winit::keyboard::KeyCode;
@@ -353,7 +352,7 @@ impl Game<'_> {
         &mut self,
         pos: [i32; 3],
         state: BlockStateId,
-        _canceled: &mut bool,
+        canceled: &mut bool,
     ) {
         if self.remote.is_some() {
             return;
@@ -463,6 +462,10 @@ impl Game<'_> {
                 phase: Phase::Warning { since: now },
             });
         }
+        drop(s);
+        // The tree's blocks are gone and its drops come at the landing: vanilla must not
+        // also break and drop the cut log.
+        *canceled = true;
     }
 
     /// Advances every active tree: the warning lean, the fall, the impact and the break-up.
@@ -595,18 +598,19 @@ impl Game<'_> {
         }
     }
 
-    /// Draws every active tree in the current dimension as rotated model instances.
-    pub(super) fn timber_fall_geometry(
-        &self,
-        draw: &mut horizon_client::world_geometry::WorldGeometry,
+    /// Draws every active tree in the current dimension as rotating block models.
+    pub(super) fn timber_fall_render(
+        &mut self,
+        camera: glam::DVec3,
+        partial: f64,
+        out: &mut Vec<Vertex>,
     ) {
-        let now = self.world.game_time as f64 + self.clock.fraction();
+        let now = self.world.game_time as f64 + partial;
         let s = lock_state();
         if s.active.is_empty() {
             return;
         }
         let dimension = self.timber_fall_dimension_id();
-        let mut models: HashMap<BlockStateId, Option<ModelRef>> = HashMap::new();
         for tree in &s.active {
             if tree.dimension != dimension {
                 continue;
@@ -616,66 +620,36 @@ impl Game<'_> {
                     let progress = ((now - since) / WARNING_SECS).clamp(0.0, 1.0);
                     (1.0 + 2.0 * progress).to_radians()
                 }
-                Phase::Falling { angle, .. } | Phase::Impact { angle, .. } => angle,
+                Phase::Falling { angle, vel } => {
+                    // Advance inside the tick so the fall is smooth on any frame rate.
+                    angle + vel * partial * 0.05 * FALL_SPEED
+                }
+                Phase::Impact { angle, .. } => angle,
             };
-            let (sin, cos) = angle.sin_cos();
-            let t = 1.0 - cos;
-            let (dx, dz) = (tree.toward[0], tree.toward[2]);
-            let origin = [
+            let angle = angle as f32;
+            let toward = glam::Vec3::new(tree.toward[0] as f32, 0.0, tree.toward[2] as f32);
+            let axis = glam::Vec3::new(toward.z, 0.0, -toward.x);
+            let hinge = glam::DVec3::new(
                 tree.cut[0] as f64 + 0.5,
                 tree.cut[1] as f64,
                 tree.cut[2] as f64 + 0.5,
-            ];
+            );
+            let to_camera = (hinge - camera).as_vec3();
+            self.mark_entity(out.len(), "minecraft:falling_block");
             for (pos, state, _) in &tree.blocks {
-                let model = *models
-                    .entry(*state)
-                    .or_insert_with(|| self.timber_fall_model(*state));
-                let Some(model) = model else {
-                    continue;
-                };
-                let ox = pos.x as f64 - origin[0];
-                let oy = pos.y as f64 - origin[1];
-                let oz = pos.z as f64 - origin[2];
-                let rx = (cos + t * dz * dz) * ox + sin * dx * oy - t * dx * dz * oz;
-                let ry = -sin * dx * ox + cos * oy - sin * dz * oz;
-                let rz = -t * dx * dz * ox + sin * dz * oy + (cos + t * dx * dx) * oz;
-                let transform = [
-                    (cos + t * dz * dz) as f32,
-                    (sin * dx) as f32,
-                    (-t * dx * dz) as f32,
-                    rx as f32,
-                    (-sin * dx) as f32,
-                    cos as f32,
-                    (-sin * dz) as f32,
-                    ry as f32,
-                    (-t * dx * dz) as f32,
-                    (sin * dz) as f32,
-                    (cos + t * dx * dx) as f32,
-                    rz as f32,
-                ];
-                let instance = ModelInstance::new(
-                    origin,
-                    transform,
-                    0xFFFF_FFFF,
-                    LightCoords::FULL_BRIGHT,
-                    Overlay::NONE,
+                let light = self.world.light(pos.x, pos.y, pos.z);
+                let packed = (u32::from(light >> 4) * 16) | ((u32::from(light & 15) * 16) << 8);
+                let offset = glam::Vec3::new(
+                    pos.x as f32 - hinge.x as f32,
+                    pos.y as f32 - hinge.y as f32,
+                    pos.z as f32 - hinge.z as f32,
                 );
-                let _ = self.native_world_draw_model_instances(
-                    draw,
-                    model,
-                    std::slice::from_ref(&instance),
-                );
+                let matrix = glam::Mat4::from_translation(to_camera)
+                    * glam::Mat4::from_axis_angle(axis, angle)
+                    * glam::Mat4::from_translation(offset);
+                self.block_model_vertices(*state, 42, matrix, packed, true, out);
             }
         }
-    }
-
-    /// Resolves the block's model (`minecraft:block/<name>`) from the shared model store.
-    fn timber_fall_model(&self, state: BlockStateId) -> Option<ModelRef> {
-        let facts = self.res.facts().get(state);
-        let name = facts.name.to_string();
-        let path = name.strip_prefix("minecraft:").unwrap_or(&name);
-        let id = Identifier::parse(&format!("minecraft:block/{path}")).ok()?;
-        self.native_model(&id).ok()
     }
 }
 

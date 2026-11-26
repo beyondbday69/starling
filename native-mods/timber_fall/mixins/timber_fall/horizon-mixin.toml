@@ -67,9 +67,11 @@ bindings = [
 [[injection]]
 id = "geometry"
 kind = "HEAD"
-target = "horizon_client::game::native_hooks::Game<'_>::native_submit_custom_geometry"
+target = "horizon_client::game::Game<'_>::block_item_display_geometry"
 helper = "geometry.rs"
 bindings = [
-  { name = "game", ty = "&crate::game::Game<'_>", value = "self" },
-  { name = "draw", ty = "&mut horizon_client::world_geometry::WorldGeometry", value = "draw" },
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "camera", ty = "glam::DVec3", value = "camera" },
+  { name = "partial", ty = "f64", value = "partial" },
+  { name = "out", ty = "&mut Vec<horizon_client::mesher::Vertex>", value = "&mut *out" },
 ]

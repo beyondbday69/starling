@@ -982,3 +982,98 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 ## Blockers
 
 None.
+
+---
+
+# Fix Report — Real Falling-Tree Rendering via `block_model_vertices` + Cancel Vanilla Break
+
+## Root cause
+
+`timber_fall_model` resolved models with `self.native_model("minecraft:block/<name>")`,
+which only knows mod-registered standalone models; vanilla logs and leaves return
+`UnknownModel`, so `timber_fall_geometry` drew zero triangles. Also,
+`timber_fall_destroy_block` left `_canceled` untouched, so vanilla still broke and dropped
+the cut log.
+
+## Files changed
+
+- `native-mods/timber_fall/mixins/timber_fall/runtime.rs`
+  - Removed `timber_fall_geometry` + `timber_fall_model` and the `native_model`,
+    `ModelInstance`, `ModelRef`, `LightCoords`, `Overlay` and `Identifier` imports.
+  - Added `timber_fall_render(&mut self, camera: glam::DVec3, partial: f64,
+    out: &mut Vec<Vertex>)`:
+    - sub-tick angle: `Falling` advances `vel * partial * 0.05 * FALL_SPEED`, the warning
+      lean uses `game_time + partial`, impact holds its angle;
+    - `matrix = translation((hinge - camera).as_vec3()) * from_axis_angle(axis, angle) *
+      translation(block_offset)` with `axis = (dz, 0, -dx)` (right-hand rule tips +Y
+      toward the fall direction);
+    - `mark_entity(out.len(), "minecraft:falling_block")` once per tree, then
+      `self.block_model_vertices(state, 42, matrix, packed_light, true, out)` per block,
+      with the terrain-packed sky/block light at the block's position.
+  - `timber_fall_destroy_block` now takes `canceled: &mut bool` and sets
+    `*canceled = true` once the tree is cleared and queued. The fork's built-in
+    `fallingtrees_destroy_block` reads the world, sees the cleared log, and returns
+    without acting, so it does not double-handle the cut.
+- `native-mods/timber_fall/mixins/timber_fall/horizon-mixin.toml`
+  - The render injection is now `HEAD` of
+    `horizon_client::game::Game<'_>::block_item_display_geometry`, with bindings
+    `self`, `camera: glam::DVec3`, `partial: f64`,
+    `out: &mut Vec<horizon_client::mesher::Vertex>`.
+- `native-mods/timber_fall/mixins/timber_fall/geometry.rs`
+  - Now forwards to `timber_fall_render(camera, partial, out)`.
+- `tasks/REPORT.md` (this section).
+
+## Verified signatures and targets
+
+- `game/entities/text_displays.rs:264`:
+  `pub(super) fn block_item_display_geometry(&mut self, camera: glam::DVec3, partial: f64,
+  out: &mut Vec<Vertex>)` and it is called unconditionally from `game.rs:5743`, so a HEAD
+  injection runs every frame even with no text displays.
+- `block_model_vertices(&self, state: BlockStateId, seed: i64, m: glam::Mat4, light: u32,
+  diffuse: bool, out: &mut Vec<Vertex>)` (`game/entities/minecarts.rs:2545`), and
+  `mark_entity(&self, start: usize, name: &str)` (`game/interface/shader_packs.rs:880`).
+- `glam::Mat4::from_axis_angle(Vec3, f32)` is glam 0.30 and already used by the fork.
+- Light uses the fork's own formula:
+  `(u32::from(light >> 4) * 16) | ((u32::from(light & 15) * 16) << 8)`.
+- Running `native_mod_adapt.py`'s own `module_tree` and `relocate` over the repo leaves
+  all six targets unchanged, including
+  `horizon_client::game::Game<'_>::block_item_display_geometry`:
+  ```
+  ...::block_item_display_geometry -> ...::block_item_display_geometry
+  ```
+  so the geometry target relocates cleanly.
+
+## Commands and real output
+
+```sh
+cargo fmt --manifest-path native-mods/timber_fall/Cargo.toml --check
+cargo clippy --manifest-path native-mods/timber_fall/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path native-mods/timber_fall/Cargo.toml
+```
+
+```
+$ cargo fmt --check
+fmt ok
+
+$ cargo clippy … -- -D warnings
+    Checking timber_fall v0.1.0 (/root/starling/native-mods/timber_fall)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.37s
+
+$ cargo test …
+running 80 tests
+test result: ok. 80 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+`native-mods/timber_fall/target/` was removed after the run.
+
+## Untested
+
+- The APK build was not re-run on this machine, so the injected render call has not been
+  compiled or seen in game. The method, matrix, light and target were verified against
+  the fork's own calls and the adapter's relocation functions.
+
+## Blockers
+
+None.
