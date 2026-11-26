@@ -3634,7 +3634,7 @@ impl PackPost {
                 u
             },
             shadow_cache: Default::default(),
-    fsr: super::fsr::FsrPipeline::new(device, screen),
+            fsr: super::fsr::FsrPipeline::new(device, screen),
             shader_upscaling: None,
             fsr_sharpness: None,
         };
@@ -3706,7 +3706,6 @@ impl PackPost {
             .chain(&mut self.shadow_comp)
         {
             pass.reset_history();
-
         }
     }
 
@@ -5509,9 +5508,16 @@ impl PackPost {
             });
             self.water_mask_dirty = false;
         }
+        let (upscaling, sharpness) = self.upscaling();
+        let upscaling_on = upscaling != crate::graphics::ShaderUpscaling::Off;
+        let has_final = self.passes.iter().any(|p| p.group == Group::Final);
+        let will_fsr_upscale = has_final && upscaling_on && (size != window || sharpness > 0.0);
         // A resolution scale leaves the picture smaller (or larger) than the window: the pack's
         // `final` draws it at the picture's size, and one copy takes it to the window (#9291).
-        let final_view = if size != window && self.passes.iter().any(|p| p.group == Group::Final) {
+        // When FSR/SGSR/CAS/Integer handles the upscale, it reads `targets.final_out` directly,
+        // so `final_target` must stay `None` (otherwise the trailing `final_view` copy overwrites
+        // `screen` with an unrendered black texture).
+        let final_view = if size != window && has_final && !will_fsr_upscale {
             if self.final_target.as_ref().is_none_or(|t| t.size != size) {
                 let texture = device.create_texture(&wgpu::TextureDescriptor {
                     label: Some("Shader pack final"),

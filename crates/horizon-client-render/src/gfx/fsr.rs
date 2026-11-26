@@ -346,24 +346,25 @@ impl FsrPipeline {
                 .intermediate_target
                 .as_ref()
                 .expect("intermediate target allocated");
-            self.cached_rcas_bind_group = Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("FSR RCAS Bind Group"),
-                layout: &self.bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: self.uniform_buffer.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::TextureView(intermediate),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: wgpu::BindingResource::Sampler(&self.sampler),
-                    },
-                ],
-            }));
+            self.cached_rcas_bind_group =
+                Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("FSR RCAS Bind Group"),
+                    layout: &self.bind_group_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: self.uniform_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::TextureView(intermediate),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: wgpu::BindingResource::Sampler(&self.sampler),
+                        },
+                    ],
+                }));
         }
         let rcas_bind_group = self.cached_rcas_bind_group.as_ref().unwrap();
 
@@ -598,5 +599,199 @@ impl FsrPipeline {
         rp.set_pipeline(&self.sgsr_pipeline);
         rp.set_bind_group(0, bind_group, &[]);
         rp.draw(0..3, 0..1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gfx::test_gpu;
+
+    fn readback_rgba8(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        tex: &wgpu::Texture,
+        width: u32,
+        height: u32,
+    ) -> Vec<u8> {
+        let bytes_per_row = (width * 4).div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT)
+            * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+        let staging = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("fsr test readback"),
+            size: u64::from(bytes_per_row * height),
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("fsr test readback encoder"),
+        });
+        encoder.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo {
+                texture: tex,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &staging,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(bytes_per_row),
+                    rows_per_image: Some(height),
+                },
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+        queue.submit(Some(encoder.finish()));
+
+        let slice = staging.slice(..);
+        let (tx, rx) = std::sync::mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |res| {
+            let _ = tx.send(res);
+        });
+        let _ = device.poll(wgpu::PollType::wait_indefinitely());
+        rx.recv().unwrap().unwrap();
+
+        let data = slice.get_mapped_range();
+        let mut out = Vec::with_capacity((width * height * 4) as usize);
+        for row in 0..height {
+            let start = (row * bytes_per_row) as usize;
+            out.extend_from_slice(&data[start..start + (width * 4) as usize]);
+        }
+        drop(data);
+        staging.unmap();
+        out
+    }
+
+    #[test]
+    fn fsr_all_modes_produce_non_black_output_without_validation_errors() {
+        let _guard = test_gpu::lock();
+        let Some((_adapter, device, queue)) = test_gpu::optional_device() else {
+            return;
+        };
+
+        let format = wgpu::TextureFormat::Rgba8UnormSrgb;
+        let src_size = [2u32, 2u32];
+        let dst_size = [4u32, 4u32];
+
+        let src_tex = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("fsr test src"),
+            size: wgpu::Extent3d {
+                width: src_size[0],
+                height: src_size[1],
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let src_pixels: [u8; 16] = [
+            255, 64, 32, 255, 255, 64, 32, 255, 255, 64, 32, 255, 255, 64, 32, 255,
+        ];
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &src_tex,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &src_pixels,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(src_size[0] * 4),
+                rows_per_image: Some(src_size[1]),
+            },
+            wgpu::Extent3d {
+                width: src_size[0],
+                height: src_size[1],
+                depth_or_array_layers: 1,
+            },
+        );
+        let src_view = src_tex.create_view(&wgpu::TextureViewDescriptor::default());
+
+        let dst_tex = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("fsr test dst"),
+            size: wgpu::Extent3d {
+                width: dst_size[0],
+                height: dst_size[1],
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let dst_view = dst_tex.create_view(&wgpu::TextureViewDescriptor::default());
+
+        let mut fsr = FsrPipeline::new(&device, format);
+
+        for mode in ["fsr", "sgsr", "integer", "rcas"] {
+            device.push_error_scope(wgpu::ErrorFilter::Validation);
+            let mut encoder = device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some(mode) });
+            match mode {
+                "fsr" => fsr.run(
+                    &device,
+                    &queue,
+                    &mut encoder,
+                    &src_view,
+                    &dst_view,
+                    src_size,
+                    dst_size,
+                    0.5,
+                ),
+                "sgsr" => fsr.run_sgsr(
+                    &device,
+                    &queue,
+                    &mut encoder,
+                    &src_view,
+                    &dst_view,
+                    src_size,
+                    dst_size,
+                    0.5,
+                ),
+                "integer" => fsr.run_integer(
+                    &device,
+                    &queue,
+                    &mut encoder,
+                    &src_view,
+                    &dst_view,
+                    src_size,
+                    dst_size,
+                ),
+                "rcas" => fsr.run_rcas(
+                    &device,
+                    &queue,
+                    &mut encoder,
+                    &src_view,
+                    &dst_view,
+                    dst_size,
+                    0.5,
+                ),
+                _ => unreachable!(),
+            }
+            queue.submit(Some(encoder.finish()));
+            let err = pollster::block_on(device.pop_error_scope());
+            assert!(err.is_none(), "{mode} validation error: {err:?}");
+
+            let pixels = readback_rgba8(&device, &queue, &dst_tex, dst_size[0], dst_size[1]);
+            let has_non_black = pixels
+                .chunks_exact(4)
+                .any(|px| px[0] > 50 || px[1] > 10 || px[2] > 5);
+            assert!(
+                has_non_black,
+                "{mode} produced black/dark output: {:?}",
+                &pixels[..16]
+            );
+        }
     }
 }
