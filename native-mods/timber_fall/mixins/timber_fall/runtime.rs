@@ -272,7 +272,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     active: Vec::new(),
 });
 
-fn state() -> std::sync::MutexGuard<'static, State> {
+fn lock_state() -> std::sync::MutexGuard<'static, State> {
     STATE.lock().unwrap_or_else(|e| e.into_inner())
 }
 
@@ -286,7 +286,7 @@ impl Game<'_> {
     }
 
     fn timber_fall_settings_state(&self) -> Settings {
-        let mut s = state();
+        let mut s = lock_state();
         *s.settings
             .get_or_insert_with(|| Settings::read(|key| self.native_setting(ID, key)))
     }
@@ -308,7 +308,7 @@ impl Game<'_> {
         let mut settings = self.timber_fall_settings_state();
         settings.click(button);
         {
-            let mut s = state();
+            let mut s = lock_state();
             s.settings = Some(settings);
         }
         for (key, value) in settings.stored() {
@@ -448,7 +448,7 @@ impl Game<'_> {
         let now = self.world.game_time as f64 + self.clock.fraction();
         let axe = (settings.wear_axe && !self.creative).then_some(held_item);
         let logs = tree.logs.len() + 1;
-        let mut s = state();
+        let mut s = lock_state();
         if !s.active.iter().any(|t| t.cut == pos) {
             s.active.push(ActiveTree {
                 dimension: self.timber_fall_dimension_id().to_string(),
@@ -474,7 +474,7 @@ impl Game<'_> {
         let mut impacts = Vec::new();
         let mut landed = Vec::new();
         {
-            let mut s = state();
+            let mut s = lock_state();
             let mut i = 0;
             while i < s.active.len() {
                 let mut remove = false;
@@ -601,7 +601,7 @@ impl Game<'_> {
         draw: &mut horizon_client::world_geometry::WorldGeometry,
     ) {
         let now = self.world.game_time as f64 + self.clock.fraction();
-        let s = state();
+        let s = lock_state();
         if s.active.is_empty() {
             return;
         }

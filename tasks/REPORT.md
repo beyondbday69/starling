@@ -923,3 +923,62 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 ## Blockers
 
 None.
+
+---
+
+# Fix Report — `E0618`: `state` Parameter Shadowing the Lock Helper
+
+## Files changed
+
+- `native-mods/timber_fall/mixins/timber_fall/runtime.rs`
+  - Renamed `fn state()` to `fn lock_state()`.
+  - Updated all five call sites: `timber_fall_settings_state`, the settings click, the
+    destroy path, the tick path, and the geometry path.
+  - The `state: BlockStateId` parameters and locals keep their names; they now no longer
+    shadow the lock helper, so `let s = lock_state();` type-checks inside
+    `timber_fall_destroy_block`.
+- `tasks/REPORT.md` (this section).
+
+## Verification
+
+```sh
+grep -n '\bstate()\|fn state\|lock_state' native-mods/timber_fall/mixins/timber_fall/runtime.rs
+```
+
+shows only `fn lock_state()` and its five `lock_state()` calls; no bare `state()` call
+remains. (`timber_fall_settings_state()` is a different identifier and is untouched.)
+
+## Commands and real output
+
+```sh
+cargo fmt --manifest-path native-mods/timber_fall/Cargo.toml --check
+cargo clippy --manifest-path native-mods/timber_fall/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path native-mods/timber_fall/Cargo.toml
+```
+
+```
+$ cargo fmt --check
+fmt ok
+
+$ cargo clippy … -- -D warnings
+    Checking timber_fall v0.1.0 (/root/starling/native-mods/timber_fall)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.76s
+
+$ cargo test …
+running 80 tests
+test result: ok. 80 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+`native-mods/timber_fall/target/` was removed after the run.
+
+## Untested
+
+- The Android `horizon-mixins`/`horizon-client` build itself was not run on this machine;
+  the shadowing construct that caused E0618 is gone, but the APK build has not been
+  re-run locally.
+
+## Blockers
+
+None.
