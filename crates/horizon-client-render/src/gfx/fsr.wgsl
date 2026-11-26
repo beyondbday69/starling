@@ -36,18 +36,19 @@ fn fsr_luma(color: vec3<f32>) -> f32 {
     return color.g + 0.5 * (color.r + color.b);
 }
 
-/// Fetches a source texel at integer coordinates, clamping within [0, src_size - 1].
+/// Fetches a source texel at integer coordinates, clamping within [0, dims - 1] and sanitizing NaNs.
 fn fetch_src(coord: vec2<i32>) -> vec4<f32> {
-    let max_coord = vec2<i32>(constants.src_size) - vec2<i32>(1, 1);
-    let clamped = clamp(coord, vec2<i32>(0, 0), max(max_coord, vec2<i32>(0, 0)));
-    return textureLoad(input_texture, clamped, 0);
+    let dims = vec2<i32>(textureDimensions(input_texture));
+    let max_coord = max(dims - vec2<i32>(1, 1), vec2<i32>(0, 0));
+    let clamped = clamp(coord, vec2<i32>(0, 0), max_coord);
+    let c = textureLoad(input_texture, clamped, 0);
+    let safe_rgb = select(vec3<f32>(0.0), c.rgb, c.rgb == c.rgb);
+    return vec4<f32>(max(safe_rgb, vec3<f32>(0.0)), clamp(c.a, 0.0, 1.0));
 }
 
-/// Fetches an intermediate texel at integer coordinates for RCAS, clamping within [0, dst_size - 1].
+/// Fetches an intermediate texel at integer coordinates for RCAS, clamping within [0, dims - 1].
 fn fetch_rcas(coord: vec2<i32>) -> vec4<f32> {
-    let max_coord = vec2<i32>(constants.dst_size) - vec2<i32>(1, 1);
-    let clamped = clamp(coord, vec2<i32>(0, 0), max(max_coord, vec2<i32>(0, 0)));
-    return textureLoad(input_texture, clamped, 0);
+    return fetch_src(coord);
 }
 
 /// Evaluates a 2-lobed Lanczos-like reconstruction filter weight for a given tap offset.
@@ -80,9 +81,9 @@ fn easu_tap_weight(
 /// Performs 12-tap edge-adaptive spatial reconstruction using directional gradient analysis.
 @fragment
 fn fs_easu(in: VertexOutput) -> @location(0) vec4<f32> {
-    // Map current fragment position to input texture pixel coordinates
-    let dst_pixel = in.position.xy;
-    let src_pos = (dst_pixel * constants.src_size) / constants.dst_size - vec2<f32>(0.5, 0.5);
+    // Map current UV to input texture pixel coordinates
+    let src_dims = vec2<f32>(textureDimensions(input_texture));
+    let src_pos = in.uv * src_dims - vec2<f32>(0.5, 0.5);
     let base = vec2<i32>(floor(src_pos));
     let pp = src_pos - vec2<f32>(base);
 
@@ -390,8 +391,8 @@ fn sgsr_weight(
 /// tuned for Adreno 7xx and Mali TBDR mobile GPUs.
 @fragment
 fn fs_sgsr(in: VertexOutput) -> @location(0) vec4<f32> {
-    let dst_pixel = in.position.xy;
-    let src_pos = (dst_pixel * constants.src_size) / constants.dst_size - vec2<f32>(0.5, 0.5);
+    let src_dims = vec2<f32>(textureDimensions(input_texture));
+    let src_pos = in.uv * src_dims - vec2<f32>(0.5, 0.5);
     let base = vec2<i32>(floor(src_pos));
     let pp = src_pos - vec2<f32>(base);
 

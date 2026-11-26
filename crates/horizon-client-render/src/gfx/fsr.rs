@@ -25,11 +25,11 @@ pub struct FsrPipeline {
     pub intermediate_target: Option<wgpu::TextureView>,
     pub intermediate_size: [u32; 2],
     pub last_constants: Option<FsrConstants>,
-    pub cached_easu_bind_group: Option<(usize, [u32; 2], wgpu::BindGroup)>,
+    pub cached_easu_bind_group: Option<(wgpu::TextureView, [u32; 2], wgpu::BindGroup)>,
     pub cached_rcas_bind_group: Option<wgpu::BindGroup>,
-    pub cached_rcas_standalone_bind_group: Option<(usize, [u32; 2], wgpu::BindGroup)>,
-    pub cached_integer_bind_group: Option<(usize, [u32; 2], wgpu::BindGroup)>,
-    pub cached_sgsr_bind_group: Option<(usize, [u32; 2], wgpu::BindGroup)>,
+    pub cached_rcas_standalone_bind_group: Option<(wgpu::TextureView, [u32; 2], wgpu::BindGroup)>,
+    pub cached_integer_bind_group: Option<(wgpu::TextureView, [u32; 2], wgpu::BindGroup)>,
+    pub cached_sgsr_bind_group: Option<(wgpu::TextureView, [u32; 2], wgpu::BindGroup)>,
 }
 
 impl FsrPipeline {
@@ -291,15 +291,14 @@ impl FsrPipeline {
         }
 
         // Pass 1: EASU (src -> intermediate)
-        let src_key = (src as *const wgpu::TextureView as usize, src_size);
         if self
             .cached_easu_bind_group
             .as_ref()
-            .is_none_or(|(k, s, _)| (*k, *s) != src_key)
+            .is_none_or(|(v, s, _)| v != src || *s != src_size)
         {
             self.cached_easu_bind_group = Some((
-                src_key.0,
-                src_key.1,
+                src.clone(),
+                src_size,
                 device.create_bind_group(&wgpu::BindGroupDescriptor {
                     label: Some("FSR EASU Bind Group"),
                     layout: &self.bind_group_layout,
@@ -410,15 +409,14 @@ impl FsrPipeline {
             self.last_constants = Some(constants);
         }
 
-        let src_key = (src as *const wgpu::TextureView as usize, size);
         if self
             .cached_rcas_standalone_bind_group
             .as_ref()
-            .is_none_or(|(k, s, _)| (*k, *s) != src_key)
+            .is_none_or(|(v, s, _)| v != src || *s != size)
         {
             self.cached_rcas_standalone_bind_group = Some((
-                src_key.0,
-                src_key.1,
+                src.clone(),
+                size,
                 device.create_bind_group(&wgpu::BindGroupDescriptor {
                     label: Some("FSR RCAS Standalone Bind Group"),
                     layout: &self.bind_group_layout,
@@ -481,15 +479,14 @@ impl FsrPipeline {
             self.last_constants = Some(constants);
         }
 
-        let src_key = (src as *const wgpu::TextureView as usize, src_size);
         if self
             .cached_integer_bind_group
             .as_ref()
-            .is_none_or(|(k, s, _)| (*k, *s) != src_key)
+            .is_none_or(|(v, s, _)| v != src || *s != src_size)
         {
             self.cached_integer_bind_group = Some((
-                src_key.0,
-                src_key.1,
+                src.clone(),
+                src_size,
                 device.create_bind_group(&wgpu::BindGroupDescriptor {
                     label: Some("Shader Integer Scaling Bind Group"),
                     layout: &self.bind_group_layout,
@@ -555,15 +552,14 @@ impl FsrPipeline {
             self.last_constants = Some(constants);
         }
 
-        let src_key = (src as *const wgpu::TextureView as usize, src_size);
         if self
             .cached_sgsr_bind_group
             .as_ref()
-            .is_none_or(|(k, s, _)| (*k, *s) != src_key)
+            .is_none_or(|(v, s, _)| v != src || *s != src_size)
         {
             self.cached_sgsr_bind_group = Some((
-                src_key.0,
-                src_key.1,
+                src.clone(),
+                src_size,
                 device.create_bind_group(&wgpu::BindGroupDescriptor {
                     label: Some("SGSR v1 Bind Group"),
                     layout: &self.bind_group_layout,

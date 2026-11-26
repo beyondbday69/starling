@@ -5849,7 +5849,7 @@ impl PackPost {
             // A pass writing buffers of a size of their own draws at that size (they share it).
             // `final` draws the picture at the world's size; a copy takes it to the window.
             let out = match pass.writes.first() {
-                _ if final_pass && !needs_upscale => window,
+                _ if final_pass && final_view.is_none() && !needs_upscale => window,
                 _ if final_pass => size,
                 Some(&(_, b)) => self.targets.as_ref().map_or(size, |t| t.sizes[b]),
                 None => size,
