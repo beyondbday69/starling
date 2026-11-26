@@ -41,3 +41,16 @@ jobs:
 
       - name: Type-check Horizon SDK adapter
         run: cargo +stable check --manifest-path native-mods/timber_fall/Cargo.toml --features horizon-sdk
+
+      - name: Build cargo-horizon-mod and pack .hmod
+        run: |
+          cargo +stable build -p cargo-horizon-mod
+          (cd native-mods/timber_fall && "$GITHUB_WORKSPACE/target/debug/cargo-horizon-mod" build)
+          ls -lh native-mods/timber_fall/target/horizon-mod/timber_fall.hmod
+
+      - name: Upload timber_fall.hmod
+        uses: actions/upload-artifact@v4
+        with:
+          name: timber_fall-hmod
+          path: native-mods/timber_fall/target/horizon-mod/timber_fall.hmod
+          if-no-files-found: error
