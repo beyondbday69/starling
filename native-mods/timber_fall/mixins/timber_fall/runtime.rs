@@ -1,9 +1,9 @@
-//! Timber Fall for Horizon (native mixin runtime): a log cut with an axe takes the whole
-//! tree down. The tree is cleared in the cut's tick, tips around its stump hinge with the
-//! pole equation, stops on solid ground, and its blocks drop at the stump a second later.
-//!
-//! Everything here is self-contained: `horizon-mixins` copies this file into
-//! `crates/horizon-client/src/game.rs`, so it may only use what the game crate itself has.
+// Timber Fall for Horizon (native mixin runtime): a log cut with an axe takes the whole
+// tree down. The tree is cleared in the cut's tick, tips around its stump hinge with the
+// pole equation, stops on solid ground, and its blocks drop at the stump a second later.
+//
+// Everything here is self-contained: `horizon-mixins` copies this file into
+// `crates/horizon-client/src/game.rs`, so it may only use what the game crate itself has.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Mutex;

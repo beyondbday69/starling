@@ -867,3 +867,59 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 ## Blockers
 
 None.
+
+---
+
+# Fix Report — `horizon-mixins` `E_MODULE` (file attributes in the mixin module)
+
+## Files changed
+
+- `native-mods/timber_fall/mixins/timber_fall/runtime.rs`
+  - The six leading `//!` lines were changed to plain `//` comments. `syn::File::attrs`
+    reads inner doc comments as file attributes, and `horizon-mixins` refuses a module
+    source with file attributes (`support module source cannot have file attributes or a
+    shebang`).
+  - No `#![...]` attribute was present in this file.
+- `tasks/REPORT.md` (this section).
+
+## Verification
+
+```sh
+grep -rn '^//!\|^#!\[' native-mods/timber_fall/mixins/timber_fall/
+```
+
+printed nothing, so none of the eight mixin files has an inner attribute or doc comment.
+
+## Commands and real output
+
+```sh
+cargo fmt --manifest-path native-mods/timber_fall/Cargo.toml --check
+cargo clippy --manifest-path native-mods/timber_fall/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path native-mods/timber_fall/Cargo.toml
+```
+
+```
+$ cargo fmt --check
+fmt ok
+
+$ cargo clippy … -- -D warnings
+    Checking timber_fall v0.1.0 (/root/starling/native-mods/timber_fall)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.63s
+
+$ cargo test …
+running 80 tests
+test result: ok. 80 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+`native-mods/timber_fall/target/` was removed after the run.
+
+## Untested
+
+- The Android `horizon-mixins` pipeline itself was not run here; this change removes the
+  exact construct that produced `E_MODULE`, but the APK build has not been re-run locally.
+
+## Blockers
+
+None.
