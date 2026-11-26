@@ -32,8 +32,8 @@ use crate::config::TimberConfig;
 use crate::drops::DropPlan;
 use crate::impact::{CollisionGrid, impact_damage};
 use crate::runtime::{
-    FxEvent, StartFallOutcome, TickOutputs, TimberClientMirror, TimberWorldRuntime,
-    TwoByTwoCutTracker,
+    FxEvent, StartFallOutcome, StartFallRequest, TickOutputs, TimberClientMirror,
+    TimberWorldRuntime, TwoByTwoCutTracker,
 };
 use crate::scanner::{BlockKind, BlockPos, TreeSpecies, scan_tree};
 
@@ -161,15 +161,15 @@ impl Hooks for TimberFallMod {
                 level,
                 names: &names,
             };
-            self.runtime().try_start_fall(
-                &reader,
-                &cuts,
-                &ctx,
-                &config,
-                &[],
+            self.runtime().try_start_fall(StartFallRequest {
+                world: &reader,
+                cuts: &cuts,
+                ctx: &ctx,
+                config: &config,
+                wear_rolls: &[],
                 dimension_id,
-                [player_pos[0] as f32, player_pos[2] as f32],
-            )
+                player: [player_pos[0] as f32, player_pos[2] as f32],
+            })
         };
 
         let StartFallOutcome::FellTree {

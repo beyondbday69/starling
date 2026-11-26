@@ -110,6 +110,18 @@ pub const CAMERA_SHAKE_DECAY_SECS: f32 = 0.5;
 /// A log stack's cap when the caller does not name one.
 pub const DEFAULT_MAX_STACK_SIZE: u32 = 64;
 
+/// Everything one cut needs to decide on and start a fall.
+pub struct StartFallRequest<'a> {
+    pub world: &'a dyn BlockReader,
+    pub cuts: &'a [BlockPos],
+    pub ctx: &'a ChopContext,
+    pub config: &'a TimberConfig,
+    pub wear_rolls: &'a [f32],
+    pub dimension_id: u64,
+    /// The cutter's horizontal position; the tree tips away from it.
+    pub player: [f32; 2],
+}
+
 /// The mod's state on one side of the game.
 #[derive(Debug)]
 pub struct TimberWorldRuntime {
@@ -144,21 +156,10 @@ impl TimberWorldRuntime {
     }
 
     /// Scans the cut, decides whether it may fell the tree, and starts the fall.
-    ///
-    /// `player` is the cutter's horizontal position; the tree tips away from it.
-    pub fn try_start_fall(
-        &mut self,
-        world: &dyn BlockReader,
-        cuts: &[BlockPos],
-        ctx: &ChopContext,
-        config: &TimberConfig,
-        wear_rolls: &[f32],
-        dimension_id: u64,
-        player: [f32; 2],
-    ) -> StartFallOutcome {
-        let config = config.sanitized();
-        let scan = scan_tree_with_cuts(world, cuts, &config);
-        match decide_chop(ctx, &scan, &config, wear_rolls) {
+    pub fn try_start_fall(&mut self, request: StartFallRequest<'_>) -> StartFallOutcome {
+        let config = request.config.sanitized();
+        let scan = scan_tree_with_cuts(request.world, request.cuts, &config);
+        match decide_chop(request.ctx, &scan, &config, request.wear_rolls) {
             ChopDecision::VanillaSingleBlock { reason } => {
                 StartFallOutcome::VanillaSingleBlock { reason }
             }
@@ -175,7 +176,7 @@ impl TimberWorldRuntime {
                         };
                     }
                 };
-                let hinge = match cuts.first() {
+                let hinge = match request.cuts.first() {
                     Some(&cut) => cut,
                     None => {
                         return StartFallOutcome::VanillaSingleBlock {
@@ -183,7 +184,13 @@ impl TimberWorldRuntime {
                         };
                     }
                 };
-                let id = self.add_tree(&scanned, hinge, dimension_id, player, &config);
+                let id = self.add_tree(
+                    &scanned,
+                    hinge,
+                    request.dimension_id,
+                    request.player,
+                    &config,
+                );
                 StartFallOutcome::FellTree {
                     tree_id: id,
                     blocks_to_remove: removal_plan(&scanned),
@@ -706,15 +713,15 @@ mod tests {
         hinge: BlockPos,
         dimension_id: u64,
     ) -> ActiveTreeId {
-        match runtime.try_start_fall(
+        match runtime.try_start_fall(StartFallRequest {
             world,
-            &[hinge],
-            &cutter(),
-            &TimberConfig::default(),
-            &[],
+            cuts: &[hinge],
+            ctx: &cutter(),
+            config: &TimberConfig::default(),
+            wear_rolls: &[],
             dimension_id,
-            [-3.5, 0.5],
-        ) {
+            player: [-3.5, 0.5],
+        }) {
             StartFallOutcome::FellTree { tree_id, .. } => tree_id,
             other => panic!("expected the tree to fall, got {other:?}"),
         }
@@ -730,15 +737,15 @@ mod tests {
         let leaves = oak(pos(0, 0, 0), &mut world);
         let mut runtime = TimberWorldRuntime::default();
 
-        let outcome = runtime.try_start_fall(
-            &world,
-            &[pos(0, 0, 0)],
-            &cutter(),
-            &TimberConfig::default(),
-            &[],
-            DIMENSION,
-            [-3.5, 0.5],
-        );
+        let outcome = runtime.try_start_fall(StartFallRequest {
+            world: &world,
+            cuts: &[pos(0, 0, 0)],
+            ctx: &cutter(),
+            config: &TimberConfig::default(),
+            wear_rolls: &[],
+            dimension_id: DIMENSION,
+            player: [-3.5, 0.5],
+        });
 
         let mut expected: Vec<BlockPos> = (0..5).map(|y| pos(0, y, 0)).collect();
         expected.extend(leaves);
@@ -790,15 +797,15 @@ mod tests {
         }
         let mut runtime = TimberWorldRuntime::default();
 
-        let outcome = runtime.try_start_fall(
-            &world,
-            &[pos(0, 0, 0)],
-            &cutter(),
-            &TimberConfig::default(),
-            &[],
-            DIMENSION,
-            [-3.5, 0.5],
-        );
+        let outcome = runtime.try_start_fall(StartFallRequest {
+            world: &world,
+            cuts: &[pos(0, 0, 0)],
+            ctx: &cutter(),
+            config: &TimberConfig::default(),
+            wear_rolls: &[],
+            dimension_id: DIMENSION,
+            player: [-3.5, 0.5],
+        });
 
         assert_eq!(
             outcome,
@@ -935,15 +942,15 @@ mod tests {
             ..TimberConfig::default()
         };
         let mut runtime = TimberWorldRuntime::default();
-        let id = match runtime.try_start_fall(
-            &world,
-            &[pos(0, 0, 0)],
-            &cutter(),
-            &config,
-            &[],
-            DIMENSION,
-            [-3.5, 0.5],
-        ) {
+        let id = match runtime.try_start_fall(StartFallRequest {
+            world: &world,
+            cuts: &[pos(0, 0, 0)],
+            ctx: &cutter(),
+            config: &config,
+            wear_rolls: &[],
+            dimension_id: DIMENSION,
+            player: [-3.5, 0.5],
+        }) {
             StartFallOutcome::FellTree { tree_id, .. } => tree_id,
             other => panic!("expected the tree to fall, got {other:?}"),
         };

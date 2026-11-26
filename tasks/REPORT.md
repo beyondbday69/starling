@@ -654,3 +654,55 @@ behaviour was not changed.
 
 None for the task. The `horizon-sdk` build and in-game verification still need a machine
 able to compile and run Horizon.
+
+---
+
+# Fix Report — Clippy `-D warnings` in `timber_fall`
+
+## Files changed
+
+- `native-mods/timber_fall/src/runtime.rs`
+  - Added `StartFallRequest<'a>` (world, cuts, ctx, config, wear_rolls, dimension_id,
+    player) and changed `try_start_fall(&mut self, request: StartFallRequest<'_>)`.
+    The five test call sites now build that request.
+- `native-mods/timber_fall/src/scanner.rs`
+  - `neighbours` now uses `filter(|&dx| …).map(…)` instead of
+    `filter_map(|dx| bool::then(…))`.
+- `native-mods/timber_fall/src/hooks.rs`
+  - The `break_block` call site builds `StartFallRequest`; no behaviour change.
+
+## Commands and real output
+
+```sh
+cargo fmt --manifest-path native-mods/timber_fall/Cargo.toml
+cargo fmt --manifest-path native-mods/timber_fall/Cargo.toml --check
+cargo clippy --manifest-path native-mods/timber_fall/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path native-mods/timber_fall/Cargo.toml
+```
+
+```
+$ cargo fmt --check
+fmt ok
+
+$ cargo clippy … -- -D warnings
+    Checking timber_fall v0.1.0 (/root/starling/native-mods/timber_fall)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.45s
+
+$ cargo test …
+running 80 tests
+test result: ok. 80 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+Clippy reports zero warnings and the full suite still passes. `target/` was removed after
+the run.
+
+## Untested
+
+- `horizon-sdk` was not built (same 1.9 GiB limit), so the adapter call-site change in
+  `hooks.rs` is not type-checked; it mirrors the tested request-struct construction.
+
+## Blockers
+
+None.

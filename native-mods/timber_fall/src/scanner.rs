@@ -305,11 +305,9 @@ fn canopy_variant(kind: BlockKind, species: TreeSpecies) -> Option<u16> {
 fn neighbours(pos: BlockPos) -> impl Iterator<Item = BlockPos> {
     (-1..=1).flat_map(move |dy| {
         (-1..=1).flat_map(move |dz| {
-            (-1..=1).filter_map(move |dx| {
-                (dx, dy, dz)
-                    .ne(&(0, 0, 0))
-                    .then(|| BlockPos::new(pos.x + dx, pos.y + dy, pos.z + dz))
-            })
+            (-1..=1)
+                .filter(move |&dx| (dx, dy, dz) != (0, 0, 0))
+                .map(move |dx| BlockPos::new(pos.x + dx, pos.y + dy, pos.z + dz))
         })
     })
 }

@@ -1,45 +1,27 @@
-# Task 5: Complete Adapter & Sync Layer (Leaf Variants, 2×2 Cut Tracking, Dimension Scoping, Client Sync, Config & FX)
+# Fix Task: Clear Clippy `-D warnings` Errors in `timber_fall`
 
 ## Goal
-Close the remaining gaps identified in Task 4 so the entire mod — both pure-Rust state/sync/config/FX planning and the `horizon-sdk`-gated `hooks.rs` adapter — is feature-complete for singleplayer and LAN play (with all pure-Rust additions unit-tested and all live-game behaviour clearly marked **UNTESTED** until Horizon can be built/run).
+Fix the two Clippy errors reported by `.github/workflows/timber-fall.yml` (run `45850400023`) so `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`, and `cargo test` all pass.
 
-## Files to Create / Modify
-- `native-mods/timber_fall/src/config.rs`
-  - Add a pure-Rust `key = value` (TOML-like / `.cfg`) parser & serializer (`TimberConfig::parse(text: &str) -> Self` and `to_config_string(&self) -> String`) using `std` only so server/client config files load cleanly with fallback to defaults on missing/invalid keys.
-- `native-mods/timber_fall/src/scanner.rs` & `src/falling.rs`
-  - Preserve each leaf's own `variant: u16` (instead of `0` / log variant) on `ScannedTree` / `FallingBlock` so `hooks.rs` can resolve the exact leaf block model and leaf loot (sapling/stick/apple) per block.
-- `native-mods/timber_fall/src/runtime.rs`
-  - Add `dimension_id: u64` (opaque level key) to `ActiveTreeEntry` and filter `tick_dimension(dimension_id, dt, grid)` so multi-dimension servers tick each tree only in its own level.
-  - Add `TwoByTwoCutTracker`: tracks recent partial 2×2 base log cuts `(dimension_id, BlockPos, tick_time)` with expiry (e.g. 200 ticks) so cutting all 4 logs of a 2×2 trunk in sequence triggers `FellTree` cleanly.
-  - Add pure-Rust client/server sync snapshot types (`SyncFallingTree`, `SyncPhase`, `SyncMessage`: `StartFall`, `UpdatePhase`, `RemoveTree`) + `TimberClientMirror` (receives sync messages and interpolates client-side `angle_rad` between server ticks for smooth rendering in `collect_render_instances`).
-  - Add pure-Rust FX event descriptors in `TickOutputs` (`CreakSound`, `LeafBurstParticles`, `ImpactDustAndThud`) so `hooks.rs` has clean triggers for warning creaks, falling leaf trails, and impact dust/thud.
-- `native-mods/timber_fall/src/hooks.rs` (`#[cfg(feature = "horizon-sdk")]`)
-  - Verify any newly used `mod_api` symbols against `crates/horizon-mod-vocab` / `target/debug/build/horizon-mod-vocab-*/out/` (never invent API names).
-  - Wire:
-    - `dimension_id` scoping in `level_tick_post` and `TwoByTwoCutTracker` in `break_block`.
-    - Exact leaf `variant` -> model name (`minecraft:block/<leaf_name>`) and leaf loot evaluation (sapling, stick, apple drops) on `BreakUp`.
-    - Client-side `TimberClientMirror` updates in `level_tick_post` / `submit_custom_geometry` (or singleplayer/LAN sync via `mod_api` payload/network if available, or documented cleanly if `custom_payload` requires registration).
-    - Config loading from file (or defaults) and sound/particle emission on `entered_falling` / `impacts` / `completed` using verified `mod_api` calls.
-    - Keep `cargo test --manifest-path native-mods/timber_fall/Cargo.toml` compiling cleanly with 0 warnings without needing `horizon-sdk`.
+## Errors to Fix
+1. `native-mods/timber_fall/src/runtime.rs:149` — `clippy::too_many_arguments` (8/7) on `TimberWorldRuntime::try_start_fall`:
+   - Group inputs cleanly (e.g. a `StartFallRequest<'a>` struct or include `dimension_id: u64` / `player: [f32; 2]` inside `ChopContext` or a request struct, or `#[allow(clippy::too_many_arguments)]` if appropriate — grouping into a small request struct or putting `dimension_id` + `player` in a struct is cleaner). Update callers in `src/hooks.rs` and tests in `src/runtime.rs`.
+2. `native-mods/timber_fall/src/scanner.rs:308` — `clippy::filter_map_bool_then`:
+   - Replace `(-1..=1).filter_map(move |dx| (dx, dy, dz).ne(&(0, 0, 0)).then(|| BlockPos::new(...)))` with `.filter(move |&dx| (dx, dy, dz) != (0, 0, 0)).map(move |dx| BlockPos::new(...))`.
 
 ## Constraints
-- Pure Rust (`std` only) for all non-`horizon-sdk` modules; 0 `unwrap()` in library logic.
-- Do not OOM this 1.9 GiB VPS running `cargo check --features horizon-sdk` if it pulls in the full `horizon-mod-vocab` build; verify `mod_api` symbols by reading `crates/horizon-mod-vocab` / generated files instead, and mark `horizon-sdk` + in-game behaviour as **UNTESTED**.
 - Do not modify any files outside `native-mods/timber_fall/` (plus `tasks/REPORT.md`).
-- Write a concise summary, verified API list, and exact test output to `tasks/REPORT.md` when done.
+- Clean up `native-mods/timber_fall/target/` if created.
+- Update `tasks/REPORT.md` with the commands and real output.
 
 ## Acceptance Criteria
-1. `cargo test --manifest-path native-mods/timber_fall/Cargo.toml` compiles with 0 warnings and passes all tests (Tasks 1–5).
-2. Unit tests verify:
-   - `TimberConfig::parse` & `to_config_string` round-trip and partial/invalid-line fallback to defaults.
-   - Leaves preserve their own `variant` through `scanner` -> `falling` -> `runtime` -> `drops`.
-   - `tick_dimension` ticks only trees belonging to the matching `dimension_id`.
-   - `TwoByTwoCutTracker` rejects after 1–3 cuts, triggers `FellTree` on the 4th cut, and expires stale cuts.
-   - `TimberClientMirror` applies `StartFall` / `UpdatePhase` / `RemoveTree` and produces rotated `RenderBlockInstance`s for both logs and leaves.
-   - `TickOutputs` emits creak/whoosh/dust/thud FX events at the right phase transitions.
-3. `hooks.rs` cleanly wires the above using only verified `mod_api` symbols.
+1. `cargo fmt --manifest-path native-mods/timber_fall/Cargo.toml --check` passes.
+2. `cargo clippy --manifest-path native-mods/timber_fall/Cargo.toml --all-targets -- -D warnings` passes with 0 warnings/errors.
+3. `cargo test --manifest-path native-mods/timber_fall/Cargo.toml` passes all 80 tests.
 
-## Test Command
+## Test Commands
 ```sh
+cargo fmt --manifest-path native-mods/timber_fall/Cargo.toml --check
+cargo clippy --manifest-path native-mods/timber_fall/Cargo.toml --all-targets -- -D warnings
 cargo test --manifest-path native-mods/timber_fall/Cargo.toml
 ```
