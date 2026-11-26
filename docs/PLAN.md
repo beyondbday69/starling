@@ -64,3 +64,11 @@ Target: Native Horizon mod in Rust (`native-mods/timber_fall/`) implementing [Ti
 - **Acceptance Criteria:**
   - **In-game (UNTESTED until Horizon runtime available):** Singleplayer and LAN client+server tests pass for oak, 2x2 spruce/jungle, nether fungi, mangrove, cherry, uphill/downhill slopes, and sneak bypass.
 - **Status:** DONE (80 pure-Rust unit tests passing; `horizon-sdk` wiring complete, sync transport & in-game/LAN verification UNTESTED until Horizon can be built/run)
+
+### Task 6 — Direct Android APK Integration (`horizon-mixins` Bundle + `android.yml`)
+- **Scope:** Add a `horizon-mixins` bundle under `native-mods/timber_fall/mixins/timber_fall/` (`horizon-mixin.toml`, injected module + hook helpers for `native_destroy_block`, `native_tick`, `native_submit_custom_geometry`, `native_mods`, `native_settings`, `native_settings_click`) so `packaging/android/native_build.sh` compiles `timber_fall` directly into `libhorizon_android.so` in the Android APK without `.hmod`.
+- **Acceptance Criteria:**
+  - `native-mods/timber_fall/mixins/timber_fall/horizon-mixin.toml` follows `native-mods/fallingtrees/mixins/fallingtrees/horizon-mixin.toml` and `packaging/android/native_build.sh` rules (no symlinks, valid `Game<'_>` targets).
+  - Pure-Rust tests (`cargo test --manifest-path native-mods/timber_fall/Cargo.toml`) still pass with 0 warnings.
+  - `.github/workflows/android.yml` includes `timber_fall` (replacing `fallingtrees` in default `MODS`) and builds the APK cleanly.
+- **Status:** DONE (80 pure-Rust unit tests passing; `horizon-mixins` bundle + `android.yml` wired; Android APK build triggered on CI)

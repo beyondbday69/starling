@@ -768,3 +768,102 @@ check now compiles with no warnings.
 ## Blockers
 
 None.
+
+---
+
+# Task 6 Report — Direct Android APK Integration (`horizon-mixins` Bundle)
+
+## Files created / modified
+
+- `native-mods/timber_fall/mixins/timber_fall/horizon-mixin.toml` (new)
+  - `[mod] id = "timber_fall"`, version `0.1.0`, priority 100; `[compatibility]` copied
+    from `fallingtrees` (the Android script overwrites the revision line).
+  - One `[[module]]` (`official_timber_fall`, `source = "runtime.rs"`, injected into
+    `crates/horizon-client/src/game.rs`).
+  - Six `[[injection]]`s: `destroy_block`, `tick`, `list`, `settings`, `click`,
+    `geometry`, with the same helper/binding shape as the reference bundle.
+- `native-mods/timber_fall/mixins/timber_fall/runtime.rs` (new, self-contained)
+  - Log scanning (BFS through logs with leaf `distance`/`persistent` matching and
+    attached vines/cocoa/bee nests), pole-equation fall with ground collision, stump
+    drops, axe wear, Options > Mods settings, and ModelInstance rendering.
+- `native-mods/timber_fall/mixins/timber_fall/{destroy_block,tick,list,settings,click,geometry}.rs`
+  (new helpers; each calls one `Game` method defined in `runtime.rs`).
+- `.github/workflows/android.yml`
+  - Both default `MODS` lists now read
+    `cinematic_interactions skins_3d gyro timber_fall distant_horizons`.
+
+No symlinks are used (`find … -type l` is empty), so `native_build.sh`'s symlink
+deletion cannot strip the bundle. `tasks/TASK.md` and `docs/PLAN.md` were not touched.
+
+## Verified targets and Game methods
+
+- Targets are the reference bundle's shapes, resolved through
+  `packaging/android/native_mod_adapt.py`:
+  - `horizon_client::game::native_hooks::Game<'_>::native_destroy_block` →
+    singleton method in `game/starling/native_compat.rs` (relocated by `relocate`).
+  - `…::native_tick`, `…::native_mods`, `…::native_settings`,
+    `…::native_settings_click` → likewise `native_compat` methods (verified there:
+    `native_tick(&mut self)`, `native_destroy_block(&mut self, [i32;3],
+    BlockStateId, &mut bool)`, etc.).
+  - `…::native_submit_custom_geometry` → `game/native_hooks/submit_custom_geometry.rs`
+    (`&self`, `view`, `draw: &mut WorldGeometry`); the adapter's unique-method relocation
+    finds it, and the binding uses `self` (not `&mut *self`) because the receiver is
+    `&self`.
+  - The injection binding values/parameters were checked against the adapter's
+    `rebind` rules (no renamed parameter, no folded tuple, no changed receiver).
+- Every `Game` call in `runtime.rs` also appears in the fork's own
+  `game/fallingtrees.rs` or the rendered-geometry path, at the same module level, so
+  the same visibility and signature apply:
+  `world`, `res`, `pack`, `player`, `keys`, `creative`, `remote`, `dim`, `clock`,
+  `ui.rules`, `held`, `spectator`, `touch_sneaking`, `acting_player_name`,
+  `fluid_left`, `with_level` + `set_block`, `block_drops`, `spawn_item_own`,
+  `run_command_quietly`, `enter_level`, `audio.play_unshared`,
+  `native_block_collision`, `native_model`, `native_world_draw_model_instances`,
+  `native_setting`, `native_set_setting`, `Dim::from_id`.
+- Rendering builds hinge-relative row-major 3x4 matrices (rim offsets rotated by the
+  same pole angle) and draws each block through `native_model` +
+  `native_world_draw_model_instances` with `LightCoords::FULL_BRIGHT`.
+
+## Commands and real output
+
+```sh
+cargo fmt --manifest-path native-mods/timber_fall/Cargo.toml --check
+cargo clippy --manifest-path native-mods/timber_fall/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path native-mods/timber_fall/Cargo.toml
+```
+
+```
+$ cargo fmt --check
+fmt ok
+
+$ cargo clippy … -- -D warnings
+    Checking timber_fall v0.1.0 (/root/starling/native-mods/timber_fall)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.90s
+
+$ cargo test …
+running 80 tests
+test result: ok. 80 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+`native-mods/timber_fall/target/` was removed afterwards.
+
+## Untested / known limits
+
+- The Android/APK build itself was not run here (no Android SDK/NDK, Gradle or the
+  materialize/mixins toolchain on this machine), so the injected module has not been
+  compiled inside the game crate. Names, injection shapes and adapter relocation rules
+  were verified by reading the fork's source and `native_mod_adapt.py`.
+- The fork already compiles its own Falling Trees implementation unconditionally; the
+  MODS swap stops the *bundle* from being applied, but the built-in still answers the
+  same hook. Timber Fall and the built-in must not both be enabled (built-in setting off
+  or removed), otherwise a cut is handled twice.
+- The mixin runtime is a compact port: no 2x2 cut tracking, no camera shake, no particle
+  emission (the API has no public particle key), and drops spawn at the stump rather
+  than the rotated landing section.
+- No in-game verification of the render output, physics feel or drop timing.
+
+## Blockers
+
+None.
