@@ -1077,3 +1077,89 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 ## Blockers
 
 None.
+
+---
+
+# Fix Report — Tree Removal, Time Units and the `voxel-tree-fall.html` Animation
+
+## Root causes of the stuck tree / stuck animation
+
+1. **Tick/seconds mix-up.** `self.world.game_time` is in ticks (20/s), but the phases
+   compared `now - since` against `WARNING_SECS = 0.5` / `BREAKUP_SECS = 1.0`. The whole
+   state machine therefore ran in 0.5–1 tick and the animation was never visible.
+2. **`*canceled = true` kept the cut log.** `game.rs:4157` returns `Ok(false)` before the
+   normal break path when the hook cancels, and the canceled block is acknowledged back.
+   Our clear list also excluded the cut position (`find_tree` removes the start), so the
+   cut log stayed in the world and the trunk looked like it never fell.
+
+## Fixes
+
+- `runtime.rs` now tracks `elapsed_secs` on every `ActiveTree`: `+= 0.05` per server tick,
+  and the renderer uses `elapsed_secs + partial * 0.05`, so the animation runs in real
+  seconds and is smooth at any frame rate. `game_time` is no longer compared to seconds.
+- `timber_fall_destroy_block` no longer sets `*canceled`; the cut log is left to vanilla,
+  which removes and drops it normally. The rest of the tree is still cleared by
+  `set_block(..., 3)` in the same tick, and the drop plan excludes the cut log, so there
+  is no duplication. The built-in Falling Trees hook sees a cleared tree and returns.
+
+## Reference animation (`voxel-tree-fall.html`, sound OFF)
+
+`runtime.rs` now implements the exact default timeline: `duration = 3 s`, `IMPACT = 0.50`,
+`BREAK = 0.66`, `LAST = 0.80`, `gravity = 14`, `bounce = 5°`, no overshoot, linear speed
+curve.
+
+- **Fall:** the `SHAPE` inverted-pendulum curve (`th = 0.08`, `w += sin(th) * 0.002`,
+  `th += w * 0.002`, normalized) maps `p / IMPACT` onto `0..90°`; solid ground can lower
+  `impact_angle` earlier.
+- **Bounce:** `HOPS = [[0, 0.54, 1], [0.54, 0.30, 0.3], [0.84, 0.16, 0.09]]`, each
+  `angle = impact_angle - 4u(1-u) * amp * 5°`.
+- **Logs:** sorted base-to-tip; log `i` pops at `BREAK + (LAST-BREAK) * i / (n-1)`, with
+  the 0.16 s `scale = 1 + 0.35w²` swell, then it is hidden and its own block drops spawn
+  at its rotated landing position.
+- **Leaves:** each leaf's break-off fraction is the earliest `p < IMPACT` where its
+  rotated centre falls to `hinge_y + 0.55`; before that it rides the trunk, after it free-
+  falls under gravity 14 with deterministic velocity/spin, shrinks after landing, and
+  spawns its block drops when gone.
+- **Completion:** at `p >= 1`, remaining drops are flushed, the axe wears for the felled
+  logs, and the tree is removed. All `play_unshared` calls were removed (sound off).
+- The hand-written render matrix now applies the reference angle, the per-log swell scale
+  and the leaf fall/spin/shrink matrices, still through the verified
+  `block_model_vertices(state, 42, …)` injection at `block_item_display_geometry`.
+
+## Checks
+
+```sh
+cargo fmt --manifest-path native-mods/timber_fall/Cargo.toml --check
+cargo clippy --manifest-path native-mods/timber_fall/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path native-mods/timber_fall/Cargo.toml
+```
+
+```
+$ cargo fmt --check
+fmt ok
+
+$ cargo clippy … -- -D warnings
+    Checking timber_fall v0.1.0 (/root/starling/native-mods/timber_fall)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.95s
+
+$ cargo test …
+running 80 tests
+test result: ok. 80 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+The ported timeline was checked against the reference numerically: angle 0° at p=0, 90° at
+IMPACT, three hops of 5° (85.12° at p=0.55), and log pops at 0.660/0.688/…/0.800 for six
+logs. `glam::Mat4::from_scale` and the display-geometry target were verified in the fork.
+
+`native-mods/timber_fall/target/` was removed after the run.
+
+## Untested
+
+- The APK build itself was not run here (no Android toolchain), so the new timeline and
+  clearing path have not been compiled or watched in game.
+
+## Blockers
+
+None.

@@ -1,27 +1,44 @@
-# Fix Task: Render Falling Trees with `block_model_vertices` & Cancel Vanilla Break in `mixins/timber_fall/runtime.rs`
+# Task 7: Fix Tree Removal/Stuck Animation & Implement `voxel-tree-fall.html` Animation
 
-## Root Cause of "no realistic falling tree animation" in APK
-1. **Zero blocks rendered:** `timber_fall_model` called `self.native_model("minecraft:block/<name>")`, which ONLY resolves mod-registered `standalone_geometry` models — it returns `Err(ModelError::UnknownModel)` for all vanilla blocks, so `timber_fall_geometry` drew **0 triangles**!
-2. **Cut block wasn't canceled:** `timber_fall_destroy_block` left `_canceled` untouched (`false`), so vanilla still broke/dropped the cut log immediately.
+## User Report
+> "man tree is still there after mining it and animation stuck, add animation like `/root/starling/voxel-tree-fall.html` (sound off, use default settings) and add in our game"
 
-## Fix
-1. **Replace `native_model` / `native_world_draw_model_instances` with `block_model_vertices`:**
-   - Inspect `crates/horizon-client/src/game/entities/text_displays.rs` (`block_item_display_geometry` around line 264) and `block_model_vertices` definition in `crates/horizon-client/src/game/` to get exact types (`glam::DVec3`, `glam::Mat4`, `Vertex`, `light`).
-   - Change the render injection in `native-mods/timber_fall/mixins/timber_fall/horizon-mixin.toml` from `native_submit_custom_geometry` to `TAIL` (or `HEAD`) of `horizon_client::game::Game<'_>::block_item_display_geometry` (verify with `packaging/android/native_mod_adapt.py` that `horizon_client::game::Game<'_>::block_item_display_geometry` relocates cleanly to `text_displays::Game<'_>::block_item_display_geometry`).
-   - In `timber_fall_render(&mut self, camera: glam::DVec3, partial: f64, out: &mut Vec<...>)`:
-     - Compute smooth sub-tick angle using `partial` (`now = self.world.game_time as f64 + partial`, and interpolate `Falling` angle using `angular_vel * partial / 20.0` so it's silky-smooth at 60/120 FPS!).
-     - Compute `matrix = glam::Mat4::from_translation((origin - camera).as_vec3()) * glam::Mat4::from_axis_angle(glam::Vec3::new(dz as f32, 0.0, -dx as f32), angle as f32) * glam::Mat4::from_translation(glam::Vec3::new(ox as f32, oy as f32, oz as f32))` (verify rotation sign so `+angle` tips `(+Y)` toward `toward = (dx, 0, dz)`!).
-     - Call `self.mark_entity(out.len(), "minecraft:falling_block");` (if needed, check `text_displays.rs:279`) and `self.block_model_vertices(state, 42, matrix, light, true, out);` with world sky/block light at the hinge/block!
-2. **Cancel vanilla break in `timber_fall_destroy_block`:**
-   - Rename `_canceled` to `canceled` and set `*canceled = true;` when Timber Fall takes over and clears the tree.
-   - Check `crates/horizon-client/src/game/fallingtrees.rs` to make sure `fallingtrees_destroy_block` doesn't interfere when `*canceled` is already `true` (or note if `fallingtrees_destroy_block` checks `*canceled`).
-3. **Verify locally & check `native_mod_adapt.py`:**
-   - Run `python3 -c` or inspect `native_mod_adapt.py` to confirm `block_item_display_geometry` relocates without error.
-   - Run `fmt --check`, `clippy --all-targets -- -D warnings`, and `cargo test` on `native-mods/timber_fall/Cargo.toml`, and update `tasks/REPORT.md`.
+## Step 1: Fix Why the Tree Stayed There & Animation Got Stuck
+Inspect `crates/horizon-client/src/game.rs` (around line 4155), `crates/horizon-client/src/game/blocks/block_breaking.rs`, `crates/horizon-client/src/game/fallingtrees.rs`, and `with_level` (`game.rs:2881`):
+1. **Time unit bug in `native-mods/timber_fall/mixins/timber_fall/runtime.rs`:**
+   - `self.world.game_time` is in **ticks** (20 ticks/sec), NOT seconds! Comparing `now - since >= WARNING_SECS (0.5)` / `BREAKUP_SECS (1.0)` against `game_time` caused phases to expire in 0.5–1 tick (0.025–0.05s) or desync with `partial`!
+   - **Fix:** Track `elapsed_secs: f64` directly on each `ActiveTree`, advancing `elapsed_secs += 0.05` in `timber_fall_tick()` and rendering at `elapsed_secs + partial * 0.05` in `timber_fall_render(...)`!
+2. **Why blocks stayed there after mining:**
+   - Check why `self.with_level(|b, level, ticks| b.set_block(level, ticks, at, left, 3))` + `*canceled = true` left the tree visible/present in-game!
+   - Compare with `fallingtrees.rs` (which does NOT set `*canceled = true` and uses `setblock` / `set_block` cleanly) and check what `with_level` -> `set_block(..., 3)` does on the client chunk mesh (`mark_chunk_dirty` / `remesh` / `set_block_clients`). If `*canceled = true` causes `block_breaking` to restore the mined block or skip mesh updates, either let the cut block break normally (`*canceled = false`, excluding `pos` from `blocks` or spawning only the remaining logs' drops) OR ensure `set_block` + chunk remesh clears every log and leaf immediately!
+   - Also check `fallingtrees_destroy_block` in `native_compat.rs:290`: make sure `fallingtrees` does NOT double-handle the tree (e.g. if `timber_fall_destroy_block` already cleared all logs/leaves, `fallingtrees` sees no tree and returns early).
+
+## Step 2: Implement the Exact Animation from `/root/starling/voxel-tree-fall.html`
+Use the default settings from `<script id="cfg">` in `/root/starling/voxel-tree-fall.html` with **Sound OFF**:
+- **Defaults:** `duration = 3.0` s, `gravity = 14.0`, `bounce = 5.0°`, `overshoot = 0.0°`, linear speed curve (`1.0x`), **sound OFF** (no `play_unshared` audio spam).
+- **Timeline (`progress = (elapsed_secs / 3.0).clamp(0.0, 1.0)`):**
+  - Constants: `IMPACT = 0.50`, `BREAK = 0.66`, `LAST = 0.80`.
+  - **Fall (`0.0 <= p < IMPACT`):**
+    - Precompute/evaluate the `SHAPE` curve from `voxel-tree-fall.html` (`th = 0.08`, `w = 0.0`, `while th < PI/2 { w += th.sin() * 0.002; th += w * 0.002; }`, normalized `0.0..=1.0`), mapped over `p / IMPACT` -> `angle = shape_val * PI/2` (and stop at solid ground if terrain collision occurs earlier!).
+  - **Bounce (`IMPACT <= p < BREAK`):**
+    - `HOPS = [(0.0, 0.54, 1.0), (0.54, 0.30, 0.3), (0.84, 0.16, 0.09)]`, `bounce_deg = 5.0`:
+    - 3 parabolic hops: `angle = impact_angle - 4.0 * u * (1.0 - u) * amp * 5.0_f64.to_radians()`.
+  - **Sequential Log Break-up (`BREAK <= p <= LAST`):**
+    - Order logs from base to tip. Each log `i` pops at `pop_at(i) = BREAK + (LAST - BREAK) * i / max(1, logs - 1)`:
+    - Before `pop_at(i)`: swell slightly (`scale = 1.0 + 0.35 * w * w` in the last `0.16s` before popping) and remain attached to the fallen trunk.
+    - At `pop_at(i)`: hide that log from the falling mesh and spawn its log item drop at its rotated world landing position!
+  - **Independent Leaf Break-off & Fall:**
+    - For each leaf block, precompute `leaf.at` (the earliest `p < IMPACT` where its rotated world `y` drops to `hinge_y + 0.55`, or `IMPACT`).
+    - For `p <= leaf.at`: leaf rotates rigidly with the trunk.
+    - For `p > leaf.at`: leaf detaches, falls vertically/outward under `gravity = 14.0` to ground, and shrinks away after landing (`scale` smoothly goes to `0`), spawning its leaf drops when it breaks/finishes!
+  - **Completion (`p >= 1.0` or all logs popped & leaves shrunk):**
+    - Remove the `ActiveTree`, apply axe wear, and ensure no leftover ghost blocks remain.
 
 ## Constraints
-- Do not modify any files outside `native-mods/timber_fall/` (plus `tasks/REPORT.md`).
-- Clean up `native-mods/timber_fall/target/` if created.
+- Keep `native-mods/timber_fall/Cargo.toml` (`fmt --check`, `clippy --all-targets -- -D warnings`, `cargo test`) passing with 0 warnings.
+- No symlinks in `mixins/timber_fall/`; no inner `#![...]` or `//!` file attributes in `mixins/timber_fall/*.rs`.
+- Verify `native_mod_adapt.py` relocation and check all `Game<'_>` calls against `crates/horizon-client/src/`.
+- Update `tasks/REPORT.md` with the root cause of the stuck/unremoved tree and the exact test output.
 
 ## Test Commands
 ```sh
