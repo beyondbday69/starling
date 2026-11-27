@@ -1,12 +1,14 @@
 # Zoom (Horizon native mod)
 
 Horizon's official Zoom: hold a key (Z by default) to zoom in, and turn the mouse wheel while you hold it to zoom
-further in or out. Its settings page (Options > Mods > Zoom > Settings) has the key and three options: the
-starting zoom (2x to 10x), smooth zoom (eased like the spyglass) and slower turning while zoomed.
+further in or out. While you hold it, the HUD gives way and two black cinematic bars slide in from the top and the
+bottom of the view; letting go slides them back out and brings the HUD right back. Its settings page (Options >
+Mods > Zoom > Settings) has the key and four options: the starting zoom (2x to 10x), smooth zoom (eased like the
+spyglass), slower turning while zoomed, and the cinematic bars.
 
 It is a [horizon-mixins](https://github.com/horizon-rust/horizon-mixins) bundle (`mixins/zoom/`) that the Horizon
 launcher builds into the game. It keeps the settings of earlier versions: the same files
-(`horizon-mods/.horizon-mod-data/zoom/level`, `smooth`, `sensitivity`) and the same key line
+(`horizon-mods/.horizon-mod-data/zoom/level`, `smooth`, `sensitivity`, `cinematic`) and the same key line
 (`key.zoom.zoom:…` in `horizon-mods.txt`).
 
 ## Install

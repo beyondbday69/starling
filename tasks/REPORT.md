@@ -1366,3 +1366,179 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 ## Blockers
 
 None.
+
+---
+
+# Fix Report — Softer Pop Glow Matching `voxel-tree-fall.html`
+
+## Change in `native-mods/timber_fall/mixins/timber_fall/runtime.rs`
+
+The pop effect is now two-tiered instead of a 100 ms solid-white cube:
+
+- `scale = 1.0 + 0.35 * w * w` still swells the log over the last 0.16 s.
+- `w > 0.45 && w <= 0.86` (roughly the last 0.07 s): every new vertex gets
+  `v.normal = [0, 0, 0, 0]` (no directional shade/AO) and `v.light = 0xF0F0`, while
+  `v.layer` stays untouched — the log glows smoothly but its bark texture remains.
+- `w > 0.86` (the final ~0.022 s, 1–2 frames): `v.layer = 5` adds the brief white overlay
+  right before the log bursts.
+
+This mirrors the reference's `emissive = 0.7 * w^3` swell plus a crisp pop, rather than
+painting the whole log white for 0.1 s.
+
+## Commands and real output
+
+```sh
+cargo fmt --manifest-path native-mods/timber_fall/Cargo.toml --check
+cargo clippy --manifest-path native-mods/timber_fall/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path native-mods/timber_fall/Cargo.toml
+```
+
+```
+$ cargo fmt --check
+fmt ok
+
+$ cargo clippy … -- -D warnings
+    Checking timber_fall v0.1.0 (/root/starling/native-mods/timber_fall)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.97s
+
+$ cargo test …
+running 80 tests
+test result: ok. 80 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+`native-mods/timber_fall/target/` was removed after the run.
+
+## Untested
+
+- The APK build was not run here; the visual balance of the glow and the brief white pop
+  is unverified in game.
+
+## Blockers
+
+None.
+
+---
+
+# Report — Zoom: Cinematic Bars + Auto-Hide HUD
+
+## What the mod does now
+
+Hold the zoom key (Z by default) and two black cinematic bars slide in from the top and the
+bottom of the view (`0.18 s`, ease-out) while the HUD gives way; let the key go and both slide
+back out and the HUD comes straight back. A fourth settings button, `Cinematic bars: ON/OFF`
+(index 3), turns it all off; the setting is stored as `cinematic` beside `level`, `smooth` and
+`sensitivity`, and defaults to ON for players who never touched it.
+
+## Files
+
+| File | Change |
+|---|---|
+| `native-mods/zoom/mixins/zoom/runtime.rs` | `Settings.cinematic` (read/label/click 3/stored), `Hud` (the three HUD modes, kept in the mod so the crate needs no game dependency), `hide_hud`/`show_hud` (the hold saves the mode once and gives it back once), `advance`/`eased` (the `0.18 s` slide, ease-out cubic) and `bar_height` (frame delta from `Instant`, `height * 0.12 * eased(progress)`), plus tests |
+| `native-mods/zoom/mixins/zoom/key.rs` | On press (`native_playing` and `cinematic`): save `game.hud_mode()`, then `game.set_hud_mode(HudMode::AllHidden)`. On release (or Zoom turned off): put the saved mode back and clear it |
+| `native-mods/zoom/mixins/zoom/bars.rs` (new) | The `bars` HEAD helper: two `0xFF00_0000` fills across `batch.width`, at `y = 0.0` and `y = batch.height - bar` |
+| `native-mods/zoom/mixins/zoom/horizon-mixin.toml` | The `bars` HEAD injection (and a comment on why the target runs with the HUD hidden) |
+| `native-mods/zoom/Cargo.toml` | `[workspace]`, so the required `cargo … --manifest-path native-mods/zoom/Cargo.toml` commands run (same as `timber_fall`, `distant_horizons`, `sodium`) |
+| `native-mods/zoom/README.md` | The bars and the fourth setting, and `cinematic` in the settings files |
+| `.github/workflows/android.yml` | `zoom` in the default `MODS` list (workflow_dispatch default and the build step's fallback) |
+
+## Verified targets and signatures
+
+Read in `crates/horizon-client/` (all present at this checkout):
+
+- `Game<'_>::native_gui_render_post(&self, batch: &mut HudBatch, gui_hidden: bool, focused: bool)`
+  in `game/native_hooks/gui_render_post.rs`, called from `game.rs` right after `hud()` builds the
+  frame's batch (`self.native_gui_render_post(&mut hud, self.ui.hide_gui, self.focused)`), so it
+  fires with the HUD hidden; the fork's catalog documents it as "after the complete normal GUI
+  batch … fires even with F1 or a menu open" (`RenderGuiEvent.Post`).
+- `HudBatch::fill(&mut self, atlas: &HudAtlas, x, y, w, h, color: u32)` and `HudBatch`'s
+  `width`/`height: f32` (`crates/horizon-client-render/src/hud.rs`).
+- `Game.gui.atlas` is what every in-crate fill passes (`game/interface/creative_screen.rs`,
+  `hud_room.rs`), and `game.gui` is reachable from a helper inserted under `crate::game`
+  (`cinematic_interactions/draw.rs:371` already does `game.gui.atlas`).
+- `Game::hud_mode()` / `Game::set_hud_mode(mode)` in `game/native_hooks/hud_mode.rs`, both
+  `pub(in crate::game)`; `HudMode` (`AllVisible`/`NoHud`/`AllHidden`) comes from `::mod_api`
+  (horizon-mod-vocab) and `crate::mod_api` re-exports exactly that type (`starling_mod_api.rs`).
+- `game.ui` itself is private (`ui: chat::UiState`), so the task's `game.ui.hud_mode()` spelling
+  is not reachable from a helper; `game.hud_mode()` / `game.set_hud_mode(…)` are the same pair
+  behind the window/guest guards.
+- `packaging/android/native_mod_adapt.py` on a fresh `git archive HEAD` of the tree with all six
+  default bundle manifests: exit 0, and it leaves `zoom/horizon-mixin.toml` byte-identical, so
+  the new target is not relocated and the five existing ones still resolve. `tests/` adapt,
+  permissions and targets suites: `test_native_mod_adapt` 48/48 OK, `test_native_mod_permissions`
+  2/2 OK; `test_native_mod_targets` has one failure, `test_hooked_functions_have_no_cfg_inside`
+  (`handle_window_event` holds a `#[cfg…]`), which this change does not touch — it reads no file I
+  edited.
+
+## Choice of target (the one reading I took)
+
+The task offered `Game<'_>::draw_every_toast` "or another verified unconditional HUD-pass method
+that runs even when `hide_gui == true`". I used `native_gui_render_post`:
+
+- it is a real hook point (the mod hooks only hook points, which its `compatibility.json`
+  `"hooks": 1` and README promise), in the same `horizon_client::game::native_hooks::Game<'_>`
+  module as the bundle's other five injections;
+- it is documented to fire with F1 and with a menu open, and it runs after `menus.finish`, so the
+  bars sit above the whole GUI instead of under the sign editor, the book and Studio's bars that
+  `draw_every_toast` is followed by;
+- `draw_every_toast` stays as the place vanilla's toasts are drawn, untouched.
+
+## Commands and real output
+
+```sh
+cargo fmt --manifest-path native-mods/zoom/Cargo.toml --check
+cargo clippy --manifest-path native-mods/zoom/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path native-mods/zoom/Cargo.toml
+```
+
+```
+$ cargo fmt --check
+fmt=0
+
+$ cargo clippy … -- -D warnings
+    Checking horizon-mod-zoom v2.0.0 (/root/starling/native-mods/zoom)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.91s
+
+$ cargo test …
+running 7 tests
+test tests::a_stored_level_out_of_range_clamps_whatever_its_size ... ok
+test tests::buttons_cycle_as_the_extra_did ... ok
+test tests::holds_zooms_with_the_wheel_and_lets_go ... ok
+test tests::reads_the_webassembly_mods_settings ... ok
+test tests::the_bars_slide_in_and_out_over_their_time ... ok
+test tests::the_cinematic_bars_are_on_unless_turned_off_and_stay_off ... ok
+test tests::the_hud_comes_back_once_the_hold_that_hid_it_ends ... ok
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+`native-mods/zoom/target/` was removed after the runs.
+
+The two helpers cannot be compiled by this crate (they name the game's crate), so they were
+type-checked against a throwaway mock of the game's exact shapes: `Game{ gui { atlas },
+native_on, native_playing, native_mod_key, native_setting, hud_mode, set_hud_mode }`, a
+`HudBatch { width, height, fill(&HudAtlas, …) }` and `crate::mod_api::HudMode`, with both helper
+files `include!`d into modules beside the real `runtime.rs` as `crate::game::official_zoom`:
+`cargo check` clean. That covers the borrow shapes (the `&mut Game` closure, `&game.gui.atlas`
+with `batch.fill(...)`), the `HudMode` matches and `crate::hud::HudBatch`.
+
+## Untested
+
+- `horizon-mixins` itself was not run (it is installed from GitHub at a pinned revision, and this
+  box has neither it in a cache nor network for the pinned crates), so the injection has not been
+  applied to a real game build. `native_mod_adapt.py` and `horizon-materialize` could not be run
+  on a *materialized* tree (`horizon-materialize` needs crates that are not vendored here), so the
+  target paths were checked by reading the source, not by a build.
+- `cargo check -p horizon-client` on a temporarily hand-injected copy was attempted and died on
+  `No space left on device` before reaching the crate; the edits were reverted straight away
+  (`git status` shows no change under `crates/`).
+- Not run in game: the bars' look, the ease-out feel, and the HUD coming back. `native-mods/zoom/proof.py`
+  drives a real game and was not run here (no prepared resources, no game build); it still reads
+  only `level`, `smooth`, `sensitivity` and its `page[:5]` assertion still holds with the fourth
+  button added after them. The APK build was not run, so `zoom` being built into the Android APK
+  by the new `MODS` default is unverified.
+
+## Blockers
+
+None for the mod's pure-Rust part. The game-side compile and the in-game proof need a machine with
+room to build `horizon-client` and prepared resources.

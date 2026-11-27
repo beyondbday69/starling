@@ -46,6 +46,18 @@ bindings = [
   { name = "zoom", ty = "&mut Option<crate::game::native_hooks::NativeZoom>", value = "&mut *zoom" },
 ]
 
+# The cinematic bars: drawn after the frame's GUI, which fires even while F1
+# (or the bars themselves) has the HUD hidden, so they stay while the key is held.
+[[injection]]
+id = "bars"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_gui_render_post"
+helper = "bars.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "self" },
+  { name = "batch", ty = "&mut HudBatch", value = "&mut *batch" },
+]
+
 [[injection]]
 id = "list"
 kind = "HEAD"

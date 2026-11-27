@@ -1,30 +1,37 @@
-# Task 10: Tone Down Pop White Flash to Match `voxel-tree-fall.html`
+# Task: Add Cinematic Bars & Auto-Hide HUD to Zoom Mod (`native-mods/zoom`)
 
-## User Feedback
-> "white flash is too much white man check in html how it shoud look"
+## User Request
+> "for zoom mod add feature cinimatic bars will came from above and bottem snd huid will get dissper when we relese the z key itll come back"
 
-## Reference (`voxel-tree-fall.html`)
-In `voxel-tree-fall.html`:
-```js
-const w = broken ? 0 : Math.max(0, 1 - (bp - p) * C.duration / .16);
-log.scale.setScalar(1 + .35 * w * w);
-log.material.forEach(x => x.emissive.setScalar(.7 * w * w * w));
-```
-- `w > 0.35` with `v.layer = 5` turned the entire log 100% solid pure white for ~0.10 s, which is much harsher than `voxel-tree-fall.html`'s smooth `0.7 * w^3` glow.
-
-## Fix in `native-mods/timber_fall/mixins/timber_fall/runtime.rs`
-In `timber_fall_render`:
-- Keep the smooth swell (`scale = 1.0 + 0.35 * w * w`) over the last `0.16 s` (`w > 0.0`).
-- For `w > 0.45 && w <= 0.86`: brighten the **textured** log smoothly without replacing its texture (`v.normal = [0, 0, 0, 0]` to remove dark directional shade/AO and `v.light = 0xF0F0` fullbright, keeping `v.layer` intact so bark grain stays visible!).
-- Only apply `v.layer = 5` (pure white overlay) for the final brief pop-moment `w > 0.86` (~`0.022 s`, i.e. 1–2 frames right before it bursts) — so it gives a subtle bright swell + crisp brief white pop flash instead of turning into a solid white cube for 100 ms.
+## Requirements
+1. **Settings (`native-mods/zoom/mixins/zoom/runtime.rs`):**
+   - Add `pub cinematic: bool` to `Settings` (default `true`, read from `"cinematic"` via `flag("cinematic")`).
+   - Expose `"Cinematic bars: ON/OFF"` in `Settings::labels()` (button index 3), toggle it in `Settings::click(3)`, and persist `"cinematic"` in `Settings::stored()` (keep existing `"level"`, `"smooth"`, `"sensitivity"` intact).
+2. **Auto-Hide HUD on Zoom Key (`key.rs` + `runtime.rs`):**
+   - In `zoom_key` (`native-mods/zoom/mixins/zoom/key.rs`):
+     - When `pressed == true` and `game.native_playing()` and `settings.cinematic` is `true`:
+       - Save the player's previous `mod_api::HudMode` (`game.ui.hud_mode()`) in `State` (only if not already saved during this hold) and call `game.ui.set_hud_mode(mod_api::HudMode::AllHidden)` (which sets `hide_gui = true` so the HUD disappears cleanly).
+     - When `pressed == false` (Z key released) or zoom is disabled:
+       - Restore the saved `HudMode` via `game.ui.set_hud_mode(prev)` and clear the saved mode so the HUD comes right back!
+3. **Smooth Animated Cinematic Bars from Top & Bottom (`bars.rs` / `horizon-mixin.toml` / `runtime.rs`):**
+   - Inspect `crates/horizon-client/src/game.rs` around line 5457 (`draw_every_toast(&mut self, batch: &mut HudBatch, ...)` or `hud_layers`) and `crates/horizon-client-render/src/hud.rs` (`HudBatch` rectangle drawing helper, e.g. `solid` / `fill_rect` / `quad`) to get exact verified method signatures and `horizon-mixins` relocation with `packaging/android/native_mod_adapt.py`.
+   - Inject a `HEAD` hook into `horizon_client::game::Game<'_>::draw_every_toast` (or another verified unconditional HUD-pass method that runs even when `hide_gui == true`) so the cinematic bars STILL draw while the HUD is hidden!
+   - Smoothly animate `bar_progress: f32` (`0.0..=1.0`) using `std::time::Instant` frame delta (~`0.18 s` ease-out):
+     - While `held.is_some()` and `settings.cinematic`: animate `bar_progress` toward `1.0`.
+     - When released (`held.is_none()`): animate `bar_progress` back down toward `0.0`.
+     - When `bar_progress > 0.0` (and `game.native_playing()`): draw two solid black (`0xFF00_0000` / `rgba(0, 0, 0, 255)`) bars across the full `batch.width`, sliding in from the top (`y = 0.0`, `height = bar_h`) and bottom (`y = batch.height - bar_h`, `height = bar_h`), where `bar_h = batch.height * 0.12 * eased(bar_progress)`.
+4. **Include `zoom` in `.github/workflows/android.yml`:**
+   - Ensure `zoom` is in the default `MODS` list in `.github/workflows/android.yml` (`cinematic_interactions skins_3d gyro timber_fall zoom distant_horizons`) so the APK includes it.
 
 ## Constraints
-- Keep `fmt --check`, `clippy --all-targets -- -D warnings`, and `cargo test` passing on `native-mods/timber_fall/Cargo.toml` with 0 warnings.
-- Clean up `native-mods/timber_fall/target/` and update `tasks/REPORT.md`.
+- Verify all `HudBatch` and `Game<'_>` targets/methods in `crates/horizon-client/` and with `packaging/android/native_mod_adapt.py`.
+- Keep `native-mods/zoom` pure-Rust tests passing (`cargo fmt --manifest-path native-mods/zoom/Cargo.toml --check`, `cargo clippy --manifest-path native-mods/zoom/Cargo.toml --all-targets -- -D warnings`, `cargo test --manifest-path native-mods/zoom/Cargo.toml`), and update/add unit tests in `runtime.rs` for `cinematic` setting and `HudMode` / bar progress animation!
+- No symlinks or inner `#![...]` / `//!` file attributes in `native-mods/zoom/mixins/zoom/*.rs`.
+- Clean up `native-mods/zoom/target/` and update `tasks/REPORT.md`.
 
 ## Test Commands
 ```sh
-cargo fmt --manifest-path native-mods/timber_fall/Cargo.toml --check
-cargo clippy --manifest-path native-mods/timber_fall/Cargo.toml --all-targets -- -D warnings
-cargo test --manifest-path native-mods/timber_fall/Cargo.toml
+cargo fmt --manifest-path native-mods/zoom/Cargo.toml --check
+cargo clippy --manifest-path native-mods/zoom/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path native-mods/zoom/Cargo.toml
 ```

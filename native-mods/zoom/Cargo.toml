@@ -9,3 +9,7 @@ description = "Horizon's official Zoom, a native mod: hold a key to zoom, the wh
 # The mod's logic and its tests: the same file the bundle adds to the game.
 [lib]
 path = "mixins/zoom/runtime.rs"
+
+# Standalone workspace: the logic has no engine dependency, so its tests run without a
+# Horizon build.
+[workspace]
