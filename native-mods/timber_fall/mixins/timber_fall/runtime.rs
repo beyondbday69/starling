@@ -1,6 +1,8 @@
 // Timber Fall for Horizon (native mixin runtime): a log cut with an axe takes the whole
 // tree down. The tree is cleared in the cut's tick, tips around its stump hinge with the
-// pole equation, stops on solid ground, and its blocks drop at the stump a second later.
+// pole equation, falls under gravity until it lies on the ground below it (so a tree cut
+// high up, or one that was floating, comes all the way down), stops on solid ground, and
+// its blocks drop at the stump a second later.
 //
 // Everything here is self-contained: `horizon-mixins` copies this file into
 // `crates/horizon-client/src/game.rs`, so it may only use what the game crate itself has.
@@ -35,6 +37,12 @@ const BREAK: f64 = 0.66;
 const LAST: f64 = 0.80;
 /// Free-fall gravity for logs and leaves, in the reference animation.
 const GRAVITY_FALL: f64 = 14.0;
+/// The deepest the whole trunk may drop, in blocks, however high it was cut.
+const MAX_DROP: f64 = 32.0;
+/// The timeline fraction where the trunk tips off its stump and gravity takes it.
+const DROP_FROM: f64 = 0.15;
+/// Halvings that settle a dropping trunk onto the ground it just reached.
+const SETTLE_STEPS: u32 = 4;
 /// How far each of the three contacts kicks back.
 const BOUNCE_DEG: f64 = 5.0;
 /// One server tick, in seconds.
@@ -283,6 +291,14 @@ struct ActiveTree {
     last_render_at: Option<Instant>,
     /// The angle the trunk stops at (lowered by terrain hit during the fall).
     impact_angle: f64,
+    /// How far the whole trunk has dropped under gravity, in blocks (0 or less:
+    /// down). It is what makes a tree cut high up, or floating, fall to the
+    /// ground under it instead of tipping and popping at the height it was cut.
+    drop_y: f64,
+    /// `drop_y` at the last tick, for the render's interpolation.
+    prev_drop_y: f64,
+    /// The drop's speed, in blocks a second.
+    drop_vel: f64,
     logs: Vec<LogBlock>,
     leaves: Vec<LeafBlock>,
     axe: Option<String>,
@@ -506,6 +522,9 @@ impl Game<'_> {
                 last_tick_at: Instant::now(),
                 last_render_at: None,
                 impact_angle: std::f64::consts::FRAC_PI_2,
+                drop_y: 0.0,
+                prev_drop_y: 0.0,
+                drop_vel: 0.0,
                 logs,
                 leaves,
                 axe,
@@ -538,6 +557,23 @@ impl Game<'_> {
                         }
                     }
 
+                    // Gravity: once the trunk tips off its stump (or was cut with
+                    // air under it), the whole tree falls to the ground below it
+                    // instead of hanging at the height it was cut at.
+                    tree.prev_drop_y = tree.drop_y;
+                    if p >= DROP_FROM || self.timber_fall_floating(tree.cut) {
+                        let angle = tree_angle(tree, p);
+                        let (drop_y, drop_vel) = {
+                            let (from, vel) = (tree.drop_y, tree.drop_vel);
+                            let trunk = &*tree;
+                            drop_step(from, vel, |drop| {
+                                self.timber_fall_hits_at(trunk, angle, drop)
+                            })
+                        };
+                        tree.drop_y = drop_y;
+                        tree.drop_vel = drop_vel;
+                    }
+
                     let log_count = tree.logs.len();
                     for index in 0..log_count {
                         if tree.logs[index].dropped {
@@ -549,7 +585,9 @@ impl Game<'_> {
                         }
                         let angle = tree_angle(tree, pop);
                         let home = block_center(tree.logs[index].pos);
-                        let landing = rotate_point(tree.cut, tree.toward, home, angle);
+                        let mut landing = rotate_point(tree.cut, tree.toward, home, angle);
+                        // The drops land where the trunk actually fell to.
+                        landing[1] += tree.drop_y;
                         tree.logs[index].dropped = true;
                         let drops = std::mem::take(&mut tree.logs[index].drops);
                         spawns.push((tree.dimension.clone(), drops, landing));
@@ -565,8 +603,9 @@ impl Game<'_> {
                             }
                             log.dropped = true;
                             let home = block_center(log.pos);
-                            let landing =
+                            let mut landing =
                                 rotate_point(tree.cut, tree.toward, home, tree.impact_angle);
+                            landing[1] += tree.drop_y;
                             spawns.push((
                                 tree.dimension.clone(),
                                 std::mem::take(&mut log.drops),
@@ -647,35 +686,43 @@ impl Game<'_> {
 
     /// Whether a trunk block would be inside solid ground at `angle`.
     fn timber_fall_hits(&self, tree: &ActiveTree, angle: f64) -> bool {
-        let (sin, cos) = angle.sin_cos();
-        let t = 1.0 - cos;
-        let (dx, dz) = (tree.toward[0], tree.toward[2]);
-        let hinge = [
-            tree.cut[0] as f64 + 0.5,
-            tree.cut[1] as f64,
-            tree.cut[2] as f64 + 0.5,
-        ];
-        for log in &tree.logs {
-            let ox = log.pos.x as f64 + 0.5 - hinge[0];
-            let oy = log.pos.y as f64 + 0.5 - hinge[1];
-            let oz = log.pos.z as f64 + 0.5 - hinge[2];
-            let x = (cos + t * dz * dz) * ox + sin * dx * oy - t * dx * dz * oz;
-            let y = -sin * dx * ox + cos * oy - sin * dz * oz;
-            let z = -t * dx * dz * ox + sin * dz * oy + (cos + t * dx * dx) * oz;
-            let at = [
-                (hinge[0] + x).floor() as i32,
-                (hinge[1] + y).floor() as i32,
-                (hinge[2] + z).floor() as i32,
-            ];
-            let block = self.world.block(at[0], at[1], at[2]);
-            if is_tree_block(&self.res.facts().get(block).name) {
-                continue;
-            }
-            if !self.native_block_collision(at).is_empty() {
-                return true;
-            }
+        log_centres(tree, angle, 0.0).any(|center| {
+            self.timber_fall_solid([
+                center[0].floor() as i32,
+                center[1].floor() as i32,
+                center[2].floor() as i32,
+            ])
+        })
+    }
+
+    /// Whether the trunk at `angle`, dropped by `drop_y` blocks, would rest on
+    /// solid ground: each log is tested at the cell under its bottom face, so a
+    /// tree cut high up falls until it lies on the ground it came from.
+    fn timber_fall_hits_at(&self, tree: &ActiveTree, angle: f64, drop_y: f64) -> bool {
+        log_centres(tree, angle, drop_y).any(|center| {
+            self.timber_fall_solid([
+                center[0].floor() as i32,
+                (center[1] - 0.5).floor() as i32,
+                center[2].floor() as i32,
+            ])
+        })
+    }
+
+    /// Whether `at` holds a block the falling trunk cannot pass through; another
+    /// tree's logs and leaves never stop it.
+    fn timber_fall_solid(&self, at: [i32; 3]) -> bool {
+        let block = self.world.block(at[0], at[1], at[2]);
+        if is_tree_block(&self.res.facts().get(block).name) {
+            return false;
         }
-        false
+        !self.native_block_collision(at).is_empty()
+    }
+
+    /// Whether the log cut was not standing on anything: air under it, so the
+    /// trunk drops from the first tick instead of settling on a stump.
+    fn timber_fall_floating(&self, cut: [i32; 3]) -> bool {
+        let below = self.timber_fall_read_block([cut[0], cut[1] - 1, cut[2]]);
+        is_air(&below.name)
     }
 
     /// Draws every active tree in the current dimension as rotating block models.
@@ -704,11 +751,15 @@ impl Game<'_> {
             }
             tree.last_render_at = Some(now);
             let p = (tree.smooth_secs / DURATION).clamp(0.0, 1.0);
+            // The drop is interpolated between the last two ticks, as the rotation is,
+            // so the fall is as smooth at 120 FPS as the tip-over.
+            let tick = (tree.last_tick_at.elapsed().as_secs_f64() / TICK_SECS).clamp(0.0, 1.0);
+            let smooth_drop = tree.prev_drop_y + (tree.drop_y - tree.prev_drop_y) * tick;
             let angle = tree_angle(tree, p) as f32;
             let axis = glam::Vec3::new(tree.toward[2] as f32, 0.0, -(tree.toward[0] as f32));
             let hinge = glam::DVec3::new(
                 tree.cut[0] as f64 + 0.5,
-                tree.cut[1] as f64,
+                tree.cut[1] as f64 + smooth_drop,
                 tree.cut[2] as f64 + 0.5,
             );
             let to_camera = (hinge - camera).as_vec3();
@@ -738,14 +789,13 @@ impl Game<'_> {
                 self.block_model_vertices(log.state, 42, matrix, packed, true, out);
             }
 
-            let ground = tree.cut[1] as f64;
+            let ground = tree.cut[1] as f64 + smooth_drop;
             for leaf in &tree.leaves {
                 let (center, scale, spin) = if p <= leaf.at {
-                    (
-                        rotate_point(tree.cut, tree.toward, leaf.center, angle as f64),
-                        1.0,
-                        None,
-                    )
+                    let mut attached =
+                        rotate_point(tree.cut, tree.toward, leaf.center, angle as f64);
+                    attached[1] += smooth_drop;
+                    (attached, 1.0, None)
                 } else {
                     let (center, scale, spin) = leaf_state(leaf, p, ground);
                     (center, scale, Some(spin))
@@ -779,6 +829,14 @@ impl Game<'_> {
     }
 }
 
+/// The blocks that hold nothing: what a log or leaf leaves behind.
+fn is_air(block: &str) -> bool {
+    matches!(
+        block,
+        "minecraft:air" | "minecraft:cave_air" | "minecraft:void_air"
+    )
+}
+
 /// Tree blocks never stop a falling tree; it passes through neighbouring trees.
 fn is_tree_block(block: &str) -> bool {
     is_log(block)
@@ -793,6 +851,60 @@ fn is_tree_block(block: &str) -> bool {
                 | "minecraft:muddy_mangrove_roots"
                 | "minecraft:shroomlight"
         )
+}
+
+/// Each log's world centre with the trunk at `angle`, dropped by `drop_y`
+/// blocks: `rotate_point`'s rotation, then the whole tree moved down.
+fn log_centres<'a>(
+    tree: &'a ActiveTree,
+    angle: f64,
+    drop_y: f64,
+) -> impl Iterator<Item = [f64; 3]> + 'a {
+    let (sin, cos) = angle.sin_cos();
+    let t = 1.0 - cos;
+    let (dx, dz) = (tree.toward[0], tree.toward[2]);
+    let hinge = [
+        tree.cut[0] as f64 + 0.5,
+        tree.cut[1] as f64,
+        tree.cut[2] as f64 + 0.5,
+    ];
+    tree.logs.iter().map(move |log| {
+        let ox = log.pos.x as f64 + 0.5 - hinge[0];
+        let oy = log.pos.y as f64 + 0.5 - hinge[1];
+        let oz = log.pos.z as f64 + 0.5 - hinge[2];
+        [
+            hinge[0] + (cos + t * dz * dz) * ox + sin * dx * oy - t * dx * dz * oz,
+            hinge[1] + drop_y + (-sin * dx * ox + cos * oy - sin * dz * oz),
+            hinge[2] + (-t * dx * dz * ox + sin * dz * oy + (cos + t * dx * dx) * oz),
+        ]
+    })
+}
+
+/// One tick of the trunk's fall under gravity: its new drop (0 or less, in
+/// blocks) and speed. `supported` says the trunk would be inside solid ground
+/// at that drop; the step is then halved a few times, so the tree settles onto
+/// the surface it reached instead of stopping a frame above it.
+fn drop_step(drop_y: f64, drop_vel: f64, supported: impl Fn(f64) -> bool) -> (f64, f64) {
+    // Resting on the ground it reached: nothing moves it for the rest of the fall.
+    if drop_vel == 0.0 && supported(drop_y) {
+        return (drop_y, 0.0);
+    }
+    let vel = drop_vel + GRAVITY_FALL * TICK_SECS;
+    let next = (drop_y - vel * TICK_SECS).max(-MAX_DROP);
+    if !supported(next) {
+        return (next, vel);
+    }
+    // The ground is in the way: keep the deepest drop that is still free.
+    let (mut free, mut hit) = (drop_y, next);
+    for _ in 0..SETTLE_STEPS {
+        let mid = (free + hit) / 2.0;
+        if supported(mid) {
+            hit = mid;
+        } else {
+            free = mid;
+        }
+    }
+    (free, 0.0)
 }
 
 /// The inverted-pendulum shape from `voxel-tree-fall.html`, normalized 0..=1.

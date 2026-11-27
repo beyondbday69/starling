@@ -1771,3 +1771,100 @@ are the same count as before), and no other file in the mod mentions it.
 ## Blockers
 
 None.
+
+
+---
+
+# Feature Report — Timber Fall: Gravity Drop (`drop_y`) So Trees Fall to the Ground
+
+## What changed (`native-mods/timber_fall/mixins/timber_fall/runtime.rs`)
+
+A trunk cut high up, on a ledge, or one that was already floating used to tip to 90° and pop
+its logs at the height it was cut (`cut[1]`). It now falls under gravity until it lies on the
+ground below it, and its drops spawn where it landed.
+
+- **`ActiveTree`**: `drop_y: f64` (0 or less, in blocks), `prev_drop_y: f64` (the previous tick,
+  for the render), `drop_vel: f64` (blocks a second), all starting at `0.0`.
+- **`timber_fall_tick`**: each tick saves `prev_drop_y = drop_y`, then — once the trunk has tipped
+  off its stump (`p >= DROP_FROM`, 0.15 of the timeline) or the log was cut with air under it
+  (`timber_fall_floating`, so a floating log drops from tick one) — steps `drop_step`:
+  `vel += GRAVITY_FALL * TICK_SECS`, `drop -= vel * TICK_SECS`, clamped to `-MAX_DROP` (32).
+  If the trunk would be inside solid ground at the new drop, the step is halved `SETTLE_STEPS`
+  (4) times to settle it on the surface it reached, and the speed goes to 0. A trunk already
+  resting (`vel == 0` and supported) short-circuits.
+- **`timber_fall_hits_at`** (new): the trunk's support test — every log's rotated centre at
+  `(angle, drop_y)`, tested at the cell under its **bottom face** (`floor(y - 0.5)`), ignoring
+  tree blocks (`is_tree_block`) so the trunk passes its own stump and neighbours. The existing
+  rotation stop (`timber_fall_hits`) now shares the same geometry through **`log_centres`** (a new
+  free helper returning each log's centre: `rotate_point`'s rotation, then the drop as a pure
+  translation) and a small **`timber_fall_solid`** test — no second copy of the rotation maths.
+  `is_air` names the three air blocks for `timber_fall_floating`.
+- **`timber_fall_render`**: `smooth_drop` interpolates `prev_drop_y → drop_y` by
+  `last_tick_at.elapsed() / TICK_SECS` clamped to `0..=1`, so the fall is as smooth at 120 FPS as
+  the rotation. `hinge.y += smooth_drop` (the whole trunk, and `to_camera`, moves down), attached
+  leaves add it to their centre, and detached leaves fall to `ground = cut[1] + smooth_drop`.
+- **Drop positions**: both item spawns (the pop loop and the `p >= 1.0` safety net) add `drop_y`
+  to the landing point, so items appear on the ground where the logs actually came to rest.
+
+Kept intact: the pole-equation tip-over and its shape curve, the terrain-hit `impact_angle`, the
+three bounce hops, the swell, the leaf fall/fade, the camera shake and the axe wear.
+
+## Verification
+
+The mixin file is not part of the crate's `[lib]` (the crate tests `src/`), so it cannot be
+compiled by `cargo test --manifest-path native-mods/timber_fall/Cargo.toml`. The new drop code was
+therefore checked by extracting the **real** `log_centres`, `drop_step`, `is_air` and `rotate_point`
+text (plus the real constants) into a throwaway harness with a stand-in `ActiveTree`, where
+`cargo test` and `cargo clippy -D warnings` were clean with five behaviour tests:
+
+- `the_drop_is_the_rotation_moved_down`: `log_centres` equals `rotate_point` at 0/0.4/1.0/90°, and a
+  drop of 3 lowers every centre by exactly 3.
+- `free_fall_follows_gravity`: `vel == g·t` every tick and the drop tracks `½g·t²`.
+- `a_tree_cut_high_up_falls_to_the_ground_below_it`: a trunk cut 7 blocks up falls ~6.5 blocks and
+  rests with its lowest bottom face within 0.01 blocks above the ground's surface, without sinking,
+  and stays there.
+- `a_tree_cut_at_ground_level_stays_put`: at `drop_y == 0` the tipped trunk is already supported, so
+  nothing moves.
+- `a_very_high_tree_stops_at_the_deepest_drop`: free fall clamps at `-MAX_DROP`.
+
+`rustfmt --check --edition 2024` on the mixin file reports the same six pre-existing formatting
+diffs it reports on the committed file and none in the new code.
+
+## Commands and real output
+
+```sh
+cargo fmt --manifest-path native-mods/timber_fall/Cargo.toml --check
+cargo clippy --manifest-path native-mods/timber_fall/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path native-mods/timber_fall/Cargo.toml
+```
+
+```
+$ cargo fmt --check
+fmt=0
+
+$ cargo clippy … -- -D warnings
+    Checking timber_fall v0.1.0 (/root/starling/native-mods/timber_fall)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.92s
+
+$ cargo test …
+running 80 tests
+test result: ok. 80 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+`native-mods/timber_fall/target/` was removed after the runs.
+
+## Untested / scope
+
+- The mixin was not compiled inside `horizon-client` here (no room for that build on this box) and
+  not run in game: how the drop looks, and the interpolation at 60/120 FPS, are unverified.
+- The pure `src/falling.rs` timeline (the `horizon-sdk` side) still has no drop; this change is the
+  native mixin only, as the task asked.
+- Leaves detach on the schedule computed before the drop (`schedule_leaf`), so a trunk that falls
+  several blocks releases them slightly early relative to its final height; they still land on the
+  dropped ground level.
+
+## Blockers
+
+None.
