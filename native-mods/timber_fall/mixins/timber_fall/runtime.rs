@@ -721,7 +721,7 @@ impl Game<'_> {
                 if p >= pop {
                     continue;
                 }
-                // Swell and brighten in the last 0.16 s before this log pops.
+                // Swell in the last 0.16 s before this log pops.
                 let w = (1.0 - (pop - p) * DURATION / 0.16).max(0.0);
                 let scale = (1.0 + 0.35 * w * w) as f32;
                 let light = self.world.light(log.pos.x, log.pos.y, log.pos.z);
@@ -735,19 +735,7 @@ impl Game<'_> {
                     * rot
                     * glam::Mat4::from_translation(offset)
                     * glam::Mat4::from_scale(glam::Vec3::splat(scale));
-                let v_start = out.len();
                 self.block_model_vertices(log.state, 42, matrix, packed, true, out);
-                if w > 0.45 {
-                    // Smooth glow: unlit fullbright keeps the bark texture visible.
-                    // Only the final ~0.022 s (w > 0.86) gets the white overlay.
-                    for v in &mut out[v_start..] {
-                        v.normal = [0, 0, 0, 0];
-                        v.light = 0xF0F0;
-                        if w > 0.86 {
-                            v.layer = 5;
-                        }
-                    }
-                }
             }
 
             let ground = tree.cut[1] as f64;

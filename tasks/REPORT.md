@@ -1715,3 +1715,59 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 ## Blockers
 
 None.
+
+
+---
+
+# Fix Report — Timber Fall: No More Pop Flashes
+
+## Change (`native-mods/timber_fall/mixins/timber_fall/runtime.rs`, `timber_fall_render`)
+
+The white pop flash is gone. Removed from the per-log loop:
+
+- `let v_start = out.len();` (it existed only for the flash loop below),
+- the whole `if w > 0.45 { … }` block — `v.normal = [0, 0, 0, 0]` (unlit),
+  `v.light = 0xF0F0` (fullbright) and `v.layer = 5` (the pure white overlay for `w > 0.86`),
+
+so a log now keeps its own bark texture and the world's light right up to the moment it pops:
+no brightening, no fullbright glow, no white frame. The comment above the swell now says
+"Swell in the last 0.16 s before this log pops." since nothing brightens.
+
+Kept intact: the `scale = 1.0 + 0.35 * w * w` swell over the last 0.16 s, `pop_at` timing (a log
+still disappears when it pops), the fall/bounce hinge rotation, the leaves' fall and fade
+(`leaf_state`), and the impact camera shake (`shake.roll`/`pitch`).
+
+## Commands and real output
+
+```sh
+cargo fmt --manifest-path native-mods/timber_fall/Cargo.toml --check
+cargo clippy --manifest-path native-mods/timber_fall/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path native-mods/timber_fall/Cargo.toml
+```
+
+```
+$ cargo fmt --check
+fmt=0
+
+$ cargo clippy … -- -D warnings
+    Checking timber_fall v0.1.0 (/root/starling/native-mods/timber_fall)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.08s
+
+$ cargo test …
+running 80 tests
+test result: ok. 80 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+`native-mods/timber_fall/target/` was removed after the run. No test pinned the flash (the 80 tests
+are the same count as before), and no other file in the mod mentions it.
+
+## Untested
+
+- Not run in game, and the APK build was not run: the look of the swell without the glow is
+  unverified.
+
+## Blockers
+
+None.

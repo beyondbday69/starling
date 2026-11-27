@@ -1,20 +1,17 @@
-# Fix Task: Add Wildcard Arm to `#[non_exhaustive] HudMode` Match in `zoom/key.rs` (`E0004`)
+# Task: Remove Pop Flashes from Timber Fall
 
-## Root Cause (CI Run `46007642618`)
-```
-error[E0004]: non-exhaustive patterns: `_` not covered
-   --> crates/horizon-client/src/game/starling/native_compat.rs:343:31
-note: `mod_vocab::HudMode` is marked as non-exhaustive, so a wildcard `_` is necessary to match exhaustively
-```
-- `horizon-client` compiled cleanly all the way through `zoom` except for that single `match game.hud_mode()` in `native-mods/zoom/mixins/zoom/key.rs`!
+## User Request
+> "remove flashes from timber fall"
 
-## Fix
-- In `native-mods/zoom/mixins/zoom/key.rs`, add `_ => zoom::Hud::AllVisible,` to `match game.hud_mode() { ... }`.
-- Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` on `native-mods/zoom/Cargo.toml`, clean `native-mods/zoom/target/`, and append to `tasks/REPORT.md`.
+## Change
+- In `native-mods/timber_fall/mixins/timber_fall/runtime.rs` (`timber_fall_render`):
+  - Remove the white pop flash (`v.normal = [0, 0, 0, 0]`, `v.light = 0xF0F0`, `v.layer = 5`, and `v_start` vertex loop) completely so logs never flash white before popping.
+  - Keep the rest of the falling/bounce/swell/pop/leaf/camera-shake animation intact.
+- Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` on `native-mods/timber_fall/Cargo.toml`, clean `native-mods/timber_fall/target/`, and append a short report to `tasks/REPORT.md`.
 
 ## Test Commands
 ```sh
-cargo fmt --manifest-path native-mods/zoom/Cargo.toml --check
-cargo clippy --manifest-path native-mods/zoom/Cargo.toml --all-targets -- -D warnings
-cargo test --manifest-path native-mods/zoom/Cargo.toml
+cargo fmt --manifest-path native-mods/timber_fall/Cargo.toml --check
+cargo clippy --manifest-path native-mods/timber_fall/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path native-mods/timber_fall/Cargo.toml
 ```
