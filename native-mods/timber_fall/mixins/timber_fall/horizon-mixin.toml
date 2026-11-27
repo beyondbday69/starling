@@ -75,3 +75,14 @@ bindings = [
   { name = "partial", ty = "f64", value = "partial" },
   { name = "out", ty = "&mut Vec<horizon_client::mesher::Vertex>", value = "&mut *out" },
 ]
+
+[[injection]]
+id = "camera_shake"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_camera_shake"
+helper = "camera_shake.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "self" },
+  { name = "partial", ty = "f32", value = "partial" },
+  { name = "shake", ty = "&mut mod_api::Shake", value = "&mut *shake" },
+]

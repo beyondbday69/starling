@@ -1227,3 +1227,82 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 ## Blockers
 
 None.
+
+---
+
+# Fix Report — Smooth Wall-Clock Animation, No Leaf Drops, Pop Flash and Impact Shake
+
+## Changes in `native-mods/timber_fall/mixins/timber_fall/`
+
+- `runtime.rs` — smooth animation:
+  - `ActiveTree` now carries `smooth_secs: f64`, `last_tick_at: Instant` and
+    `last_render_at: Option<Instant>`.
+  - `timber_fall_tick` still advances the authoritative `elapsed_secs` by `0.05` and
+    refreshes `last_tick_at`.
+  - `timber_fall_render` advances `smooth_secs` by the frame delta
+    (clamped to 0.05 s) while `last_tick_at.elapsed() < 0.25 s`, clamps it to
+    `[0, DURATION]`, and uses `p = smooth_secs / DURATION`. A stale tick freezes the
+    animation instead of jumping, so playback is frame-rate smooth (60/120 FPS) instead
+    of 20 TPS stair-stepping. `_partial` is no longer used for timing.
+- `runtime.rs` — leaves do not drop:
+  - `LeafBlock` no longer has `drops` or `dropped`; leaf/attached blocks are never passed
+    to `block_drops` and never pushed into `spawns`. They still detach, fall, shrink and
+    disappear. Only logs spawn items, and the cut log is still handled by vanilla.
+- `runtime.rs` — pop flash:
+  - Before each log's `block_model_vertices`, `v_start = out.len()` is recorded; when the
+    pre-pop `w > 0`, every new vertex has its RGBA8 colour lerped toward white (alpha
+    preserved) and its light lerped toward `0xF0F0` by `k = min(0.75·w³, 1)` — a crisp
+    white-hot flash in the last 0.16 s before the log bursts.
+- `runtime.rs` + `camera_shake.rs` + `horizon-mixin.toml` — impact shake:
+  - New HEAD injection into `horizon_client::game::native_hooks::Game<'_>::native_camera_shake`
+    (binding `game = self`, `partial`, `shake = &mut *shake`), calling
+    `timber_fall_camera_shake`.
+  - For each active tree, in the 0.35 s after `IMPACT`: `env = (1 − t/0.35)²` and the
+    requested subtle offsets:
+    `offset[1] += sin(t·75)·0.05·env`,
+    `offset[0] += sin(t·53)·0.025·env`,
+    `roll += sin(t·60)·0.45·env`.
+
+## Verification
+
+- `native_mod_adapt.py`'s own `module_tree`/`relocate` leaves all three injected targets
+  unchanged, including
+  `horizon_client::game::native_hooks::Game<'_>::native_camera_shake`.
+- `native_camera_shake` is live: `shared.rs:3372` calls it every frame while playing.
+- Vertex colour/light fields were checked against `cit_glint`'s RGBA8 byte tests (alpha is
+  the high byte, red the low byte) and the existing packed-light convention.
+- No `//!`/`#![...]` inner attributes and no symlinks in the bundle.
+
+## Commands and real output
+
+```sh
+cargo fmt --manifest-path native-mods/timber_fall/Cargo.toml --check
+cargo clippy --manifest-path native-mods/timber_fall/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path native-mods/timber_fall/Cargo.toml
+```
+
+```
+$ cargo fmt --check
+fmt ok
+
+$ cargo clippy … -- -D warnings
+    Checking timber_fall v0.1.0 (/root/starling/native-mods/timber_fall)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.34s
+
+$ cargo test …
+running 80 tests
+test result: ok. 80 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+`native-mods/timber_fall/target/` was removed after the run.
+
+## Untested
+
+- The APK build itself was not run here (no Android toolchain); smoothness, flash
+  blending and shake feel are unverified in game.
+
+## Blockers
+
+None.

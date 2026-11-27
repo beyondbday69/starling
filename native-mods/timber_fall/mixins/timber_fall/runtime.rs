@@ -7,6 +7,7 @@
 
 use std::collections::{HashSet, VecDeque};
 use std::sync::Mutex;
+use std::time::Instant;
 
 use super::Game;
 use crate::items::{BlockLootRoll, ItemStack};
@@ -254,7 +255,6 @@ struct LogBlock {
 struct LeafBlock {
     center: [f64; 3],
     state: BlockStateId,
-    drops: Vec<ItemStack>,
     /// Timeline fraction where it breaks off the tree.
     at: f64,
     /// World centre at the moment it breaks off.
@@ -266,7 +266,6 @@ struct LeafBlock {
     vz: f64,
     spin: f64,
     size: f64,
-    dropped: bool,
 }
 
 /// One tree in flight.
@@ -277,6 +276,11 @@ struct ActiveTree {
     cut: [i32; 3],
     toward: [f64; 3],
     elapsed_secs: f64,
+    /// Wall-clock seconds used for rendering, so frames are not tied to 20 TPS.
+    smooth_secs: f64,
+    /// The last server tick; a gap over 0.25 s freezes the animation.
+    last_tick_at: Instant,
+    last_render_at: Option<Instant>,
     /// The angle the trunk stops at (lowered by terrain hit during the fall).
     impact_angle: f64,
     logs: Vec<LogBlock>,
@@ -453,16 +457,6 @@ impl Game<'_> {
         let mut leaves = Vec::new();
         for p in tree.attached.iter().chain(&tree.leaves) {
             let block = self.world.block(p[0], p[1], p[2]);
-            let drops = self.res.items().block_drops(
-                self.pack.assets.registry,
-                block,
-                BlockLootRoll {
-                    held: held_stack.as_ref(),
-                    ..Default::default()
-                },
-                &mut self.world.random,
-                None,
-            );
             let center = [
                 p[0] as f64 + 0.5,
                 p[1] as f64 + 0.5,
@@ -472,7 +466,6 @@ impl Game<'_> {
             leaves.push(LeafBlock {
                 center,
                 state: block,
-                drops,
                 at,
                 from,
                 ang,
@@ -481,7 +474,6 @@ impl Game<'_> {
                 vz: (hash01(*p, 12) - 0.5) * 5.0,
                 spin: (hash01(*p, 13) - 0.5) * 8.0,
                 size: 0.3 + hash01(*p, 14) * 0.25,
-                dropped: false,
             });
         }
 
@@ -510,6 +502,9 @@ impl Game<'_> {
                 cut: pos,
                 toward,
                 elapsed_secs: 0.0,
+                smooth_secs: 0.0,
+                last_tick_at: Instant::now(),
+                last_render_at: None,
                 impact_angle: std::f64::consts::FRAC_PI_2,
                 logs,
                 leaves,
@@ -532,6 +527,7 @@ impl Game<'_> {
                 let finished = {
                     let tree = &mut s.active[i];
                     tree.elapsed_secs += TICK_SECS;
+                    tree.last_tick_at = Instant::now();
                     let p = (tree.elapsed_secs / DURATION).clamp(0.0, 1.0);
 
                     // Solid ground can stop the fall before the whole 90 degrees.
@@ -559,19 +555,7 @@ impl Game<'_> {
                         spawns.push((tree.dimension.clone(), drops, landing));
                     }
 
-                    let ground = tree.cut[1] as f64;
-                    for leaf in tree.leaves.iter_mut() {
-                        if leaf.dropped || p <= leaf.at {
-                            continue;
-                        }
-                        let (at, scale, _) = leaf_state(leaf, p, ground);
-                        if scale > 0.0 {
-                            continue;
-                        }
-                        leaf.dropped = true;
-                        let drops = std::mem::take(&mut leaf.drops);
-                        spawns.push((tree.dimension.clone(), drops, at));
-                    }
+                    // Leaves only shrink and vanish; they never become items.
 
                     if p >= 1.0 {
                         // Safety net: nothing may be lost if a leaf ran past the end.
@@ -587,17 +571,6 @@ impl Game<'_> {
                                 tree.dimension.clone(),
                                 std::mem::take(&mut log.drops),
                                 landing,
-                            ));
-                        }
-                        for leaf in tree.leaves.iter_mut() {
-                            if leaf.dropped {
-                                continue;
-                            }
-                            leaf.dropped = true;
-                            spawns.push((
-                                tree.dimension.clone(),
-                                std::mem::take(&mut leaf.drops),
-                                leaf.from,
                             ));
                         }
                         true
@@ -652,6 +625,26 @@ impl Game<'_> {
         }
     }
 
+    /// A little camera shake for 0.35 s after the trunk hits the ground.
+    pub(super) fn timber_fall_camera_shake(&self, _partial: f32, shake: &mut mod_api::Shake) {
+        let s = lock_state();
+        let dimension = self.timber_fall_dimension_id();
+        for tree in &s.active {
+            if tree.dimension != dimension {
+                continue;
+            }
+            let p = (tree.smooth_secs / DURATION).clamp(0.0, 1.0);
+            let t = (p - IMPACT) * DURATION;
+            if !(0.0..0.35).contains(&t) {
+                continue;
+            }
+            let env = (1.0 - t / 0.35).powi(2);
+            shake.offset[1] += ((t * 75.0).sin() * 0.05 * env) as f32;
+            shake.offset[0] += ((t * 53.0).sin() * 0.025 * env) as f32;
+            shake.roll += ((t * 60.0).sin() * 0.45 * env) as f32;
+        }
+    }
+
     /// Whether a trunk block would be inside solid ground at `angle`.
     fn timber_fall_hits(&self, tree: &ActiveTree, angle: f64) -> bool {
         let (sin, cos) = angle.sin_cos();
@@ -685,19 +678,28 @@ impl Game<'_> {
     pub(super) fn timber_fall_render(
         &mut self,
         camera: glam::DVec3,
-        partial: f64,
+        _partial: f64,
         out: &mut Vec<Vertex>,
     ) {
-        let s = lock_state();
+        let mut s = lock_state();
         if s.active.is_empty() {
             return;
         }
         let dimension = self.timber_fall_dimension_id();
-        for tree in &s.active {
+        for tree in &mut s.active {
             if tree.dimension != dimension {
                 continue;
             }
-            let p = ((tree.elapsed_secs + partial * TICK_SECS) / DURATION).clamp(0.0, 1.0);
+            // Wall-clock seconds keep the animation smooth between 20 TPS server ticks.
+            let now = Instant::now();
+            if tree.last_tick_at.elapsed().as_secs_f64() < 0.25 {
+                if let Some(last) = tree.last_render_at {
+                    let frame = now.duration_since(last).as_secs_f64().clamp(0.0, 0.05);
+                    tree.smooth_secs = (tree.smooth_secs + frame).min(DURATION);
+                }
+            }
+            tree.last_render_at = Some(now);
+            let p = (tree.smooth_secs / DURATION).clamp(0.0, 1.0);
             let angle = tree_angle(tree, p) as f32;
             let axis = glam::Vec3::new(tree.toward[2] as f32, 0.0, -(tree.toward[0] as f32));
             let hinge = glam::DVec3::new(
@@ -729,7 +731,21 @@ impl Game<'_> {
                     * rot
                     * glam::Mat4::from_translation(offset)
                     * glam::Mat4::from_scale(glam::Vec3::splat(scale));
+                let v_start = out.len();
                 self.block_model_vertices(log.state, 42, matrix, packed, true, out);
+                if w > 0.0 {
+                    // White-hot pop flash in the last 0.16 s before this log bursts.
+                    let k = (0.75 * w * w * w).min(1.0) as f32;
+                    let mix = |c: u32| (c as f32 + (255.0 - c as f32) * k) as u32;
+                    for v in &mut out[v_start..] {
+                        let alpha = v.color >> 24;
+                        let r = mix(v.color & 0xFF);
+                        let g = mix((v.color >> 8) & 0xFF);
+                        let b = mix((v.color >> 16) & 0xFF);
+                        v.color = (alpha << 24) | (b << 16) | (g << 8) | r;
+                        v.light = (v.light as f32 + (0xF0F0 as f32 - v.light as f32) * k) as u32;
+                    }
+                }
             }
 
             let ground = tree.cut[1] as f64;

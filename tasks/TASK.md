@@ -1,23 +1,34 @@
-# Fix Task: Fix Dead `native_tick` Hook (`Game<'_>::tick`), `timber_fall_hits` Center Offset, and Unique APK Artifact Zip Name
+# Task 8: Smooth Wall-Clock Animation, No Leaf Drops, Pop Flash, and Little Camera Shake
 
-## Root Cause of "tree stops right there in mid air"
-- `crates/horizon-client/src/game/starling/native_compat.rs:78` defines `native_tick(&mut self)`, **but nothing in `crates/horizon-client/src/` ever calls `native_tick()`!**
-- Because `mixins/timber_fall/horizon-mixin.toml` injected `timber_fall_tick` into `native_tick`, `timber_fall_tick()` **never ran**, so `tree.elapsed_secs` stayed `0.0` forever and the tree stayed frozen at `0°` in mid-air!
+## User Feedback
+> "falling animation is choppy not smooth and do not drop leaves as items just disapper them and add flash on poping animantion and little camera shake"
 
-## Fixes
-1. **Inject `timber_fall_tick` into `horizon_client::game::Game<'_>::tick` (`crates/horizon-client/src/game.rs:4612`):**
-   - Change `[[injection]] id = "tick"` target in `native-mods/timber_fall/mixins/timber_fall/horizon-mixin.toml` from `horizon_client::game::native_hooks::Game<'_>::native_tick` to `horizon_client::game::Game<'_>::tick` (`kind = "HEAD"`, `bindings = [{ name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" }]`).
-   - Verify with `packaging/android/native_mod_adapt.py` that `horizon_client::game::Game<'_>::tick` relocates cleanly without error.
-   - Note: `Game::tick` also runs when `self.remote.is_some()` (returns early at line 4637), and `timber_fall_tick` already starts with `if self.remote.is_some() { return; }`, which is safe! Also check `if !running` (paused/frozen) if needed, or let `timber_fall_tick` run on server ticks.
-2. **Fix `timber_fall_hits` center offset in `native-mods/timber_fall/mixins/timber_fall/runtime.rs`:**
-   - In `timber_fall_hits` (lines 666–668), use the block **center** `(log.pos.x as f64 + 0.5 - hinge[0], log.pos.y as f64 + 0.5 - hinge[1], log.pos.z as f64 + 0.5 - hinge[2])` instead of the corner `log.pos.x - hinge[0]` / `log.pos.z - hinge[2]`, so ground collision checks match `rotate_point(tree.cut, tree.toward, block_center(log.pos), angle)`.
-3. **Update `.github/workflows/android.yml` artifact zip name:**
-   - Change `name: starling-apk-${{ matrix.abi }}` (around line 150) to `name: starling-apk-${{ matrix.abi }}-r${{ github.run_number }}` so every build produces a uniquely named artifact zip.
+## Fixes in `native-mods/timber_fall/mixins/timber_fall/`
+1. **Make the falling animation silky-smooth (60/120 FPS, zero choppiness):**
+   - Currently `timber_fall_tick()` adds `0.05` at 20 TPS while `timber_fall_render()` uses `elapsed_secs + partial * 0.05`. Because `Game::tick()` and `partial` can step out of phase at tick boundaries, `p` stutters every 50 ms!
+   - **Fix:** Track `started_at: std::time::Instant` (or `last_tick_at: std::time::Instant` + `smooth_secs: f64` + `last_render_at: Option<std::time::Instant>`) on `ActiveTree`:
+     - In `timber_fall_render`: advance `smooth_secs` by `now.duration_since(last_render_at).as_secs_f64().clamp(0.0, 0.05)` as long as `last_tick_at.elapsed().as_secs_f64() < 0.25` (so pausing the game freezes the tree cleanly!). Clamp `smooth_secs` within `[0.0, DURATION]`, and compute `p = (smooth_secs / DURATION).clamp(0.0, 1.0)`.
+     - That gives monotonic 60/120 FPS animation with zero backwards jumps or 20 TPS stair-stepping!
+2. **Do NOT drop leaves as items — just disappear them:**
+   - Remove `drops` from `LeafBlock` (no `block_drops` evaluation for leaves/attached blocks, and never push leaf drops into `spawns`).
+   - Leaves still break off at `leaf.at`, fall under gravity, and shrink away (`scale -> 0`) visually, then disappear without spawning items.
+   - Only logs spawn item drops when they pop!
+3. **Add flash on popping animation:**
+   - Look at `voxel-tree-fall.html`: in the last `0.16s` before a log pops (`w = (1.0 - (pop - p) * DURATION / 0.16).max(0.0)`), `scale = 1.0 + 0.35 * w * w` AND `emissive = 0.7 * w * w * w`.
+   - In `timber_fall_render`, record `let v_start = out.len();` before `self.block_model_vertices(log.state, 42, matrix, packed, true, out);`.
+   - When `w > 0.0`, iterate over `&mut out[v_start..]`:
+     - Boost `v.light` toward fullbright (`0xF0F0` / `240 | (240 << 8)`) and lerp `v.color` (RGBA8 bytes) toward white (`255, 255, 255`) by `(0.75 * w * w * w).min(1.0)` (preserving alpha)! That creates a crisp white-hot pop flash right before each log bursts into drops.
+4. **Add a little camera shake on impact:**
+   - Add a `camera_shake` injection (`HEAD` of `horizon_client::game::native_hooks::Game<'_>::native_camera_shake`, bindings: `game: &crate::game::Game<'_>` = `self`, `partial: f32` = `partial`, `shake: &mut crate::mod_api::Shake` = `&mut *shake` — verify `Shake` path in `crates/horizon-client/src/game/native_hooks/base.rs:894` and `native_mod_adapt.py`!).
+   - Create `native-mods/timber_fall/mixins/timber_fall/camera_shake.rs` calling `game.timber_fall_camera_shake(shake)`.
+   - In `timber_fall_camera_shake(&self, shake: &mut ...)`: for each active tree in the current dimension where `t = (p - IMPACT) * DURATION` is in `0.0..0.35`:
+     - `let env = (1.0 - t / 0.35).powi(2);`
+     - Subtle shake: `shake.offset[1] += ((t * 75.0).sin() * 0.05 * env) as f32; shake.offset[0] += ((t * 53.0).sin() * 0.025 * env) as f32; shake.roll += ((t * 60.0).sin() * 0.45 * env) as f32;`
 
 ## Constraints
-- Do not modify any files outside `native-mods/timber_fall/`, `.github/workflows/android.yml`, and `tasks/REPORT.md`.
-- Clean up `native-mods/timber_fall/target/` if created.
-- Run `fmt --check`, `clippy --all-targets -- -D warnings`, and `cargo test` on `native-mods/timber_fall/Cargo.toml`, and update `tasks/REPORT.md`.
+- Verify `native_camera_shake` relocation with `packaging/android/native_mod_adapt.py`.
+- Keep `fmt --check`, `clippy --all-targets -- -D warnings`, and `cargo test` passing on `native-mods/timber_fall/Cargo.toml` with 0 warnings.
+- Clean up `native-mods/timber_fall/target/` and update `tasks/REPORT.md`.
 
 ## Test Commands
 ```sh
