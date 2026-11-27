@@ -1,22 +1,22 @@
-# Task 9: Fix Pop White Flash (`v.layer = 5`) and Pass Through Other Trees (`timber_fall_hits`)
+# Task 10: Tone Down Pop White Flash to Match `voxel-tree-fall.html`
 
 ## User Feedback
-> "its good but not perfect no white flash and it stucking i other trees just pass trough it"
+> "white flash is too much white man check in html how it shoud look"
 
-## Fixes in `native-mods/timber_fall/mixins/timber_fall/runtime.rs`
-1. **Real White Flash on Popping (`v.layer = 5`):**
-   - `v.color` is multiplicative, so lerping `v.color` to `255` didn't produce a white flash.
-   - In `horizon-client` (`crates/horizon-client/src/game/entities/minecarts.rs:2818-2825` & `tnt.rs:824`), the official `OverlayTexture` white flash is:
-     ```rust
-     for v in &mut out[v_start..] {
-         v.layer = 5;
-     }
-     ```
-   - When `w > 0.35` (the final ~0.10 s right before each log pops, while `scale = 1.0 + 0.35 * w * w`), set `v.layer = 5` (and `v.light = 0xF0F0` if desired) on `&mut out[v_start..]` so the log flashes crisp white right before bursting!
-2. **Pass Through Other Trees (`timber_fall_hits`):**
-   - Currently `timber_fall_hits` stops as soon as `!self.native_block_collision(at).is_empty()`, which causes a falling tree to get stuck on neighboring trees' trunks/branches/leaves in a forest.
-   - In `timber_fall_hits`, before treating `at` as a solid obstacle, read `let block_name = self.res.facts().get(self.world.block(at[0], at[1], at[2])).name;` and **skip** (`continue`) if it is any tree block (`is_log(&block_name)`, `is_leaves(&block_name)`, `block_name == "minecraft:vine"`, `"minecraft:cocoa"`, `"minecraft:bee_nest"`, `"minecraft:mangrove_roots"`, `"minecraft:muddy_mangrove_roots"`, `"minecraft:shroomlight"`, `block_name.ends_with("_wart_block")`).
-   - Also: only check `native_block_collision(at)` for non-tree solid terrain (ground, stone, dirt, etc.), so a falling tree passes cleanly through any neighboring trees and lands on the terrain!
+## Reference (`voxel-tree-fall.html`)
+In `voxel-tree-fall.html`:
+```js
+const w = broken ? 0 : Math.max(0, 1 - (bp - p) * C.duration / .16);
+log.scale.setScalar(1 + .35 * w * w);
+log.material.forEach(x => x.emissive.setScalar(.7 * w * w * w));
+```
+- `w > 0.35` with `v.layer = 5` turned the entire log 100% solid pure white for ~0.10 s, which is much harsher than `voxel-tree-fall.html`'s smooth `0.7 * w^3` glow.
+
+## Fix in `native-mods/timber_fall/mixins/timber_fall/runtime.rs`
+In `timber_fall_render`:
+- Keep the smooth swell (`scale = 1.0 + 0.35 * w * w`) over the last `0.16 s` (`w > 0.0`).
+- For `w > 0.45 && w <= 0.86`: brighten the **textured** log smoothly without replacing its texture (`v.normal = [0, 0, 0, 0]` to remove dark directional shade/AO and `v.light = 0xF0F0` fullbright, keeping `v.layer` intact so bark grain stays visible!).
+- Only apply `v.layer = 5` (pure white overlay) for the final brief pop-moment `w > 0.86` (~`0.022 s`, i.e. 1–2 frames right before it bursts) — so it gives a subtle bright swell + crisp brief white pop flash instead of turning into a solid white cube for 100 ms.
 
 ## Constraints
 - Keep `fmt --check`, `clippy --all-targets -- -D warnings`, and `cargo test` passing on `native-mods/timber_fall/Cargo.toml` with 0 warnings.

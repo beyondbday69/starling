@@ -737,11 +737,15 @@ impl Game<'_> {
                     * glam::Mat4::from_scale(glam::Vec3::splat(scale));
                 let v_start = out.len();
                 self.block_model_vertices(log.state, 42, matrix, packed, true, out);
-                if w > 0.35 {
-                    // OverlayTexture white flash, as the game's own white-solid block draw.
+                if w > 0.45 {
+                    // Smooth glow: unlit fullbright keeps the bark texture visible.
+                    // Only the final ~0.022 s (w > 0.86) gets the white overlay.
                     for v in &mut out[v_start..] {
-                        v.layer = 5;
+                        v.normal = [0, 0, 0, 0];
                         v.light = 0xF0F0;
+                        if w > 0.86 {
+                            v.layer = 5;
+                        }
                     }
                 }
             }
