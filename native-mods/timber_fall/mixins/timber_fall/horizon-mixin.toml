@@ -27,7 +27,7 @@ bindings = [
 [[injection]]
 id = "tick"
 kind = "HEAD"
-target = "horizon_client::game::native_hooks::Game<'_>::native_tick"
+target = "horizon_client::game::Game<'_>::tick"
 helper = "tick.rs"
 bindings = [
   { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },

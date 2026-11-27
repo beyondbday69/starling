@@ -1163,3 +1163,67 @@ logs. `glam::Mat4::from_scale` and the display-geometry target were verified in 
 ## Blockers
 
 None.
+
+---
+
+# Fix Report — Dead `native_tick` Hook, Collision Center Offset and Unique APK Artifact
+
+## Root cause
+
+`native_compat.rs:78` defines `native_tick(&mut self)`, but nothing in `crates/horizon-client/src/`
+ever calls it. The mixin injected `timber_fall_tick` into that dead hook, so it never ran:
+`elapsed_secs` stayed at `0.0` and the tree stayed frozen at 0° in mid-air.
+
+## Fixes
+
+- `native-mods/timber_fall/mixins/timber_fall/horizon-mixin.toml`
+  - The `tick` injection now targets `horizon_client::game::Game<'_>::tick`
+    (`HEAD`, binding `game = &mut *self`). `Game::tick(&mut self) -> Result<()>` is the
+    real per-tick function (`game.rs:4612`), and `timber_fall_tick` already returns early
+    on `self.remote.is_some()`, so a client does not double-run the authoritative logic.
+  - Verified with `native_mod_adapt.py`'s own `module_tree`/`relocate`:
+    `horizon_client::game::Game<'_>::tick` resolves unchanged.
+- `native-mods/timber_fall/mixins/timber_fall/runtime.rs`
+  - `timber_fall_hits` now uses the block **centre**:
+    `pos.x + 0.5 - hinge[0]`, `pos.y + 0.5 - hinge[1]`, `pos.z + 0.5 - hinge[2]`, matching
+    `rotate_point(..., block_center(pos), ...)` instead of the old corner offsets.
+- `.github/workflows/android.yml`
+  - The uploaded artifact name is now
+    `starling-apk-${{ matrix.abi }}-r${{ github.run_number }}`, so each run produces a
+    uniquely named zip.
+
+## Commands and real output
+
+```sh
+cargo fmt --manifest-path native-mods/timber_fall/Cargo.toml --check
+cargo clippy --manifest-path native-mods/timber_fall/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path native-mods/timber_fall/Cargo.toml
+```
+
+```
+$ cargo fmt --check
+fmt ok
+
+$ cargo clippy … -- -D warnings
+    Checking timber_fall v0.1.0 (/root/starling/native-mods/timber_fall)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.04s
+
+$ cargo test …
+running 80 tests
+test result: ok. 80 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+`native-mods/timber_fall/target/` was removed after the run.
+
+## Untested
+
+- The APK build was not run on this machine; the new `Game::tick` injection and the fixed
+  collision centres are verified against the source and the adapter's relocation only.
+- Other mods still injecting into the dead `native_tick` hook are unaffected by this fix
+  (that hook remains uncalled in the fork).
+
+## Blockers
+
+None.

@@ -663,9 +663,9 @@ impl Game<'_> {
             tree.cut[2] as f64 + 0.5,
         ];
         for log in &tree.logs {
-            let ox = log.pos.x as f64 - hinge[0];
-            let oy = log.pos.y as f64 - hinge[1] + 0.5;
-            let oz = log.pos.z as f64 - hinge[2];
+            let ox = log.pos.x as f64 + 0.5 - hinge[0];
+            let oy = log.pos.y as f64 + 0.5 - hinge[1];
+            let oz = log.pos.z as f64 + 0.5 - hinge[2];
             let x = (cos + t * dz * dz) * ox + sin * dx * oy - t * dx * dz * oz;
             let y = -sin * dx * ox + cos * oy - sin * dz * oz;
             let z = -t * dx * dz * ox + sin * dz * oy + (cos + t * dx * dx) * oz;

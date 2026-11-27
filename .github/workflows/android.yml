@@ -147,7 +147,7 @@ jobs:
           done
       - uses: actions/upload-artifact@v4
         with:
-          name: starling-apk-${{ matrix.abi }}
+          name: starling-apk-${{ matrix.abi }}-r${{ github.run_number }}
           path: target/android/starling-*.apk
           if-no-files-found: error
           # A test build with the release key installs over a release: anyone may download a public
