@@ -1630,3 +1630,88 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 ## Blockers
 
 None.
+
+
+---
+
+# Fix Report — `E0004`: Wildcard Arm for `#[non_exhaustive] HudMode` in `zoom/key.rs`
+
+## Root cause
+
+`mod_api::HudMode` (`crates/horizon-mod-vocab/src/client/hud_mode.rs`) is `#[non_exhaustive]`.
+A match on it from another crate must carry a wildcard arm, so the HUD save in
+`native-mods/zoom/mixins/zoom/key.rs` failed the game build:
+
+```
+error[E0004]: non-exhaustive patterns: `_` not covered
+   --> crates/horizon-client/src/game/starling/native_compat.rs:343:31
+note: `mod_vocab::HudMode` is marked as non-exhaustive, so a wildcard `_` is necessary
+```
+
+## Change
+
+`native-mods/zoom/mixins/zoom/key.rs`, the save before the HUD is hidden:
+
+```rust
+        let saved = zoom::hide_hud(match game.hud_mode() {
+            HudMode::AllVisible => zoom::Hud::AllVisible,
+            HudMode::NoHud => zoom::Hud::NoHud,
+            HudMode::AllHidden => zoom::Hud::AllHidden,
+            // `HudMode` is `#[non_exhaustive]`: a mode a later game adds comes
+            // back as the ordinary HUD rather than staying hidden.
+            _ => zoom::Hud::AllVisible,
+        });
+```
+
+The fallback is `AllVisible` on purpose: an unknown mode is put back as the ordinary HUD, never a
+hidden one. The other arm of `key.rs` matches the mod's own `zoom::Hud`, which is exhaustive, so it
+needs no wildcard.
+
+## Verification
+
+A throwaway two-crate workspace (a `mod_api` crate holding the same `#[non_exhaustive]` enum, and a
+`game` crate standing in for `horizon-client`) compiled the real `runtime.rs`, `key.rs` and
+`bars.rs`:
+
+- with the wildcard arm: `cargo check` clean;
+- with the same arm removed: exactly the CI error,
+  `error[E0004]: non-exhaustive patterns: '_' not covered` /
+  "`HudMode` is marked as non-exhaustive, so a wildcard `_` is necessary to match exhaustively".
+
+So the arm is both necessary and sufficient for this error.
+
+## Commands and real output
+
+```sh
+cargo fmt --manifest-path native-mods/zoom/Cargo.toml --check
+cargo clippy --manifest-path native-mods/zoom/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path native-mods/zoom/Cargo.toml
+```
+
+```
+$ cargo fmt --check
+fmt=0
+
+$ cargo clippy … -- -D warnings
+    Checking horizon-mod-zoom v2.0.0 (/root/starling/native-mods/zoom)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.73s
+
+$ cargo test …
+running 7 tests
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+`native-mods/zoom/target/` was removed after the runs.
+
+## Untested
+
+- The real `horizon-client` build was not run here (no room for its target directory on this box, and
+  `horizon-mixins` needs network); the fix is verified against the compiler's own E0004 rule with the
+  same cross-crate `#[non_exhaustive]` shape.
+- Not run in game; the APK build was not run.
+
+## Blockers
+
+None.

@@ -21,6 +21,9 @@ fn zoom_key(game: &mut crate::game::Game<'_>, key: &str, pressed: bool) {
             HudMode::AllVisible => zoom::Hud::AllVisible,
             HudMode::NoHud => zoom::Hud::NoHud,
             HudMode::AllHidden => zoom::Hud::AllHidden,
+            // `HudMode` is `#[non_exhaustive]`: a mode a later game adds comes
+            // back as the ordinary HUD rather than staying hidden.
+            _ => zoom::Hud::AllVisible,
         });
         if saved {
             game.set_hud_mode(HudMode::AllHidden);
