@@ -1542,3 +1542,91 @@ with `batch.fill(...)`), the `HudMode` matches and `crate::hud::HudBatch`.
 
 None for the mod's pure-Rust part. The game-side compile and the in-game proof need a machine with
 room to build `horizon-client` and prepared resources.
+
+
+---
+
+# Fix Report — `E_INVALID_BINDING` for Zoom's `bars` Injection
+
+## Root cause
+
+`horizon-mixins` requires a binding's `ty` to be the helper's parameter type, in declaration order.
+The `bars` injection declared `batch` as `&mut HudBatch` while `bars.rs` takes
+`&mut crate::hud::HudBatch` (I had qualified the helper's type for safety and left the binding
+unqualified), so the mod was refused with:
+
+```json
+{ "code": "E_INVALID_BINDING",
+  "message": "binding 'batch' must match helper parameter name and type in declaration order",
+  "mod_id": "zoom", "injection_id": "bars" }
+```
+
+## Change
+
+`native-mods/zoom/mixins/zoom/horizon-mixin.toml:58` now names the same type as the helper:
+
+```toml
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "self" },
+  { name = "batch", ty = "&mut crate::hud::HudBatch", value = "&mut *batch" },
+]
+```
+
+with `bars.rs` unchanged at `fn zoom_bars(game: &crate::game::Game<'_>, batch: &mut crate::hud::HudBatch)`.
+
+Why `crate::hud::HudBatch` and not `horizon_client::hud::HudBatch`: the target,
+`native_hooks::Game<'_>::native_gui_render_post`, is inside the `horizon_client` crate
+(`crates/horizon-client/src/game/native_hooks/gui_render_post.rs`), where `crate::hud` is the
+rendered crate's `hud` module re-exported from `lib.rs` — the same path the game itself uses
+(`crates/horizon-client/src/game/holdmyitems/native.rs:17  use crate::hud::HudBatch;`,
+`crates/horizon-client/src/game/host/draw.rs:8  surface: &'a mut crate::hud::HudBatch`). It also
+matches the `crate::…` spelling every other binding of this bundle uses. `horizon_client::hud::HudBatch`
+would resolve to the same type but would be the only binding written that way.
+
+## Verification
+
+- Every one of the bundle's seven injections now binds exactly the parameter names and types its
+  helper takes (checked by parsing `horizon-mixin.toml` against each helper's signature):
+  `key`, `wheel`, `zoom`, `bars`, `list`, `settings`, `click` — all ok, in order.
+- `crate::hud::HudBatch` and the call the injection writes (`zoom_bars(game, &mut batch)` with
+  `batch: &mut crate::hud::HudBatch`) type-check in a throwaway mock of the game crate that includes
+  the real `runtime.rs`, `key.rs` and `bars.rs`: `cargo check` clean.
+- `packaging/android/native_mod_adapt.py` on a fresh `git archive HEAD` leaves
+  `zoom/horizon-mixin.toml` byte-identical (exit 0), so the new binding text is not rewritten on the
+  Android build.
+
+## Commands and real output
+
+```sh
+cargo fmt --manifest-path native-mods/zoom/Cargo.toml --check
+cargo clippy --manifest-path native-mods/zoom/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path native-mods/zoom/Cargo.toml
+```
+
+```
+$ cargo fmt --check
+fmt=0
+
+$ cargo clippy … -- -D warnings
+    Checking horizon-mod-zoom v2.0.0 (/root/starling/native-mods/zoom)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.64s
+
+$ cargo test …
+running 7 tests
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+`native-mods/zoom/target/` was removed after the runs.
+
+## Untested
+
+- `horizon-mixins` itself is not installable here (pinned GitHub revision, no network), so the
+  injection has not been re-applied to a game build; the fix is verified against the manifest
+  contract the error names and against the helper's actual signature.
+- Not run in game, and the APK build was not run.
+
+## Blockers
+
+None.

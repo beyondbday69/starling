@@ -55,7 +55,7 @@ target = "horizon_client::game::native_hooks::Game<'_>::native_gui_render_post"
 helper = "bars.rs"
 bindings = [
   { name = "game", ty = "&crate::game::Game<'_>", value = "self" },
-  { name = "batch", ty = "&mut HudBatch", value = "&mut *batch" },
+  { name = "batch", ty = "&mut crate::hud::HudBatch", value = "&mut *batch" },
 ]
 
 [[injection]]
