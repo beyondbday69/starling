@@ -1306,3 +1306,63 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 ## Blockers
 
 None.
+
+---
+
+# Fix Report — Real Overlay White Flash (`v.layer = 5`) and Passing Through Other Trees
+
+## Changes in `native-mods/timber_fall/mixins/timber_fall/runtime.rs`
+
+- **White pop flash:** vertex `color` is multiplicative, so the old colour/light lerp
+  could not brighten a log. The renderer now uses the game's own white-solid overlay
+  (`v.layer = 5`, as in `minecraft`'s TNT cart flash at
+  `game/entities/minecarts.rs:2821-2824`): when the pre-pop swell
+  `w > 0.35` (the final ~0.10 s), every vertex added for that log gets
+  `v.layer = 5` and `v.light = 0xF0F0`.
+- **Pass through trees:** `timber_fall_hits` now reads the block at each candidate
+  collision cell and skips it when it is part of any tree — logs/wood/stems/hyphae,
+  leaves, `_wart_block`, vines, cocoa, bee nests, `mangrove_roots`,
+  `muddy_mangrove_roots` and `shroomlight` — before asking
+  `native_block_collision`. A falling tree therefore passes through neighbouring
+  trunks/canopies and only stops on terrain.
+
+## Verification
+
+- `Vertex.layer` exists (`horizon-client-render/src/render_geometry.rs:9`) and the
+  official flash is `v.layer = 5` (`minecarts.rs:2823`).
+- `is_tree_block` is a module-level helper; the collision call in `timber_fall_hits`
+  uses the same `world.block` + `res.facts().get` pattern as the rest of the game code.
+
+## Commands and real output
+
+```sh
+cargo fmt --manifest-path native-mods/timber_fall/Cargo.toml --check
+cargo clippy --manifest-path native-mods/timber_fall/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path native-mods/timber_fall/Cargo.toml
+```
+
+```
+$ cargo fmt --check
+fmt ok
+
+$ cargo clippy … -- -D warnings
+    Checking timber_fall v0.1.0 (/root/starling/native-mods/timber_fall)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.01s
+
+$ cargo test …
+running 80 tests
+test result: ok. 80 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+`native-mods/timber_fall/target/` was removed after the run.
+
+## Untested
+
+- The APK build was not run here; the flash and tree pass-through are verified against
+  the game's own flash code and block facts only.
+
+## Blockers
+
+None.

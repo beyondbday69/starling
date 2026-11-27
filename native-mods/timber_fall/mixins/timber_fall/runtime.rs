@@ -667,6 +667,10 @@ impl Game<'_> {
                 (hinge[1] + y).floor() as i32,
                 (hinge[2] + z).floor() as i32,
             ];
+            let block = self.world.block(at[0], at[1], at[2]);
+            if is_tree_block(&self.res.facts().get(block).name) {
+                continue;
+            }
             if !self.native_block_collision(at).is_empty() {
                 return true;
             }
@@ -733,17 +737,11 @@ impl Game<'_> {
                     * glam::Mat4::from_scale(glam::Vec3::splat(scale));
                 let v_start = out.len();
                 self.block_model_vertices(log.state, 42, matrix, packed, true, out);
-                if w > 0.0 {
-                    // White-hot pop flash in the last 0.16 s before this log bursts.
-                    let k = (0.75 * w * w * w).min(1.0) as f32;
-                    let mix = |c: u32| (c as f32 + (255.0 - c as f32) * k) as u32;
+                if w > 0.35 {
+                    // OverlayTexture white flash, as the game's own white-solid block draw.
                     for v in &mut out[v_start..] {
-                        let alpha = v.color >> 24;
-                        let r = mix(v.color & 0xFF);
-                        let g = mix((v.color >> 8) & 0xFF);
-                        let b = mix((v.color >> 16) & 0xFF);
-                        v.color = (alpha << 24) | (b << 16) | (g << 8) | r;
-                        v.light = (v.light as f32 + (0xF0F0 as f32 - v.light as f32) * k) as u32;
+                        v.layer = 5;
+                        v.light = 0xF0F0;
                     }
                 }
             }
@@ -787,6 +785,22 @@ impl Game<'_> {
             }
         }
     }
+}
+
+/// Tree blocks never stop a falling tree; it passes through neighbouring trees.
+fn is_tree_block(block: &str) -> bool {
+    is_log(block)
+        || is_leaves(block)
+        || block.ends_with("_wart_block")
+        || matches!(
+            block,
+            "minecraft:vine"
+                | "minecraft:cocoa"
+                | "minecraft:bee_nest"
+                | "minecraft:mangrove_roots"
+                | "minecraft:muddy_mangrove_roots"
+                | "minecraft:shroomlight"
+        )
 }
 
 /// The inverted-pendulum shape from `voxel-tree-fall.html`, normalized 0..=1.
