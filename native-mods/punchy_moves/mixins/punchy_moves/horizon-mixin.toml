@@ -13,36 +13,6 @@ file = "crates/horizon-client/src/game.rs"
 name = "punchy_moves"
 source = "runtime.rs"
 
-[[module]]
-id = "easing"
-file = "crates/horizon-client/src/game.rs"
-name = "punchy_moves_easing"
-source = "easing.rs"
-
-[[module]]
-id = "expressions"
-file = "crates/horizon-client/src/game.rs"
-name = "punchy_moves_expressions"
-source = "expressions.rs"
-
-[[module]]
-id = "json"
-file = "crates/horizon-client/src/game.rs"
-name = "punchy_moves_json"
-source = "json.rs"
-
-[[module]]
-id = "library"
-file = "crates/horizon-client/src/game.rs"
-name = "punchy_moves_library"
-source = "library.rs"
-
-[[module]]
-id = "signals"
-file = "crates/horizon-client/src/game.rs"
-name = "punchy_moves_signals"
-source = "signals.rs"
-
 # The shoulder camera's row in Options > Mods, with its two keys.
 [[injection]]
 id = "list"
