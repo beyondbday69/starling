@@ -1,9 +1,5 @@
 //! The fall itself: a uniform pole hinged at the stump.
 //!
-//! When the cut log is gone from under the tree (`drop_height > 0`), the tree first
-//! stands still, then drops straight down onto the stump under gravity, and only then
-//! tips over around the stump top.
-//!
 //! The tree rotates around the cut as one rigid body. `fall_speed` scales *time*
 //! (simulated time advances `fall_speed` times faster than real time), which is what
 //! the concept's table means by "1.5x speed": it matches the realistic pole times
@@ -20,7 +16,7 @@ use crate::scanner::BlockPos;
 pub const WARNING_DURATION_SECS: f32 = 0.5;
 /// The lean at the start of the warning, in degrees.
 pub const WARNING_START_DEG: f32 = 1.0;
-/// The lean the warning ends on; a tree that drops first stands still instead.
+/// The lean the warning ends on, which is also the starting angle of the fall.
 pub const WARNING_END_DEG: f32 = 3.0;
 /// Gravity, `g` in the pole equation.
 pub const GRAVITY: f32 = 9.8;
@@ -32,8 +28,6 @@ pub const BREAKUP_DELAY_SECS: f32 = 1.0;
 pub const MAX_FALL_ANGLE_RAD: f32 = 120.0 * PI / 180.0;
 
 const START_ANGLE_RAD: f32 = WARNING_END_DEG * PI / 180.0;
-/// Starting lean for a tree that has just landed on the stump.
-const DROP_START_ANGLE_RAD: f32 = 1.5 * PI / 180.0;
 const BOUNCE_RAD: f32 = BOUNCE_DEG * PI / 180.0;
 const BOUNCE_DURATION_SECS: f32 = 0.2;
 const SUBSTEP_SECS: f32 = 1.0 / 120.0;
@@ -73,10 +67,6 @@ pub enum FallPhase {
     Warning {
         elapsed: f32,
     },
-    /// The tree falls straight down onto the stump after the cut log is gone.
-    Dropping {
-        elapsed: f32,
-    },
     Falling {
         angle_rad: f32,
         angular_vel: f32,
@@ -95,8 +85,6 @@ pub enum FallPhase {
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct StepEvents {
     pub entered_falling: bool,
-    /// Speed (blocks per second) at which the tree landed on the stump, once.
-    pub landed: Option<f32>,
     /// Angular speed at the first impact, in radians per second.
     pub impacted: Option<f32>,
     pub ready_to_break_up: bool,
@@ -112,9 +100,6 @@ pub struct FallingBlock {
     pub pos: BlockPos,
     pub is_leaf: bool,
     pub variant: u16,
-    /// The cut log: gone from the world, so it is neither drawn nor part of the collision,
-    /// but it still counts for the drops.
-    pub vanished: bool,
 }
 
 impl FallingBlock {
@@ -129,7 +114,6 @@ impl FallingBlock {
             pos,
             is_leaf,
             variant,
-            vanished: false,
         }
     }
 
@@ -154,8 +138,6 @@ pub struct FallingTree {
     pub fall_speed: f32,
     /// The angle the tree rests at after impact; `BreakUp` has no angle of its own.
     pub rest_angle_rad: f32,
-    /// How far the tree drops onto the stump before tipping; 0 tips it straight away.
-    pub drop_height: f32,
 }
 
 impl FallingTree {
@@ -174,42 +156,6 @@ impl FallingTree {
             phase: FallPhase::Warning { elapsed: 0.0 },
             fall_speed,
             rest_angle_rad: 0.0,
-            drop_height: 0.0,
-        }
-    }
-
-    /// Makes the tree drop `height` blocks onto the stump before it tips over.
-    pub fn with_drop(mut self, height: f32) -> Self {
-        self.drop_height = if height.is_finite() {
-            height.max(0.0)
-        } else {
-            0.0
-        };
-        self
-    }
-
-    /// Vertical shift of the tree's blocks relative to the hinge: 0 until the drop
-    /// starts, then down by `drop_height` as it lands.
-    pub fn base_shift(&self) -> f32 {
-        if self.drop_height <= 0.0 {
-            return 0.0;
-        }
-        match self.phase {
-            FallPhase::Warning { .. } => 0.0,
-            FallPhase::Dropping { elapsed } => {
-                -(0.5 * GRAVITY * elapsed * elapsed).min(self.drop_height)
-            }
-            _ => -self.drop_height,
-        }
-    }
-
-    /// The block's centre relative to the hinge, with the drop applied.
-    pub fn block_center(&self, block: &FallingBlock) -> [f32; 3] {
-        let c = block.center_offset();
-        if block.vanished {
-            c
-        } else {
-            [c[0], c[1] + self.base_shift(), c[2]]
         }
     }
 
@@ -225,8 +171,6 @@ impl FallingTree {
     /// The angle from vertical currently shown for the tree.
     pub fn angle_rad(&self) -> f32 {
         match self.phase {
-            FallPhase::Warning { .. } if self.drop_height > 0.0 => 0.0,
-            FallPhase::Dropping { .. } => 0.0,
             FallPhase::Warning { elapsed } => {
                 let progress = (elapsed / WARNING_DURATION_SECS).clamp(0.0, 1.0);
                 let degrees = WARNING_START_DEG + (WARNING_END_DEG - WARNING_START_DEG) * progress;
@@ -282,30 +226,13 @@ impl FallingTree {
                     return;
                 }
                 let overflow = total - WARNING_DURATION_SECS;
-                if self.drop_height > 0.0 {
-                    self.phase = FallPhase::Dropping { elapsed: 0.0 };
-                } else {
-                    self.phase = FallPhase::Falling {
-                        angle_rad: START_ANGLE_RAD,
-                        angular_vel: 0.0,
-                    };
-                    events.entered_falling = true;
-                }
+                self.phase = FallPhase::Falling {
+                    angle_rad: START_ANGLE_RAD,
+                    angular_vel: 0.0,
+                };
+                events.entered_falling = true;
                 if overflow > 0.0 {
                     self.advance(overflow, grid, events);
-                }
-            }
-            FallPhase::Dropping { elapsed } => {
-                let total = elapsed + dt * self.time_scale();
-                if 0.5 * GRAVITY * total * total >= self.drop_height {
-                    events.landed = Some(GRAVITY * total);
-                    events.entered_falling = true;
-                    self.phase = FallPhase::Falling {
-                        angle_rad: DROP_START_ANGLE_RAD,
-                        angular_vel: 0.0,
-                    };
-                } else {
-                    self.phase = FallPhase::Dropping { elapsed: total };
                 }
             }
             FallPhase::Falling {
@@ -673,110 +600,6 @@ mod tests {
 
         assert!((angle - MAX_FALL_ANGLE_RAD).abs() < 1e-4);
         assert!(angle.to_degrees() > 90.0);
-    }
-
-    /// A trunk of `length` logs whose bottom log is gone, hinged at `(0, 10, 0)`.
-    fn dropping_tree(length: i32) -> FallingTree {
-        let hinge = pos(0, 10, 0);
-        let blocks = (0..length)
-            .map(|y| {
-                let mut block = FallingBlock::relative_to(hinge, pos(0, 10 + y, 0), false, OAK);
-                block.vanished = y == 0;
-                block
-            })
-            .collect();
-        FallingTree::new(
-            hinge,
-            FallDirection { dx: 1.0, dz: 0.0 },
-            (length - 1) as f32,
-            1.5,
-            blocks,
-        )
-        .with_drop(1.0)
-    }
-
-    #[test]
-    fn a_tree_with_a_cut_log_stands_still_then_drops_then_tips() {
-        let mut tree = dropping_tree(6);
-        let dt = 1.0 / 120.0;
-
-        // Still: no lean and no shift while it waits.
-        tree.step(0.25, &FlatGround);
-        assert!(matches!(tree.phase, FallPhase::Warning { .. }));
-        assert_eq!(tree.angle_rad(), 0.0);
-        assert_eq!(tree.base_shift(), 0.0);
-
-        let mut landed = None;
-        let mut last_shift = 0.0;
-        let mut was_dropping = false;
-        for _ in 0..2_000 {
-            let events = tree.step(dt, &FlatGround);
-            if matches!(tree.phase, FallPhase::Dropping { .. }) {
-                was_dropping = true;
-                assert_eq!(tree.angle_rad(), 0.0, "no tilt while dropping");
-                assert!(tree.base_shift() <= last_shift, "it only moves down");
-                last_shift = tree.base_shift();
-            }
-            if let Some(speed) = events.landed {
-                landed = Some(speed);
-                assert!(events.entered_falling);
-                break;
-            }
-        }
-        assert!(was_dropping);
-        assert!(landed.expect("the tree lands on the stump") > 0.0);
-        assert!(matches!(tree.phase, FallPhase::Falling { .. }));
-        assert_eq!(tree.base_shift(), -1.0);
-        assert!(tree.angle_rad() > 0.0 && tree.angle_rad().to_degrees() < 3.0);
-    }
-
-    #[test]
-    fn the_drop_takes_the_time_a_block_needs_to_fall_one_block() {
-        let mut tree = dropping_tree(6);
-        let dt = 1.0 / 240.0;
-        let mut elapsed = 0.0;
-        let mut drop_started = None;
-        loop {
-            let events = tree.step(dt, &FlatGround);
-            elapsed += dt;
-            if drop_started.is_none() && matches!(tree.phase, FallPhase::Dropping { .. }) {
-                drop_started = Some(elapsed);
-            }
-            if events.landed.is_some() {
-                break;
-            }
-            assert!(elapsed < 3.0);
-        }
-        // sqrt(2 * 1 / 9.8) = 0.452 simulated seconds, 1.5x faster in real time.
-        let real = elapsed - drop_started.expect("the drop starts");
-        assert!((real - 0.452 / 1.5).abs() < 0.03, "dropped in {real} s");
-    }
-
-    #[test]
-    fn a_dropped_tree_tips_around_the_stump_top_and_rests_on_flat_ground() {
-        let mut tree = dropping_tree(6);
-
-        let angle = simulate_to_impact(&mut tree, &FlatGround, 0.01);
-
-        assert!(angle.to_degrees() > 90.0 && angle.to_degrees() < 96.0);
-    }
-
-    #[test]
-    fn the_cut_log_is_not_part_of_the_collision_and_keeps_its_place_for_drops() {
-        let tree = dropping_tree(3);
-        assert!(tree.blocks[0].vanished);
-        assert_eq!(
-            tree.block_center(&tree.blocks[0]),
-            tree.blocks[0].center_offset()
-        );
-        // The first remaining log sits on the hinge once the tree has dropped.
-        let mut landed = tree.clone();
-        landed.phase = FallPhase::Falling {
-            angle_rad: 0.0,
-            angular_vel: 0.0,
-        };
-        let centre = landed.block_center(&landed.blocks[1]);
-        assert!((centre[1] - 0.5).abs() < 1e-6);
     }
 
     #[test]

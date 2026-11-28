@@ -186,7 +186,6 @@ impl TimberWorldRuntime {
                 };
                 let id = self.add_tree(
                     &scanned,
-                    request.cuts,
                     hinge,
                     request.dimension_id,
                     request.player,
@@ -236,16 +235,6 @@ impl TimberWorldRuntime {
                 continue;
             }
             let events = entry.tree.step(dt, grid);
-            if let Some(speed) = events.landed {
-                outputs.fx.push(FxEvent::ImpactDustAndThud {
-                    tree_id: entry.id,
-                    hinge: entry.tree.hinge,
-                    speed,
-                });
-                if entry.config.camera_shake {
-                    self.shake = self.shake.max(CAMERA_SHAKE_IMPULSE * 0.4);
-                }
-            }
             if events.entered_falling {
                 outputs.entered_falling.push(entry.id);
                 outputs.fx.push(FxEvent::CreakSound {
@@ -314,28 +303,26 @@ impl TimberWorldRuntime {
     fn add_tree(
         &mut self,
         scanned: &ScannedTree,
-        cuts: &[BlockPos],
         hinge: BlockPos,
         dimension_id: u64,
         player: [f32; 2],
         config: &TimberConfig,
     ) -> ActiveTreeId {
         let direction = FallDirection::away_from_player(player[0], player[1], hinge);
-        // The cut logs are gone, so the tree drops onto the stump before it tips.
-        let is_cut = |log: &BlockPos| log.y == hinge.y && cuts.contains(log);
-        let dropping = scanned.logs.iter().any(is_cut);
         let trunk_height = scanned
             .logs
             .iter()
-            .filter(|log| !is_cut(log))
-            .map(|log| (log.y - hinge.y) as f32)
+            .map(|log| (log.y - hinge.y) as f32 + 1.0)
             .fold(1.0, f32::max);
 
         let mut blocks = Vec::with_capacity(scanned.logs.len() + scanned.leaves.len());
         for log in &scanned.logs {
-            let mut block = FallingBlock::relative_to(hinge, *log, false, scanned.variant);
-            block.vanished = is_cut(log);
-            blocks.push(block);
+            blocks.push(FallingBlock::relative_to(
+                hinge,
+                *log,
+                false,
+                scanned.variant,
+            ));
         }
         for leaf in &scanned.leaves {
             blocks.push(FallingBlock::relative_to(
@@ -350,8 +337,7 @@ impl TimberWorldRuntime {
         self.next_id += 1;
         self.trees.push(ActiveTreeEntry {
             id,
-            tree: FallingTree::new(hinge, direction, trunk_height, config.fall_speed, blocks)
-                .with_drop(if dropping { 1.0 } else { 0.0 }),
+            tree: FallingTree::new(hinge, direction, trunk_height, config.fall_speed, blocks),
             config: *config,
             species: scanned.species,
             variant: scanned.variant,
@@ -369,8 +355,7 @@ fn removal_plan(scanned: &ScannedTree) -> Vec<BlockPos> {
 
 fn collect_tree_instances(tree: &FallingTree, angle_rad: f32, out: &mut Vec<RenderBlockInstance>) {
     let origin = tree.hinge_center();
-    let shift = tree.base_shift();
-    for block in tree.blocks.iter().filter(|block| !block.vanished) {
+    for block in &tree.blocks {
         out.push(RenderBlockInstance {
             variant: block.variant,
             is_leaf: block.is_leaf,
@@ -379,7 +364,7 @@ fn collect_tree_instances(tree: &FallingTree, angle_rad: f32, out: &mut Vec<Rend
                 [0.0, 0.0, 0.0],
                 tree.direction,
                 angle_rad,
-                [block.offset[0], block.offset[1] + shift, block.offset[2]],
+                block.offset,
             ),
             block_pos: block.pos,
         });
@@ -499,7 +484,6 @@ pub struct SyncFallingTree {
     pub species: TreeSpecies,
     pub variant: u16,
     pub phase: SyncPhase,
-    pub drop_height: f32,
 }
 
 impl SyncFallingTree {
@@ -515,7 +499,6 @@ impl SyncFallingTree {
             species: entry.species,
             variant: entry.variant,
             phase: entry.tree.phase,
-            drop_height: entry.tree.drop_height,
         }
     }
 }
@@ -560,8 +543,7 @@ impl TimberClientMirror {
                     sync.trunk_height,
                     sync.fall_speed,
                     sync.blocks,
-                )
-                .with_drop(sync.drop_height);
+                );
                 tree.phase = sync.phase;
                 let angle = tree.angle_rad();
                 self.trees.retain(|entry| entry.id != sync.id);
@@ -794,7 +776,7 @@ mod tests {
         assert_eq!(entries[0].tree.blocks.len(), 12);
         assert!(entries[0].tree.direction.dx > 0.99);
         assert!(entries[0].tree.direction.dz.abs() < 1e-6);
-        assert!((entries[0].tree.trunk_height - 4.0).abs() < 1e-6);
+        assert!((entries[0].tree.trunk_height - 5.0).abs() < 1e-6);
         assert_eq!(entries[0].dimension_id, DIMENSION);
         let leaf_variants: Vec<u16> = entries[0]
             .tree
@@ -887,8 +869,7 @@ mod tests {
         let id = start(&mut runtime, &world, pos(0, 0, 0));
 
         let warning = runtime.collect_render_instances();
-        // The cut log is gone, so it is not drawn.
-        assert_eq!(warning.len(), 11);
+        assert_eq!(warning.len(), 12);
         assert_eq!(
             warning.iter().filter(|instance| instance.is_leaf).count(),
             7
@@ -925,9 +906,9 @@ mod tests {
             .find(|instance| instance.block_pos == pos(0, 4, 0))
             .expect("the top log")
             .transform_3x4;
-        assert!((matrix[3] - 3.0).abs() < 1e-5, "x was {}", matrix[3]);
+        assert!((matrix[3] - 4.0).abs() < 1e-5, "x was {}", matrix[3]);
         assert!((matrix[7] - 0.5).abs() < 1e-5, "y was {}", matrix[7]);
-        assert_eq!(impact.len(), 11);
+        assert_eq!(impact.len(), 12);
     }
 
     #[test]
@@ -1101,7 +1082,7 @@ mod tests {
         mirror.apply(SyncMessage::StartFall(SyncFallingTree::from_entry(&entry)));
 
         let instances = mirror.collect_render_instances();
-        assert_eq!(instances.len(), 11);
+        assert_eq!(instances.len(), 12);
         assert_eq!(
             instances.iter().filter(|instance| instance.is_leaf).count(),
             7

@@ -74,9 +74,9 @@ pub fn hits_solid(tree: &FallingTree, angle_rad: f32, grid: &dyn CollisionGrid) 
     let hinge = tree.hinge_center();
     tree.blocks
         .iter()
-        .filter(|block| !block.is_leaf && !block.vanished)
+        .filter(|block| !block.is_leaf)
         .any(|block| {
-            let center = rotate_offset(tree.block_center(block), tree.direction, angle_rad);
+            let center = rotate_offset(block.center_offset(), tree.direction, angle_rad);
             let at = BlockPos::new(
                 (hinge[0] + center[0] as f64).floor() as i32,
                 (hinge[1] + center[1] as f64).floor() as i32,
