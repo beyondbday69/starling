@@ -1,0 +1,180 @@
+[mod]
+id = "punchy_moves"
+version = "1.0.9"
+priority = 100
+
+# The commit it was tested on.
+[compatibility]
+horizon_revision = "ed7a3853b54808e5e71340eb0ed78d3742721637"
+
+[[module]]
+id = "runtime"
+file = "crates/horizon-client/src/game.rs"
+name = "punchy_moves"
+source = "runtime.rs"
+
+[[module]]
+id = "easing"
+file = "crates/horizon-client/src/game.rs"
+name = "punchy_moves_easing"
+source = "easing.rs"
+
+[[module]]
+id = "expressions"
+file = "crates/horizon-client/src/game.rs"
+name = "punchy_moves_expressions"
+source = "expressions.rs"
+
+[[module]]
+id = "json"
+file = "crates/horizon-client/src/game.rs"
+name = "punchy_moves_json"
+source = "json.rs"
+
+[[module]]
+id = "library"
+file = "crates/horizon-client/src/game.rs"
+name = "punchy_moves_library"
+source = "library.rs"
+
+[[module]]
+id = "signals"
+file = "crates/horizon-client/src/game.rs"
+name = "punchy_moves_signals"
+source = "signals.rs"
+
+# The shoulder camera's row in Options > Mods, with its two keys.
+[[injection]]
+id = "list"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_mods"
+helper = "list.rs"
+bindings = [
+  { name = "mods", ty = "&mut Vec<crate::game::native_hooks::NativeMod>", value = "&mut *mods" },
+]
+
+# Its settings page: the shoulder camera's buttons.
+[[injection]]
+id = "settings"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_settings"
+helper = "settings.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "mod_id", ty = "&str", value = "mod_id" },
+  { name = "buttons", ty = "&mut Vec<String>", value = "&mut *buttons" },
+]
+
+# A click on that page: change the setting and keep it.
+[[injection]]
+id = "click"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_settings_click"
+helper = "click.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "mod_id", ty = "&str", value = "mod_id" },
+  { name = "button", ty = "usize", value = "button" },
+]
+
+# Where the picture is drawn from: the shoulder camera's pose, after vanilla
+# placed it (`Camera.setup`).
+[[injection]]
+id = "camera"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_camera_pose"
+helper = "camera_hook.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "self" },
+  { name = "position", ty = "&mut [f64; 3]", value = "&mut *position" },
+  { name = "yaw", ty = "&mut f32", value = "&mut *yaw" },
+  { name = "pitch", ty = "&mut f32", value = "&mut *pitch" },
+]
+
+# The camera and orbit keys, on any screen while playing.
+[[injection]]
+id = "key"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_key"
+helper = "key.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+  { name = "key", ty = "&str", value = "key" },
+  { name = "pressed", ty = "bool", value = "pressed" },
+]
+
+# ---- the player model
+
+# anim::setup (setupAnim for every model): which player is being posed.
+[[injection]]
+id = "pose-start"
+kind = "HEAD"
+target = "horizon_client_lib::mobs::anim::setup"
+helper = "h_pose_start.rs"
+bindings = [
+  { name = "m", ty = "&crate::mobs::Mob", value = "m" },
+  { name = "s", ty = "&crate::mobs::anim::State", value = "s" },
+]
+
+# PlayerModel.setupAnim's end (its part visibility, players only): the
+# engine's angles on top of vanilla's.
+[[injection]]
+id = "pose"
+kind = "RETURN"
+target = "horizon_client_lib::mobs::anim::player_model_visibility"
+helper = "h_pose.rs"
+bindings = [
+  { name = "value", ty = "()", value = "$value" },
+  { name = "p", ty = "&mut crate::mobs::anim::Poses", value = "p" },
+]
+
+# setupRotations' end: the whole model leans, banks, bobs, squashes and rolls.
+[[injection]]
+id = "body"
+kind = "RETURN"
+target = "horizon_client_lib::mobs::render::species_rotations"
+helper = "h_body.rs"
+bindings = [
+  { name = "value", ty = "glam::Mat4", value = "$value" },
+  { name = "m", ty = "&crate::mobs::Mob", value = "m" },
+  { name = "alpha", ty = "f32", value = "alpha" },
+]
+
+# The animation clock, once a frame.
+[[injection]]
+id = "frame"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_frame"
+helper = "h_frame.rs"
+bindings = [
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
+]
+
+# After a player's body is submitted: the face, one quad per feature, on the
+# front of the head, textured by the mod's own face sheets.
+[[injection]]
+id = "face"
+kind = "RETURN"
+target = "horizon_client_lib::mobs::render::render_with_hidden"
+helper = "h_face.rs"
+bindings = [
+  { name = "value", ty = "()", value = "$value" },
+  { name = "m", ty = "&crate::mobs::Mob", value = "m" },
+  { name = "alpha", ty = "f32", value = "alpha" },
+  { name = "camera", ty = "glam::DVec3", value = "camera" },
+  { name = "atlas", ty = "crate::mobs::render::Atlas<'_>", value = "atlas" },
+  { name = "light", ty = "u32", value = "light" },
+  { name = "out", ty = "&mut Vec<crate::mesher::Vertex>", value = "&mut *out" },
+]
+
+# After the frame's GUI: the mod's own screens (emote wheel, camera page,
+# colour picker, face canvas, tutorial) drawn on the HUD batch.
+[[injection]]
+id = "gui"
+kind = "HEAD"
+target = "horizon_client::game::native_hooks::Game<'_>::native_gui_render_post"
+helper = "h_gui.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "self" },
+  { name = "batch", ty = "&mut crate::hud::HudBatch", value = "&mut *batch" },
+]

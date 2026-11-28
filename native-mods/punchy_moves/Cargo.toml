@@ -1,0 +1,15 @@
+[package]
+name = "horizon-mod-punchy-moves"
+version = "1.0.9"
+edition = "2024"
+license = "MIT"
+publish = false
+description = "Horizon's official Punchy Moves, a native mod: third-person character animation, a shoulder camera, expressions and emotes."
+
+# The mod's logic and its tests: the same file the bundle adds to the game.
+[lib]
+path = "mixins/punchy_moves/runtime.rs"
+
+# Standalone workspace: the logic has no engine dependency, so its tests run without a
+# Horizon build.
+[workspace]
