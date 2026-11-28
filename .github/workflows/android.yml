@@ -42,7 +42,7 @@ env:
   PREVIEW: ${{ !(github.repository == 'starling-client/starling' && (startsWith(github.ref, 'refs/tags/v') || inputs.release_key)) && 'true' || 'false' }}
 concurrency:
   group: android-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.ref == 'refs/heads/feat/shader-fsr-upscaling' }}
 jobs:
   apk:
     strategy:
@@ -79,6 +79,15 @@ jobs:
         with:
           shared-key: android-${{ matrix.abi }}
           save-if: ${{ github.ref == 'refs/heads/android' || github.ref == 'refs/heads/starling' }}
+      - name: Cache native-mod Android build
+        if: inputs.native_mods != 'none'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/starling-native
+          key: starling-native-${{ matrix.abi }}-${{ env.RELEASE_BUILD == 'true' && 'fast' || 'quick' }}-${{ hashFiles('Cargo.lock', 'tools/ci/rust-version') }}-${{ github.sha }}
+          restore-keys: |
+            starling-native-${{ matrix.abi }}-${{ env.RELEASE_BUILD == 'true' && 'fast' || 'quick' }}-${{ hashFiles('Cargo.lock', 'tools/ci/rust-version') }}-
+            starling-native-${{ matrix.abi }}-${{ env.RELEASE_BUILD == 'true' && 'fast' || 'quick' }}-
       - name: Unpack the release key
         if: env.RELEASE_BUILD == 'true'
         env:
