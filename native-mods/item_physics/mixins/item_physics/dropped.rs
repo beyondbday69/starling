@@ -8,21 +8,6 @@ fn item_physics_dropped(
     alpha: f64,
     out: &mut Vec<horizon_client::mesher::Vertex>,
 ) -> ::core::ops::ControlFlow<()> {
-    if dropped(game, camera, alpha, out) {
-        ::core::ops::ControlFlow::Break(())
-    } else {
-        ::core::ops::ControlFlow::Continue(())
-    }
-}
-
-/// The dropped items, drawn with physics poses: `true` when it drew them, so
-/// the caller cancels vanilla's bob and spin.
-fn dropped(
-    game: &crate::game::Game<'_>,
-    camera: glam::DVec3,
-    alpha: f64,
-    out: &mut Vec<horizon_client::mesher::Vertex>,
-) -> bool {
     use crate::game::item_physics as physics;
     use crate::game::entity_culling::EntityCullDecision;
     use crate::game::item_draw::owner_at;
@@ -30,10 +15,19 @@ fn dropped(
     use horizon_client::{block_entity_render::diffuse_lights, graphics::EntityCullingMode, item_render};
     use horizon_core::geometry::{Aabb, Vec3};
 
+    fn cull_box(position: glam::DVec3, camera: glam::DVec3) -> (glam::Vec3, glam::Vec3) {
+        let feet = (position - camera).as_vec3();
+        let half = glam::Vec3::new(0.125 + 0.5, 0.5, 0.125 + 0.5);
+        (
+            feet - half,
+            feet + glam::Vec3::new(half.x, 0.25 + 0.5, half.z),
+        )
+    }
+
     if !game.native_on(physics::ID)
         || !physics::enabled(|key| game.native_setting(physics::ID, key))
     {
-        return false;
+        return ::core::ops::ControlFlow::Continue(());
     }
     // Entity.shouldRenderAtSqrDistance for the item's 0.25 box, from its current
     // position, as the vanilla draw scales it by the view.
@@ -169,17 +163,5 @@ fn dropped(
             game.cull_skinned(out, entity_start, skinned);
         }
     }
-    true
-}
-
-/// `EntityRenderer.shouldRender`'s box for a dropped item, in camera space
-/// (`game/interface/item_draw.rs`'s own helper, replicated here: it is private
-/// to that module).
-fn cull_box(position: glam::DVec3, camera: glam::DVec3) -> (glam::Vec3, glam::Vec3) {
-    let feet = (position - camera).as_vec3();
-    let half = glam::Vec3::new(0.125 + 0.5, 0.5, 0.125 + 0.5);
-    (
-        feet - half,
-        feet + glam::Vec3::new(half.x, 0.25 + 0.5, half.z),
-    )
+    ::core::ops::ControlFlow::Break(())
 }
