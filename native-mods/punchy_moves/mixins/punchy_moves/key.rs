@@ -12,7 +12,7 @@ fn punchy_moves_key(game: &mut crate::game::Game<'_>, key: &str, pressed: bool) 
             Some(ui::UiRequest::PlayEmote(index)) => {
                 let emote = ui::ui(|screens| screens.emote_wheel.emotes().get(index).copied());
                 if let Some(emote) = emote {
-                    ui::play_emote(game.native_player_entity.map(|id| id as u64), emote);
+                    ui::play_emote(game.player_model.as_ref().map(|m| m.id as u64), emote);
                 }
             }
             Some(ui::UiRequest::ReplayTutorial) => ui::ui(|screens| screens.tutorial.start()),
@@ -58,7 +58,7 @@ fn punchy_moves_key(game: &mut crate::game::Game<'_>, key: &str, pressed: bool) 
         if pressed {
             ui::ui(|screens| screens.emote_wheel.open());
         } else if let Some(emote) = ui::ui(|screens| screens.emote_wheel.close()) {
-            ui::play_emote(game.native_player_entity.map(|id| id as u64), emote);
+            ui::play_emote(game.player_model.as_ref().map(|m| m.id as u64), emote);
         }
         return;
     }
@@ -66,7 +66,7 @@ fn punchy_moves_key(game: &mut crate::game::Game<'_>, key: &str, pressed: bool) 
     if pressed && let Some(index) = ui::ui(|screens| screens.emote_keys.index_of_key(key)) {
         let emote = ui::ui(|screens| screens.emote_wheel.emotes().get(index).copied());
         if let Some(emote) = emote {
-            ui::play_emote(game.native_player_entity.map(|id| id as u64), emote);
+            ui::play_emote(game.player_model.as_ref().map(|m| m.id as u64), emote);
         }
     }
 }
