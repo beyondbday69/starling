@@ -1,21 +1,37 @@
-# Task: Smooth Tree Fall Animation + Dust Particles
+# Task: Add 3D Item Physics Native Mod (`native-mods/item_physics`)
 
 ## User Request
-> "tree fall looks robotic not smopth zero dust psrticels"
+> "add item physics"
 
-## Root Causes Found in `native-mods/timber_fall/mixins/timber_fall/runtime.rs`
-1. **Robotic / stuttery motion:**
-   - `timber_fall_render` increments `tree.smooth_secs` by `frame.clamp(0.0, 0.05)` independently of `elapsed_secs` and freezes if `last_tick_at.elapsed() >= 0.25`. Instead, lock `smooth_secs` to `(tree.elapsed_secs + tree.last_tick_at.elapsed().as_secs_f64().min(TICK_SECS)).max(tree.smooth_secs).min(DURATION)` so it stays silky 60/120 FPS and never drifts or stutters.
-   - `shape_curve()` starts with `w = 0.0` at `th = 0.08`, causing the tree to stall nearly motionless for ~0.8 s and then whip down. Give it a small initial angular velocity (e.g. `w = 0.25..0.4`) and a natural, weighty ~1.0–1.15 s fall (`DURATION = 2.4`, `IMPACT = 0.44`, `BREAK = 0.64`, `LAST = 0.80` or similar well-proportioned timeline).
-   - When `tree.impact_angle < FRAC_PI_2` (terrain hit before `IMPACT`), `tree_angle` hard-clamps `angle_at(p).min(tree.impact_angle)` and **freezes flat** until `p = IMPACT`, then suddenly snaps into the bounce. Track `impact_p: Option<f64>` when `timber_fall_hits` lowers `impact_angle`, and start the damped 3-hop bounce, `thud` sound, dust particles, and `timber_fall_camera_shake` **immediately** from `impact_p` (and use `impact_p` in `tree_angle` and `timber_fall_camera_shake`!).
-2. **Zero dust particles:**
-   - Inspect `crates/horizon-client/src/game/modding/native_level_effects.rs` (`level_send_particles`), `crates/horizon-client/src/game/modding/native_hooks/shared.rs` (`mod_particles_ok`), and `crates/horizon-client-render/src/particles/options.rs` (`ParticleOptions`, `ParticleType`).
-   - Add a `timber_fall_particles(&mut self, dimension: &str, options: &ParticleOptions, state: Option<BlockStateId>, at: [f64; 3], spread: [f64; 3], speed: f64, count: i32)` helper using `self.level(dimension)` + `self.level_send_particles(...)`.
-   - On **ground impact** (once when `thudded` triggers), emit dust puffs along 3–5 points of the fallen trunk (base, middle, tip using `rotate_point`) using `ParticleOptions::simple(ParticleType::Poof)` / `ParticleOptions::simple(ParticleType::Cloud)` and warm earthy `ParticleOptions::dust_transition([0.55, 0.45, 0.33], [0.72, 0.65, 0.55], 1.6)` (or `Block` crumbs if `mod_particles_ok` allows).
-   - On **log pop** (at most once per tick at `popped_at`), emit a light `Poof` / `Smoke` puff (`count: 3`, `spread: [0.25, 0.25, 0.25]`, `speed: 0.02`).
+## Goal
+Create a new native mod `native-mods/item_physics/` (and add `item_physics` to `.github/workflows/android.yml` `MODS`) that replaces vanilla floating/spinning dropped items with 3D item physics (items tumble in mid-air and lie flat on the ground at a natural seeded yaw).
 
-## Verification & Reporting
-- Verify every `ParticleOptions` / `ParticleType` path and `mod_particles_ok` acceptance rules in `horizon-client` (plus a small mock compile check for the new `level_send_particles` call and `impact_p` bounce math).
-- Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` on `native-mods/timber_fall/Cargo.toml`.
-- Remove `native-mods/timber_fall/target/`, append a concise report to `/root/starling/tasks/REPORT.md`, and run:
-  `tmux send-keys -t 1 "review" Enter`
+## Reference Files to Inspect First
+- `native-mods/zoom/` (`Cargo.toml`, `mixins/zoom/horizon-mixin.toml`, `list.rs`, `settings.rs`, `click.rs`, `runtime.rs`) — follow this exact native-mod layout.
+- `native-mods/cinematic_interactions/mixins/cinematic_interactions/horizon-mixin.toml` (lines 60-71) — `cancellable = true` `HEAD` injection pattern.
+- `crates/horizon-client/src/game/interface/item_draw.rs` (lines 748-935: `dropped_item_geometry` & `item_entity_geometry`, plus helper visibility like `owner_at`, `dropped_item_cull_box`, `resolve_item`, `submit_item_skinned`, `submit_item_world`, `mark_outline`, `entity_cull_decision_in_bounds`).
+- `crates/horizon-client/src/entities.rs` (`ItemEntity` fields: `id`, `stack`, `previous`, `position`, `velocity`, `on_ground`, `age`, `bob_offset`, `fire_ticks`, etc.).
+
+## Requirements
+1. **Mixin (`native-mods/item_physics/mixins/item_physics/`):**
+   - `horizon-mixin.toml`:
+     - `[[module]]` in `crates/horizon-client/src/game.rs` (name `item_physics`, source `runtime.rs`).
+     - `[[injection]]` `HEAD` (`cancellable = true`) on `horizon_client::game::interface::item_draw::Game<'_>::dropped_item_geometry` with `game: &crate::game::Game<'_>`, `camera: glam::DVec3`, `alpha: f64`, `out: &mut Vec<horizon_client::mesher::Vertex>`.
+     - `native_mods` (`list.rs`), `native_settings` (`settings.rs`), `native_settings_click` (`click.rs`) so `"Item Physics"` appears in the Mods screen with an `Enabled: ON / OFF` toggle (ON by default).
+   - **Physics & Pose (`runtime.rs`):**
+     - When disabled, return `false` (don't cancel) so vanilla bob/spin runs normally.
+     - When enabled, cancel vanilla `dropped_item_geometry` and render each `item` in `self.dropped` using the same culling, lighting, `resolve_item(..., DisplayContext::Ground, ...)`, `cluster_poses_with_depth`, `submit_item_skinned` / `submit_item_world`, and `mark_outline` pipeline as `item_entity_geometry`.
+     - **No floating bob**: items rest flush on the block surface (`y` offset based on `state.bounding_box()` so they never float or sink into the ground).
+     - **Airborne tumble**: when `!item.on_ground` (or falling/moving vertically), smoothly tumble in 3D (`rotation_x` + `rotation_z` + `rotation_y`) using `age = item.age as f32 + alpha as f32` and a per-`item.id` seed.
+     - **Ground rest**:
+       - Flat items (non-block items / thin `hi.z - lo.z < 0.2`) lie flat on the ground (`rotation_x = FRAC_PI_2`) with a deterministic seeded yaw (`rotation_z` / `rotation_y`) and flush `y` offset.
+       - 3D block items sit upright/flush on the ground with a deterministic seeded yaw (no continuous spinning).
+2. **Crate (`native-mods/item_physics/Cargo.toml` & `src/lib.rs` if needed for unit tests):**
+   - Include unit tests covering the pose math (grounded flat item lies at `FRAC_PI_2` with zero bob, grounded block sits flush, airborne item tumbles smoothly as `age` advances, deterministic yaw from `item.id`).
+3. **Android CI (`.github/workflows/android.yml`):**
+   - Add `item_physics` to the `native_mods` default and fallback `MODS` string in `.github/workflows/android.yml`.
+4. **Verification:**
+   - Verify every method/field/module path used in `runtime.rs` against `crates/horizon-client/src/` (especially visibility of `item_draw.rs` helpers from `crate::game` — remember `horizon-mixin` injects `runtime.rs` as `crate::game::item_physics`, so `pub(super)` in `game::interface::item_draw` is `pub(in crate::game::interface)`, NOT visible to `crate::game`! Only `pub(in crate::game)` / `pub(crate)` or calling public/self methods on `Game` is visible — check this carefully and use `crate::game` visible methods or replicate small pure helpers like `dropped_item_cull_box` / `owner_at`!).
+   - Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` on `native-mods/item_physics/Cargo.toml`.
+   - Clean `native-mods/item_physics/target/`, append a concise report to `/root/starling/tasks/REPORT.md`, and run:
+     `tmux send-keys -t 1 "review" Enter`

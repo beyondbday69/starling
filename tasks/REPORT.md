@@ -2048,3 +2048,101 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 ## Blockers
 
 None.
+
+---
+
+# Item Physics native mod (`native-mods/item_physics`)
+
+## What was built
+
+A new native mod that takes over the dropped-item draw when it is on: items
+tumble in the air about three seeded axes, and on landing a flat item lies down
+(`rotation_x = FRAC_PI_2`) and a block sits up, both on a yaw seeded by the
+item id, resting flush on the surface (lift computed from the turned bounding
+box, so no floating bob and no sinking). Off (default ON, `Enabled: ON / OFF`
+in Options > Mods), vanilla's bob and spin run untouched.
+
+- `native-mods/item_physics/mixins/item_physics/horizon-mixin.toml` — the
+  bundle: `[[module]]` `item_physics` from `runtime.rs` into
+  `crates/horizon-client/src/game.rs`, a cancellable `HEAD` injection on
+  `horizon_client::game::item_draw::Game<'_>::dropped_item_geometry`, and
+  `native_mods` / `native_settings` / `native_settings_click` HEAD injections.
+- `mixins/item_physics/runtime.rs` — the pose math and settings (also the
+  crate's library, for its 6 unit tests): `pose()`, `yaw()`, `tumble()`,
+  `turned_y_range()`, `Settings`.
+- `mixins/item_physics/dropped.rs` — the draw: mirrors `item_entity_geometry`
+  call for call (range, frustum cull box, `resolve_item(…, DisplayContext::Ground, …)`
+  via the real `owner_at`, `cluster_poses_with_depth`, packed light from the
+  eye probe, entity culling with the posed envelope and `Bypass` when off,
+  `submit_item_skinned`/`submit_item_world`, `mark_outline`, `abgr`,
+  `finish_entity_occlusion`/`cull_skinned`), with the physics pose matrix
+  `T(pos) · T(0, lift, 0) · R_y · R_z · R_x` in vanilla's frame.
+- `mixins/item_physics/{list,settings,click}.rs` — the Mods-screen row and the
+  settings page; settings kept in
+  `horizon-mods/.horizon-mod-data/item_physics/enabled` (distant_horizons'
+  thread-local + `native_set_setting` pattern).
+- `Cargo.toml` (standalone workspace, `[lib] path = mixins/.../runtime.rs`),
+  `compatibility.json` (hooks 1, same revisions as zoom), `LICENSE`, `README.md`.
+- `.github/workflows/android.yml`: `item_physics` added to both the
+  `native_mods` default and the fallback `MODS` string (yaml parses; both lines
+  verified).
+
+## The visibility question the task flagged
+
+The task warned that `pub(super)` in `game/interface/item_draw.rs` would not be
+visible from `crate::game::item_physics`. Checked against the source: area
+folders are physical only — `game.rs` declares no `mod interface`, nothing in
+the tree spells `crate::game::interface::`, and `game/mobs/mob_blocks.rs:674`
+already calls item_draw's `pub(super)` `resolve_item` from another area. So
+`pub(super)` there is `pub(in crate::game)` and every helper the draw needs is
+reachable; only the private `dropped_item_cull_box` is replicated (byte-for-byte)
+as `cull_box`, and `owner_at` is called directly instead of being replicated.
+The injection target is spelled `horizon_client::game::item_draw::…` (module
+path, like every existing `target =` in native-mods; there is no `interface::`
+segment in Rust paths).
+
+## Verification
+
+The strongest check available on this box: a throwaway mock crate in `/tmp`
+that `include!`s the **real** `dropped.rs` and `runtime.rs` verbatim against
+mocks of every game/engine type they touch, with the real visibilities
+(`pub(super)` methods on `Game` declared in area modules, `Dim` private in
+`game.rs`, `crate::game::item_draw::owner_at`, `crate::game::entity_culling`).
+It compiles clean and its 7th test drives the hook end to end: the mod takes
+over (`ControlFlow::Break`) and draws. Reading it also caught two real bugs
+before CI would have: the model translation is camera-relative (`pos`, as
+vanilla's), and the `nether_lighting()` method is about dimension types, so the
+draw uses vanilla's own `game.dim == Dim::Nether` condition.
+
+```sh
+cargo fmt --manifest-path native-mods/item_physics/Cargo.toml --check
+cargo clippy --manifest-path native-mods/item_physics/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path native-mods/item_physics/Cargo.toml
+```
+
+```
+$ cargo fmt --check
+fmt ok
+
+$ cargo clippy … -- -D warnings
+    Checking horizon-mod-item-physics v0.1.0 (/root/starling/native-mods/item_physics)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.44s
+
+$ cargo test …
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+`native-mods/item_physics/target/` was removed after the runs;
+`tools/check_public_tree.py` passes.
+
+## Untested
+
+- Not compiled inside `horizon-client` (this box cannot build it) and not run
+  in game: the look of the tumble and the flush rest are unverified visually.
+  The Android build was not run. The mixin manifest follows zoom's proven
+  shape and every name/signature in `dropped.rs` was checked against the real
+  source (and mock-compiled), but the launcher's own build is the final word.
+
+## Blockers
+
+None.

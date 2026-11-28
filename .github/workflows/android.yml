@@ -30,7 +30,7 @@ on:
       native_mods:
         description: A test with these native mods of native-mods/ compiled in (ids, separated by spaces), by native_build.sh
         type: string
-        default: 'cinematic_interactions skins_3d gyro timber_fall zoom distant_horizons'
+        default: 'cinematic_interactions skins_3d gyro timber_fall zoom item_physics distant_horizons'
       wasm_probe:
         description: Also build packaging/android/wasm-probe, a wasm mod that says its hooks ran, as an artifact (arm64)
         type: boolean
@@ -133,7 +133,7 @@ jobs:
           HORIZON_ANDROID_KEY_ALIAS: ${{ env.RELEASE_BUILD == 'true' && secrets.STARLING_KEY_ALIAS || 'horizon-debug' }}
           HORIZON_ANDROID_STORE_PASSWORD: ${{ secrets.STARLING_STORE_PASSWORD }}
           HORIZON_ANDROID_KEY_PASSWORD: ${{ secrets.STARLING_KEY_PASSWORD }}
-          MODS: ${{ inputs.native_mods == 'none' && '' || inputs.native_mods || 'cinematic_interactions skins_3d gyro timber_fall zoom distant_horizons' }}
+          MODS: ${{ inputs.native_mods == 'none' && '' || inputs.native_mods || 'cinematic_interactions skins_3d gyro timber_fall zoom item_physics distant_horizons' }}
           PROFILE: ${{ env.RELEASE_BUILD == 'true' && 'fast' || 'quick' }}
           VARIANT: ${{ env.PREVIEW == 'true' && '--preview' || '' }}
         # Releases with the fast profile (fewer codegen units: a little quicker in game). With native mods, the APK

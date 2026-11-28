@@ -1,0 +1,15 @@
+[package]
+name = "horizon-mod-item-physics"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+description = "Horizon's official Item Physics, a native mod: dropped items tumble in the air and lie flat on the ground."
+
+# The mod's logic and its tests: the same file the bundle adds to the game.
+[lib]
+path = "mixins/item_physics/runtime.rs"
+
+# Standalone workspace: the logic has no engine dependency, so its tests run without a
+# Horizon build.
+[workspace]
