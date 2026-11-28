@@ -7,7 +7,7 @@ fn punchy_moves_face(
     m: &crate::mobs::Mob,
     alpha: f32,
     camera: glam::DVec3,
-    atlas: &dyn Fn(&str) -> Option<[f32; 4]>,
+    atlas: crate::mobs::render::Atlas<'_>,
     light: u32,
     out: &mut Vec<crate::mesher::Vertex>,
 ) {
