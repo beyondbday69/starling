@@ -11,7 +11,7 @@ fn punchy_moves_face(
     light: u32,
     out: &mut Vec<crate::mesher::Vertex>,
 ) {
-    use crate::game::punchy_moves::{engine, faces};
+    use crate::mobs::punchy_moves::{engine, faces};
     if &*m.kind.id != "minecraft:player" {
         return value;
     }

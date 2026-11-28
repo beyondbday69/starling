@@ -9,9 +9,10 @@ horizon_revision = "ed7a3853b54808e5e71340eb0ed78d3742721637"
 
 [[module]]
 id = "runtime"
-file = "crates/horizon-client/src/game.rs"
+file = "crates/horizon-client/src/mobs.rs"
 name = "punchy_moves"
 source = "runtime.rs"
+visibility = "pub"
 
 # The shoulder camera's row in Options > Mods, with its two keys.
 [[injection]]

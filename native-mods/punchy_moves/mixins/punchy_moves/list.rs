@@ -1,7 +1,7 @@
 // Punchy Moves' row in Options > Mods, with its keys: the shoulder camera, the
 // orbit camera and the emote wheel.
 fn punchy_moves_listed(mods: &mut Vec<crate::game::native_hooks::NativeMod>) {
-    use crate::game::punchy_moves as punchy;
+    use crate::mobs::punchy_moves as punchy;
     mods.push(crate::game::native_hooks::NativeMod {
         id: punchy::ID.into(),
         title: format!("Punchy Moves {}", punchy::VERSION),

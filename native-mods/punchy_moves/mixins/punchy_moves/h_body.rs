@@ -1,7 +1,7 @@
 // After setupRotations: Punchy Moves' lean, bank, bob, squash and roll on the
 // whole player model.
 fn punchy_moves_body(value: glam::Mat4, m: &crate::mobs::Mob, alpha: f32) -> glam::Mat4 {
-    use crate::game::punchy_moves::engine;
+    use crate::mobs::punchy_moves::engine;
     let Some(root) = engine::sampled_root_motion(m.id as u64, alpha) else {
         return value;
     };

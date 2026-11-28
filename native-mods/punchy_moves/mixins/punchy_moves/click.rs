@@ -1,7 +1,7 @@
 // A click on Punchy Moves' settings page: change the setting and keep it, or
 // open the screen the button names.
 fn punchy_moves_click(game: &mut crate::game::Game<'_>, mod_id: &str, button: usize) {
-    use crate::game::punchy_moves::{ID, camera, faces, ui};
+    use crate::mobs::punchy_moves::{ID, camera, faces, ui};
     if mod_id != ID {
         return;
     }

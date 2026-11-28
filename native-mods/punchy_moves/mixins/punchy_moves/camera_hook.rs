@@ -8,7 +8,7 @@ fn punchy_moves_camera(
     yaw: &mut f32,
     pitch: &mut f32,
 ) {
-    use crate::game::punchy_moves as punchy;
+    use crate::mobs::punchy_moves as punchy;
     if !game.native_on(punchy::ID) {
         punchy::camera::reset();
         return;

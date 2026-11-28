@@ -1,7 +1,7 @@
 // After vanilla posed a player: Punchy Moves' angles on top of the vanilla
 // pose (radians, model units).
 fn punchy_moves_pose(value: (), p: &mut crate::mobs::anim::Poses) {
-    use crate::game::punchy_moves::engine;
+    use crate::mobs::punchy_moves::engine;
     if let Some(pose) = engine::finish_pose() {
         for (name, part) in pose.parts() {
             let q = p.get(name);

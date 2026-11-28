@@ -2,7 +2,7 @@
 // emote slots' keys, in the Java `handleKey` order; a changed setting is kept
 // as a file line.
 fn punchy_moves_key(game: &mut crate::game::Game<'_>, key: &str, pressed: bool) {
-    use crate::game::punchy_moves::{ID, camera, ui};
+    use crate::mobs::punchy_moves::{ID, camera, ui};
     if !game.native_on(ID) || !game.native_playing() {
         return;
     }
