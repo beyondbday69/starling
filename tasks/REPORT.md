@@ -1862,3 +1862,95 @@ runs.
 ## Blockers
 
 None.
+
+
+---
+
+# Fix Report — Timber Fall Sounds: `level` + `level_play_sound` (`E0599`)
+
+## Root cause (android.yml Run #46121778511)
+
+```
+error[E0599]: no method named `native_play_sound` found for mutable reference `&mut game::Game<'_>`
+   --> crates/horizon-client/src/game.rs:19303:18
+```
+
+`native_play_sound` lives on the native level/host surface, not on `Game<'_>` as the mixin reached
+it. The level-based pair is the supported route for a mixin: `Game::level(dimension)` gives the
+level handle and `Game::level_play_sound(level, …)` queues the sound to that level's viewers
+(`native_entity_refs.rs:190`, `native_level_effects.rs:24`, both `pub(super)` in `game::modding`,
+so the mixin's module under `crate::game` reaches them the same way it reaches
+`native_block_collision`).
+
+## Change (`native-mods/timber_fall/mixins/timber_fall/runtime.rs`)
+
+`timber_fall_sound` now takes the tree's dimension and plays through the level:
+
+```rust
+fn timber_fall_sound(&mut self, dimension: &str, sound: (&str, f32, f32), at: [f64; 3]) {
+    let Some(level) = self.level(dimension) else {
+        return;
+    };
+    let _ = self.level_play_sound(
+        level,
+        sound.0,
+        at,
+        crate::mod_api::SoundSource::Blocks,
+        sound.1,
+        sound.2,
+    );
+}
+```
+
+- `level_play_sound` takes the `SoundSource` itself (no `.index()` any more).
+- `LevelRef` is `Copy`, so the handle from `self.level(…)` is owned and the `&mut self` call after
+  it borrows cleanly.
+- Every call site passes `&tree.dimension` (`&String` → `&str`), so a tree falling in another
+  dimension is heard *there* — the old `tree.dimension == self.timber_fall_dimension_id()` gates
+  and the now-unused `dimension` local in `timber_fall_tick` are gone. A missing handle (no level
+  for that dimension) just skips the sound, as before.
+- The sounds themselves, their volumes and pitches, and the once-per-tree / one-pop-a-tick gating
+  are unchanged.
+
+## Verification
+
+A throwaway mock of the exact shapes (`game::modding` with `pub(super) fn level(&self, &str) ->
+Option<LevelRef>` and `pub(super) fn level_play_sound(&mut self, LevelRef, &str, [f64; 3],
+SoundSource, f32, f32) -> bool`, `LevelRef: Copy`, `SoundSource` `#[non_exhaustive]`, and the
+mixin as a sibling child module calling them with `&tree.dimension` through the `Mutex` guard)
+compiles, passes its test, and is clippy-clean with `-D warnings`.
+
+## Commands and real output
+
+```sh
+cargo fmt --manifest-path native-mods/timber_fall/Cargo.toml --check
+cargo clippy --manifest-path native-mods/timber_fall/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path native-mods/timber_fall/Cargo.toml
+```
+
+```
+$ cargo fmt --check
+fmt=0
+
+$ cargo clippy … -- -D warnings
+    Checking timber_fall v0.1.0 (/root/starling/native-mods/timber_fall)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.58s
+
+$ cargo test …
+running 80 tests
+test result: ok. 80 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+`rustfmt --check --edition 2024` on the mixin still reports only the six pre-existing hunks.
+`native-mods/timber_fall/target/` was removed after the runs.
+
+## Untested
+
+- The Android build that failed was not re-run here; the fix is verified against the two methods'
+  real signatures and a compile check of the exact call shape. Not run in game.
+
+## Blockers
+
+None.

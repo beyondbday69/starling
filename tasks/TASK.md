@@ -1,19 +1,28 @@
-# Task: Add Original Game Sound Effects to Timber Fall
+# Task: Fix Sound Playback Method in Timber Fall Mixin
 
-## User Request
-> "can we add sound eff from games orignal sound"
-> "tell agent to add and gimme mp3 of sounds"
+## Build Failure in CI (`android.yml` Run #46121778511)
+```
+error[E0599]: no method named `native_play_sound` found for mutable reference `&mut game::Game<'_>` in the current scope
+     --> crates/horizon-client/src/game.rs:19303:18
+```
+`native_play_sound` is on `NativeLevelHandle`, not `Game<'_>`.
 
-## Change
-- Inspect `crates/horizon-client/src/game/modding/native_level_effects.rs` and `crates/horizon-client/src/game/modding/mod_api_host.rs` to see the exact method on `Game` / `Level` for playing vanilla sounds (e.g. `level_play_sound` / `native_play_sound`, `SoundSource::Blocks`).
+## Fix
 - In `native-mods/timber_fall/mixins/timber_fall/runtime.rs`:
-  - Play original vanilla Minecraft sound effects at the tree's world position during the fall animation (matching the vanilla sounds used in `native-mods/timber_fall/src/hooks.rs`):
-    1. **Creak / fall start** (when a tree begins falling): `"minecraft:block.wood.break"` (volume `0.5`, pitch `0.6`).
-    2. **Ground impact thud** (once when the trunk hits the ground / `impact_at` is set): `"minecraft:block.wood.fall"` (volume `0.9`, pitch `0.8`) and `"minecraft:block.wood.break"` (volume `0.7`, pitch `0.5`).
-    3. **Leaf burst / log pop** (once on leaf burst / per-log pop, without spamming): `"minecraft:block.grass.break"` (volume `0.4`, pitch `1.4`) for leaves, and a light `"minecraft:block.wood.break"` (e.g. volume `0.35`, pitch `1.1`) when logs pop.
-  - Keep the existing `0b2b2b8e71` animation intact (no pop flashes, no gravity drop, pass-through other trees).
-- Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` on `native-mods/timber_fall/Cargo.toml`.
-- Clean `native-mods/timber_fall/target/` if created, append a concise report to `/root/starling/tasks/REPORT.md`, and when completely done run:
+  - Update `timber_fall_sound` to take `dimension: &str` (instead of `native_play_sound`), look up `let Some(level) = self.level(dimension) else { return; };` (from `crates/horizon-client/src/game/modding/native_entity_refs.rs:190`), and call:
+    ```rust
+    let _ = self.level_play_sound(
+        level,
+        sound.0,
+        at,
+        crate::mod_api::SoundSource::Blocks,
+        sound.1,
+        sound.2,
+    );
+    ```
+    (from `crates/horizon-client/src/game/modding/native_level_effects.rs:24`).
+  - Pass `&tree.dimension` from `timber_fall_tick` (keeping the borrow clean since `tree.dimension` can be cloned or passed after `tree` borrow ends, or `let dim = tree.dimension.clone();` if needed, or queueing `(sound, at, dim)` / passing `&tree.dimension` if `tree` is not borrowed across `&mut self`). Note: in the existing `timber_fall_tick`, `tree` is `&mut ActiveTree` inside `{ let tree = &mut s.active[i]; ... }` while `s` is `MutexGuard` — wait: `self.level(&tree.dimension)` borrows `&self` (not `s`), and `self.level_play_sound` borrows `&mut self` (not `s`), so `self.timber_fall_sound(&tree.dimension, sounds::CREAK, at)` works cleanly without borrowing `s`!
+- Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` on `native-mods/timber_fall/Cargo.toml`, clean `native-mods/timber_fall/target/`, append to `/root/starling/tasks/REPORT.md`, and run:
   `tmux send-keys -t 1 "review" Enter`
 
 ## Test Commands

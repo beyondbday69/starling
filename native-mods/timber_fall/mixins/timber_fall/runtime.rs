@@ -540,8 +540,6 @@ impl Game<'_> {
         }
         let mut spawns: Vec<(String, Vec<ItemStack>, [f64; 3])> = Vec::new();
         let mut landed = Vec::new();
-        // A tree falling in another dimension is heard there, not here.
-        let dimension = self.timber_fall_dimension_id();
         {
             let mut s = lock_state();
             let mut i = 0;
@@ -562,20 +560,20 @@ impl Game<'_> {
 
                     // The fall's vanilla sounds, each played once where it happens:
                     // the creak and the leaves shaking free as the trunk starts to
-                    // tip, then the thud when it first meets the ground.
-                    if tree.dimension == dimension {
-                        if !tree.creaked {
-                            tree.creaked = true;
-                            let at = stump_top(tree.cut);
-                            self.timber_fall_sound(sounds::CREAK, at);
-                            self.timber_fall_sound(sounds::LEAVES, at);
-                        }
-                        if !tree.thudded && tree.impact_angle < std::f64::consts::FRAC_PI_2 {
-                            tree.thudded = true;
-                            let at = stump_top(tree.cut);
-                            self.timber_fall_sound(sounds::THUD, at);
-                            self.timber_fall_sound(sounds::THUD_BREAK, at);
-                        }
+                    // tip, then the thud when it first meets the ground. They go to
+                    // the tree's own level, so a tree falling in another dimension
+                    // is heard there.
+                    if !tree.creaked {
+                        tree.creaked = true;
+                        let at = stump_top(tree.cut);
+                        self.timber_fall_sound(&tree.dimension, sounds::CREAK, at);
+                        self.timber_fall_sound(&tree.dimension, sounds::LEAVES, at);
+                    }
+                    if !tree.thudded && tree.impact_angle < std::f64::consts::FRAC_PI_2 {
+                        tree.thudded = true;
+                        let at = stump_top(tree.cut);
+                        self.timber_fall_sound(&tree.dimension, sounds::THUD, at);
+                        self.timber_fall_sound(&tree.dimension, sounds::THUD_BREAK, at);
                     }
 
                     let mut popped_at: Option<[f64; 3]> = None;
@@ -622,10 +620,8 @@ impl Game<'_> {
                         }
                     }
                     // One pop sound a tick at the most, at the log that came off.
-                    if tree.dimension == dimension
-                        && let Some(at) = popped_at
-                    {
-                        self.timber_fall_sound(sounds::POP, at);
+                    if let Some(at) = popped_at {
+                        self.timber_fall_sound(&tree.dimension, sounds::POP, at);
                     }
                     p >= 1.0
                 };
@@ -644,14 +640,19 @@ impl Game<'_> {
         }
     }
 
-    /// Plays one of the fall's vanilla sounds at `at` for everyone in range, as
+    /// Plays one of the fall's vanilla sounds at `at` in the tree's own level, as
     /// `ServerLevel.playSound` does under the blocks volume slider. The game may
-    /// not be able to send it (a client window, say); that is fine to ignore.
-    fn timber_fall_sound(&mut self, sound: (&str, f32, f32), at: [f64; 3]) {
-        let _ = self.native_play_sound(
+    /// not be able to send it (no level handle for that dimension, say); that is
+    /// fine to ignore.
+    fn timber_fall_sound(&mut self, dimension: &str, sound: (&str, f32, f32), at: [f64; 3]) {
+        let Some(level) = self.level(dimension) else {
+            return;
+        };
+        let _ = self.level_play_sound(
+            level,
             sound.0,
             at,
-            crate::mod_api::SoundSource::Blocks.index(),
+            crate::mod_api::SoundSource::Blocks,
             sound.1,
             sound.2,
         );
