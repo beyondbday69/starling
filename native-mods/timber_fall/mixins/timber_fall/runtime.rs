@@ -42,6 +42,20 @@ const TICK_SECS: f64 = 0.05;
 /// Three parabolic hops inside the bounce segment: (start, length, amplitude).
 const HOPS: [[f64; 3]; 3] = [[0.0, 0.54, 1.0], [0.54, 0.30, 0.3], [0.84, 0.16, 0.09]];
 
+/// The fall's own sounds, all of them the game's vanilla block sounds:
+/// `(sound event, volume, pitch)`, as `native-mods/timber_fall/src/hooks.rs` plays them.
+mod sounds {
+    /// The creak as the trunk starts to tip.
+    pub const CREAK: (&str, f32, f32) = ("minecraft:block.wood.break", 0.5, 0.6);
+    /// The leaves shaking free with it.
+    pub const LEAVES: (&str, f32, f32) = ("minecraft:block.grass.break", 0.4, 1.4);
+    /// The thud of the trunk landing on the ground.
+    pub const THUD: (&str, f32, f32) = ("minecraft:block.wood.fall", 0.9, 0.8);
+    pub const THUD_BREAK: (&str, f32, f32) = ("minecraft:block.wood.break", 0.7, 0.5);
+    /// A log popping off the fallen trunk, one a tick at the most.
+    pub const POP: (&str, f32, f32) = ("minecraft:block.wood.break", 0.35, 1.1);
+}
+
 /// `#minecraft:logs` (and `#c:logs`) by name.
 fn is_log(block: &str) -> bool {
     block != "minecraft:mushroom_stem"
@@ -283,6 +297,10 @@ struct ActiveTree {
     last_render_at: Option<Instant>,
     /// The angle the trunk stops at (lowered by terrain hit during the fall).
     impact_angle: f64,
+    /// The creak and the leaf burst play once, as the fall starts.
+    creaked: bool,
+    /// The thud plays once, when the trunk first meets the ground.
+    thudded: bool,
     logs: Vec<LogBlock>,
     leaves: Vec<LeafBlock>,
     axe: Option<String>,
@@ -506,6 +524,8 @@ impl Game<'_> {
                 last_tick_at: Instant::now(),
                 last_render_at: None,
                 impact_angle: std::f64::consts::FRAC_PI_2,
+                creaked: false,
+                thudded: false,
                 logs,
                 leaves,
                 axe,
@@ -520,6 +540,8 @@ impl Game<'_> {
         }
         let mut spawns: Vec<(String, Vec<ItemStack>, [f64; 3])> = Vec::new();
         let mut landed = Vec::new();
+        // A tree falling in another dimension is heard there, not here.
+        let dimension = self.timber_fall_dimension_id();
         {
             let mut s = lock_state();
             let mut i = 0;
@@ -538,6 +560,25 @@ impl Game<'_> {
                         }
                     }
 
+                    // The fall's vanilla sounds, each played once where it happens:
+                    // the creak and the leaves shaking free as the trunk starts to
+                    // tip, then the thud when it first meets the ground.
+                    if tree.dimension == dimension {
+                        if !tree.creaked {
+                            tree.creaked = true;
+                            let at = stump_top(tree.cut);
+                            self.timber_fall_sound(sounds::CREAK, at);
+                            self.timber_fall_sound(sounds::LEAVES, at);
+                        }
+                        if !tree.thudded && tree.impact_angle < std::f64::consts::FRAC_PI_2 {
+                            tree.thudded = true;
+                            let at = stump_top(tree.cut);
+                            self.timber_fall_sound(sounds::THUD, at);
+                            self.timber_fall_sound(sounds::THUD_BREAK, at);
+                        }
+                    }
+
+                    let mut popped_at: Option<[f64; 3]> = None;
                     let log_count = tree.logs.len();
                     for index in 0..log_count {
                         if tree.logs[index].dropped {
@@ -550,6 +591,9 @@ impl Game<'_> {
                         let angle = tree_angle(tree, pop);
                         let home = block_center(tree.logs[index].pos);
                         let landing = rotate_point(tree.cut, tree.toward, home, angle);
+                        if popped_at.is_none() {
+                            popped_at = Some(landing);
+                        }
                         tree.logs[index].dropped = true;
                         let drops = std::mem::take(&mut tree.logs[index].drops);
                         spawns.push((tree.dimension.clone(), drops, landing));
@@ -567,16 +611,23 @@ impl Game<'_> {
                             let home = block_center(log.pos);
                             let landing =
                                 rotate_point(tree.cut, tree.toward, home, tree.impact_angle);
+                            if popped_at.is_none() {
+                                popped_at = Some(landing);
+                            }
                             spawns.push((
                                 tree.dimension.clone(),
                                 std::mem::take(&mut log.drops),
                                 landing,
                             ));
                         }
-                        true
-                    } else {
-                        false
                     }
+                    // One pop sound a tick at the most, at the log that came off.
+                    if tree.dimension == dimension
+                        && let Some(at) = popped_at
+                    {
+                        self.timber_fall_sound(sounds::POP, at);
+                    }
+                    p >= 1.0
                 };
                 if finished {
                     landed.push(s.active.remove(i));
@@ -591,6 +642,19 @@ impl Game<'_> {
         for tree in landed {
             self.timber_fall_wear(tree);
         }
+    }
+
+    /// Plays one of the fall's vanilla sounds at `at` for everyone in range, as
+    /// `ServerLevel.playSound` does under the blocks volume slider. The game may
+    /// not be able to send it (a client window, say); that is fine to ignore.
+    fn timber_fall_sound(&mut self, sound: (&str, f32, f32), at: [f64; 3]) {
+        let _ = self.native_play_sound(
+            sound.0,
+            at,
+            crate::mod_api::SoundSource::Blocks.index(),
+            sound.1,
+            sound.2,
+        );
     }
 
     /// Spawns a block's drops at `at`, switching levels when the tree is elsewhere.
@@ -866,6 +930,11 @@ fn block_center(pos: BlockPos) -> [f64; 3] {
         pos.y as f64 + 0.5,
         pos.z as f64 + 0.5,
     ]
+}
+
+/// The stump's top centre, where the trunk's creak and thud come from.
+fn stump_top(cut: [i32; 3]) -> [f64; 3] {
+    [cut[0] as f64 + 0.5, cut[1] as f64, cut[2] as f64 + 0.5]
 }
 
 /// Rotates a world-space centre around the stump hinge by `angle`.

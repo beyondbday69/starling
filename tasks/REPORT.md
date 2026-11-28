@@ -1771,3 +1771,94 @@ are the same count as before), and no other file in the mod mentions it.
 ## Blockers
 
 None.
+
+
+---
+
+# Feature Report — Timber Fall: Vanilla Sound Effects
+
+## What plays, and when
+
+All five are the game's own vanilla block sound events (no audio files to ship — the mod plays
+them by id, the same ones `native-mods/timber_fall/src/hooks.rs` plays on the SDK side), under the
+Blocks volume slider, sent to every player in range:
+
+| Moment | Sound | Volume | Pitch |
+|---|---|---|---|
+| The trunk starts to tip (first tick of the fall) | `minecraft:block.wood.break` | 0.5 | 0.6 |
+| …with it, the leaves shaking free | `minecraft:block.grass.break` | 0.4 | 1.4 |
+| The trunk first meets the ground (`impact_angle` lowered) | `minecraft:block.wood.fall` | 0.9 | 0.8 |
+| …with it, the breaking thud | `minecraft:block.wood.break` | 0.7 | 0.5 |
+| A log pops off the fallen trunk | `minecraft:block.wood.break` | 0.35 | 1.1 |
+
+## Change (`native-mods/timber_fall/mixins/timber_fall/runtime.rs`)
+
+- A `sounds` module groups the five `(sound event, volume, pitch)` constants.
+- `ActiveTree` gains `creaked: bool` and `thudded: bool` so the creak/leaf burst and the thud each
+  play exactly once per tree.
+- `timber_fall_tick` plays them through a new `timber_fall_sound` helper, which calls the game's
+  `native_play_sound(sound, at, source, volume, pitch)` with `mod_api::SoundSource::Blocks`:
+  - creak + leaf burst at the stump's top centre (`stump_top`, the hinge) on the first tick;
+  - thud + break at the same place on the tick the terrain hit is recorded;
+  - one pop sound per tick at the most, at the landing position of the first log that came off
+    that tick (up to 256 logs pop across ~0.42 s, so per-tick is the light touch), including the
+    `p >= 1.0` safety net's logs.
+- Everything is gated on `tree.dimension == self.timber_fall_dimension_id()`: `native_play_sound`
+  queues into the game's own dimension, so a tree falling in another dimension is not mis-sent
+  here (its creak plays if the player is there while it falls).
+- The animation itself is untouched — this is the `0b2b2b8e71` base the maintainer restored (no
+  pop flashes, no gravity drop), pass-through other trees, no leaf item drops, sound events only.
+
+## Verified targets
+
+- `Game::native_play_sound(&mut self, sound: &str, at: [f64; 3], source: usize, volume: f32,
+  pitch: f32) -> bool` (`game/native_hooks/shared.rs:1746`, `pub(super)` → visible to the mixin's
+  module under `crate::game`, the same rule the existing `native_block_collision` call uses).
+- It needs an authoritative game (`serving`/dedicated) and a sound seed from the LAN hub;
+  `timber_fall_tick` already returns early unless the game is the server thread, and the
+  integrated server is a LAN host (`NetConfig::lan()`), so single player, LAN and dedicated all
+  send. The queued `NativeSound` is flushed to the level's viewers (`flush_native_sounds`).
+- `mod_api::SoundSource::Blocks.index()` — `SoundSource` is `#[non_exhaustive]`, but constructing a
+  listed variant across crates is allowed (only exhaustive matching is not).
+- A throwaway two-crate mock of those exact shapes (`native_play_sound` signature, the
+  `#[non_exhaustive]` `SoundSource::Blocks.index()` call, the tick's borrow pattern of a `&mut`
+  tree from the static `Mutex` beside `&mut self` sound calls, and the `if … && let Some(…)` chain)
+  compiles and its test runs clean.
+
+## Commands and real output
+
+```sh
+cargo fmt --manifest-path native-mods/timber_fall/Cargo.toml --check
+cargo clippy --manifest-path native-mods/timber_fall/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path native-mods/timber_fall/Cargo.toml
+```
+
+```
+$ cargo fmt --check
+fmt=0
+
+$ cargo clippy … -- -D warnings
+    Checking timber_fall v0.1.0 (/root/starling/native-mods/timber_fall)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.47s
+
+$ cargo test …
+running 80 tests
+test result: ok. 80 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+`rustfmt --check --edition 2024` on the mixin reports the same six pre-existing hunks as the
+committed file and none in the new code. `native-mods/timber_fall/target/` was removed after the
+runs.
+
+## Untested
+
+- Not built inside `horizon-client` and not run in game: whether the creak, thud and pops are
+  heard at the right moments and volumes is unverified. The APK build was not run.
+- The sounds are vanilla events played by id, so there is no mp3 to hand over; if custom audio is
+  wanted later it would be a content mod's `assets/*/sounds/` files, not this mixin.
+
+## Blockers
+
+None.
