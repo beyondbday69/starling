@@ -92,7 +92,7 @@ fn collect_drops(
 /// The world position of a block's centre once the tree is rotated to `angle_rad`.
 fn landing_position(tree: &FallingTree, block: &FallingBlock) -> [f64; 3] {
     let hinge = tree.hinge_center();
-    let rotated = rotate_offset(block.center_offset(), tree.direction, tree.angle_rad());
+    let rotated = rotate_offset(tree.block_center(block), tree.direction, tree.angle_rad());
     [
         hinge[0] + f64::from(rotated[0]),
         hinge[1] + f64::from(rotated[1]),

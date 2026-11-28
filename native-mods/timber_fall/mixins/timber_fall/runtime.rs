@@ -1,8 +1,9 @@
 // Timber Fall for Horizon (native mixin runtime): a log cut with an axe takes the whole
-// tree down. The tree is cleared in the cut's tick, tips around its stump hinge with the
-// pole equation, falls under gravity until it lies on the ground below it (so a tree cut
-// high up, or one that was floating, comes all the way down), stops on solid ground, and
-// its blocks drop at the stump a second later.
+// tree down. The tree is cleared in the cut's tick; the trunk then stands a moment, drops
+// the one block onto the stump the cut log left (with a soft landing shake), tips around
+// the stump hinge with the pole equation, falls under gravity until it lies on the ground
+// below it (so a tree cut high up, or one that was floating, comes all the way down),
+// stops on solid ground, and its blocks drop at the stump a second later.
 //
 // Everything here is self-contained: `horizon-mixins` copies this file into
 // `crates/horizon-client/src/game.rs`, so it may only use what the game crate itself has.
@@ -41,6 +42,14 @@ const GRAVITY_FALL: f64 = 14.0;
 const MAX_DROP: f64 = 32.0;
 /// The timeline fraction where the trunk tips off its stump and gravity takes it.
 const DROP_FROM: f64 = 0.15;
+/// How long the trunk stands straight on its stump before the drop.
+const HOLD_SECS: f64 = 0.25;
+/// How far the trunk drops onto the stump the cut log left, in blocks.
+const STUMP_DROP_HEIGHT: f64 = 1.0;
+/// The landing on the stump shakes the camera this much of a full impact.
+const LANDING_SHAKE: f64 = 0.4;
+/// The landing shake lasts this long, in seconds.
+const LANDING_SHAKE_SECS: f64 = 0.25;
 /// Halvings that settle a dropping trunk onto the ground it just reached.
 const SETTLE_STEPS: u32 = 4;
 /// How far each of the three contacts kicks back.
@@ -547,12 +556,16 @@ impl Game<'_> {
                     let tree = &mut s.active[i];
                     tree.elapsed_secs += TICK_SECS;
                     tree.last_tick_at = Instant::now();
-                    let p = (tree.elapsed_secs / DURATION).clamp(0.0, 1.0);
+                    // The cut log is gone, so the trunk stands a moment, drops onto the
+                    // stump, and only then tips over: `p` is the tip-over's own timeline.
+                    let (stump_shift, p) = fall_clock(tree.elapsed_secs);
 
                     // Solid ground can stop the fall before the whole 90 degrees.
                     if p < IMPACT {
                         let angle = angle_at(p);
-                        if angle < tree.impact_angle && self.timber_fall_hits(tree, angle) {
+                        if angle < tree.impact_angle
+                            && self.timber_fall_hits(tree, angle, stump_shift)
+                        {
                             tree.impact_angle = angle;
                         }
                     }
@@ -561,13 +574,13 @@ impl Game<'_> {
                     // air under it), the whole tree falls to the ground below it
                     // instead of hanging at the height it was cut at.
                     tree.prev_drop_y = tree.drop_y;
-                    if p >= DROP_FROM || self.timber_fall_floating(tree.cut) {
+                    if p >= DROP_FROM || (p > 0.0 && self.timber_fall_floating(tree.cut)) {
                         let angle = tree_angle(tree, p);
                         let (drop_y, drop_vel) = {
                             let (from, vel) = (tree.drop_y, tree.drop_vel);
                             let trunk = &*tree;
                             drop_step(from, vel, |drop| {
-                                self.timber_fall_hits_at(trunk, angle, drop)
+                                self.timber_fall_hits_at(trunk, angle, stump_shift + drop)
                             })
                         };
                         tree.drop_y = drop_y;
@@ -586,8 +599,8 @@ impl Game<'_> {
                         let angle = tree_angle(tree, pop);
                         let home = block_center(tree.logs[index].pos);
                         let mut landing = rotate_point(tree.cut, tree.toward, home, angle);
-                        // The drops land where the trunk actually fell to.
-                        landing[1] += tree.drop_y;
+                        // The drops land where the trunk actually came to rest.
+                        landing[1] += stump_shift + tree.drop_y;
                         tree.logs[index].dropped = true;
                         let drops = std::mem::take(&mut tree.logs[index].drops);
                         spawns.push((tree.dimension.clone(), drops, landing));
@@ -605,7 +618,7 @@ impl Game<'_> {
                             let home = block_center(log.pos);
                             let mut landing =
                                 rotate_point(tree.cut, tree.toward, home, tree.impact_angle);
-                            landing[1] += tree.drop_y;
+                            landing[1] += stump_shift + tree.drop_y;
                             spawns.push((
                                 tree.dimension.clone(),
                                 std::mem::take(&mut log.drops),
@@ -672,7 +685,17 @@ impl Game<'_> {
             if tree.dimension != dimension {
                 continue;
             }
-            let p = (tree.smooth_secs / DURATION).clamp(0.0, 1.0);
+            // The landing on the stump shakes the camera on its own, at a fraction of
+            // a full impact's strength and for a quarter of a second.
+            let landing = tree.smooth_secs - (HOLD_SECS + stump_drop_secs());
+            if (0.0..LANDING_SHAKE_SECS).contains(&landing) {
+                let env = (1.0 - landing / LANDING_SHAKE_SECS).powi(2) * LANDING_SHAKE;
+                shake.offset[1] += ((landing * 75.0).sin() * 0.05 * env) as f32;
+                shake.offset[0] += ((landing * 53.0).sin() * 0.025 * env) as f32;
+                shake.roll += ((landing * 60.0).sin() * 0.45 * env) as f32;
+            }
+            // Then the tip-over's own hit on the ground.
+            let p = fall_clock(tree.smooth_secs).1;
             let t = (p - IMPACT) * DURATION;
             if !(0.0..0.35).contains(&t) {
                 continue;
@@ -684,9 +707,10 @@ impl Game<'_> {
         }
     }
 
-    /// Whether a trunk block would be inside solid ground at `angle`.
-    fn timber_fall_hits(&self, tree: &ActiveTree, angle: f64) -> bool {
-        log_centres(tree, angle, 0.0).any(|center| {
+    /// Whether a trunk block would be inside solid ground at `angle`, with the whole
+    /// trunk moved down by `shift` blocks (the drop onto the stump, then the ground).
+    fn timber_fall_hits(&self, tree: &ActiveTree, angle: f64, shift: f64) -> bool {
+        log_centres(tree, angle, shift).any(|center| {
             self.timber_fall_solid([
                 center[0].floor() as i32,
                 center[1].floor() as i32,
@@ -695,11 +719,11 @@ impl Game<'_> {
         })
     }
 
-    /// Whether the trunk at `angle`, dropped by `drop_y` blocks, would rest on
+    /// Whether the trunk at `angle`, moved down by `shift` blocks, would rest on
     /// solid ground: each log is tested at the cell under its bottom face, so a
     /// tree cut high up falls until it lies on the ground it came from.
-    fn timber_fall_hits_at(&self, tree: &ActiveTree, angle: f64, drop_y: f64) -> bool {
-        log_centres(tree, angle, drop_y).any(|center| {
+    fn timber_fall_hits_at(&self, tree: &ActiveTree, angle: f64, shift: f64) -> bool {
+        log_centres(tree, angle, shift).any(|center| {
             self.timber_fall_solid([
                 center[0].floor() as i32,
                 (center[1] - 0.5).floor() as i32,
@@ -741,25 +765,30 @@ impl Game<'_> {
             if tree.dimension != dimension {
                 continue;
             }
-            // Wall-clock seconds keep the animation smooth between 20 TPS server ticks.
+            // Wall-clock seconds keep the animation smooth between 20 TPS server ticks:
+            // the hold and the drop onto the stump, then the whole tip-over.
             let now = Instant::now();
             if tree.last_tick_at.elapsed().as_secs_f64() < 0.25 {
                 if let Some(last) = tree.last_render_at {
                     let frame = now.duration_since(last).as_secs_f64().clamp(0.0, 0.05);
-                    tree.smooth_secs = (tree.smooth_secs + frame).min(DURATION);
+                    let end = HOLD_SECS + stump_drop_secs() + DURATION;
+                    tree.smooth_secs = (tree.smooth_secs + frame).min(end);
                 }
             }
             tree.last_render_at = Some(now);
-            let p = (tree.smooth_secs / DURATION).clamp(0.0, 1.0);
-            // The drop is interpolated between the last two ticks, as the rotation is,
-            // so the fall is as smooth at 120 FPS as the tip-over.
+            // The hold and the drop onto the stump come straight from the wall clock,
+            // like the tip-over, so they are smooth at 120 FPS too; `p` is the
+            // tip-over's own fraction, 0 while the trunk still stands.
+            let (stump_shift, p) = fall_clock(tree.smooth_secs);
+            // The ground drop is interpolated between the last two ticks, as before.
             let tick = (tree.last_tick_at.elapsed().as_secs_f64() / TICK_SECS).clamp(0.0, 1.0);
             let smooth_drop = tree.prev_drop_y + (tree.drop_y - tree.prev_drop_y) * tick;
+            let shift = stump_shift + smooth_drop;
             let angle = tree_angle(tree, p) as f32;
             let axis = glam::Vec3::new(tree.toward[2] as f32, 0.0, -(tree.toward[0] as f32));
             let hinge = glam::DVec3::new(
                 tree.cut[0] as f64 + 0.5,
-                tree.cut[1] as f64 + smooth_drop,
+                tree.cut[1] as f64 + shift,
                 tree.cut[2] as f64 + 0.5,
             );
             let to_camera = (hinge - camera).as_vec3();
@@ -789,12 +818,12 @@ impl Game<'_> {
                 self.block_model_vertices(log.state, 42, matrix, packed, true, out);
             }
 
-            let ground = tree.cut[1] as f64 + smooth_drop;
+            let ground = tree.cut[1] as f64 + shift;
             for leaf in &tree.leaves {
                 let (center, scale, spin) = if p <= leaf.at {
                     let mut attached =
                         rotate_point(tree.cut, tree.toward, leaf.center, angle as f64);
-                    attached[1] += smooth_drop;
+                    attached[1] += shift;
                     (attached, 1.0, None)
                 } else {
                     let (center, scale, spin) = leaf_state(leaf, p, ground);
@@ -853,12 +882,13 @@ fn is_tree_block(block: &str) -> bool {
         )
 }
 
-/// Each log's world centre with the trunk at `angle`, dropped by `drop_y`
-/// blocks: `rotate_point`'s rotation, then the whole tree moved down.
+/// Each log's world centre with the trunk at `angle`, moved down by `shift`
+/// blocks (the drop onto the stump plus the ground drop): `rotate_point`'s
+/// rotation, then the whole tree moved down.
 fn log_centres<'a>(
     tree: &'a ActiveTree,
     angle: f64,
-    drop_y: f64,
+    shift: f64,
 ) -> impl Iterator<Item = [f64; 3]> + 'a {
     let (sin, cos) = angle.sin_cos();
     let t = 1.0 - cos;
@@ -874,7 +904,7 @@ fn log_centres<'a>(
         let oz = log.pos.z as f64 + 0.5 - hinge[2];
         [
             hinge[0] + (cos + t * dz * dz) * ox + sin * dx * oy - t * dx * dz * oz,
-            hinge[1] + drop_y + (-sin * dx * ox + cos * oy - sin * dz * oz),
+            hinge[1] + shift + (-sin * dx * ox + cos * oy - sin * dz * oz),
             hinge[2] + (-t * dx * dz * ox + sin * dz * oy + (cos + t * dx * dx) * oz),
         ]
     })
@@ -905,6 +935,30 @@ fn drop_step(drop_y: f64, drop_vel: f64, supported: impl Fn(f64) -> bool) -> (f6
         }
     }
     (free, 0.0)
+}
+
+/// How long the drop onto the stump takes under gravity: `sqrt(2h/g)`, about 0.38 s.
+fn stump_drop_secs() -> f64 {
+    (2.0 * STUMP_DROP_HEIGHT / GRAVITY_FALL).sqrt()
+}
+
+/// The fall's clock at `secs` after the cut: how far the whole trunk is moved down
+/// (`stump_shift`, 0 while it stands, then down the one block onto the stump), and
+/// the tip-over's own fraction `p` (0 until the landing, then 0..=1 over `DURATION`).
+fn fall_clock(secs: f64) -> (f64, f64) {
+    let landed = HOLD_SECS + stump_drop_secs();
+    if secs < HOLD_SECS {
+        return (0.0, 0.0);
+    }
+    if secs < landed {
+        let fall = secs - HOLD_SECS;
+        let drop = (0.5 * GRAVITY_FALL * fall * fall).min(STUMP_DROP_HEIGHT);
+        return (-drop, 0.0);
+    }
+    (
+        -STUMP_DROP_HEIGHT,
+        ((secs - landed) / DURATION).clamp(0.0, 1.0),
+    )
 }
 
 /// The inverted-pendulum shape from `voxel-tree-fall.html`, normalized 0..=1.

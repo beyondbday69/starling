@@ -1868,3 +1868,105 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 ## Blockers
 
 None.
+
+
+---
+
+# Feature Report — Timber Fall: Stump-Drop-Then-Tip (`timber_fall-mod2.zip`)
+
+## What the tree does now
+
+A cut with an axe clears the tree as before, but the trunk no longer tips from the height it was
+cut at:
+
+1. **Hold** — `HOLD_SECS = 0.25 s` straight up at 0°, `stump_shift = 0`, sitting one block above
+   the stump the cut log left.
+2. **Stump drop** — falls straight down (angle stays 0) for
+   `STUMP_DROP_SECS = sqrt(2 * STUMP_DROP_HEIGHT / GRAVITY_FALL) ≈ 0.378 s`, with
+   `stump_shift = -(0.5 * g * t²).min(1.0)`, landing exactly one block down on the stump.
+3. **Landing shake** — `0.4×` of a full impact, for `LANDING_SHAKE_SECS = 0.25 s` after the landing.
+4. **Tip-over** — then the existing 3.0 s `voxel-tree-fall.html` timeline runs with
+   `p = ((secs - (HOLD + STUMP_DROP)) / DURATION)`: pole tip, three bounce hops, base-to-tip log
+   pops, leaf fade (no leaf item drops), and the `drop_y` terrain gravity for trees cut high up or
+   floating (still waiting for `p > 0`/`DROP_FROM`, so the two drops never fight).
+
+## Mixin (`native-mods/timber_fall/mixins/timber_fall/runtime.rs`)
+
+- Constants `HOLD_SECS`, `STUMP_DROP_HEIGHT`, `LANDING_SHAKE`, `LANDING_SHAKE_SECS`, and the pure
+  helpers `stump_drop_secs()` and `fall_clock(secs) -> (stump_shift, p)` — one clock for the whole
+  animation, used by the tick (`elapsed_secs`) and the render (`smooth_secs`), so the hold and the
+  drop are wall-clock smooth at 60/120 FPS like the tip-over.
+- `timber_fall_tick` takes `(stump_shift, p)` from `fall_clock`; `p >= 1.0` still completes the tree.
+- `stump_shift` is folded into everything vertical: `log_centres`/`timber_fall_hits`/
+  `timber_fall_hits_at` (collision now tests `stump_shift + drop`), both item landings
+  (`landing[1] += stump_shift + tree.drop_y`), the render's hinge/`to_camera`, attached leaf centres
+  and the detached leaves' ground.
+- `timber_fall_camera_shake` adds the `0.4×` landing shake (same frequencies as the impact, envelope
+  `(1 - t/0.25)² * 0.4`), then the existing impact shake, whose `p` now comes from `fall_clock`.
+- The render clock's clamp moved from `DURATION` to `HOLD + STUMP_DROP + DURATION`, or the tip-over
+  would have frozen at `p ≈ 0.79`.
+- Sound stays OFF (the mixin has no sound code at all), no white pop flash, no leaf item drops,
+  other trees are still passed through (`is_tree_block`), and no new state fields were needed.
+
+## `src/` synced from the zip
+
+`src/falling.rs`, `src/runtime.rs`, `src/drops.rs`, `src/impact.rs` copied from the zip and
+formatted: the SDK-side timeline gains `FallPhase::Dropping`, `with_drop`/`base_shift`/
+`block_center`, the `vanished` cut log and the `landed` event (which drives the same `0.4×` shake in
+`src/runtime.rs` there). `Cargo.toml`, `horizon-mod.toml` and **`Cargo.lock` are untouched** (the
+zip's lock is a stripped one; no dependency was added or removed).
+
+## Verification
+
+- `cargo test` on the crate is now **84 tests** (was 80): the zip's four new ones run here —
+  `a_tree_with_a_cut_log_stands_still_then_drops_then_tips`,
+  `the_drop_takes_the_time_a_block_needs_to_fall_one_block` (0.452/1.5 s ± 0.03),
+  `a_dropped_tree_tips_around_the_stump_top_and_rests_on_flat_ground`,
+  `the_cut_log_is_not_part_of_the_collision_and_keeps_its_place_for_drops`.
+- The mixin file is not part of the crate's `[lib]`, so its new clock was checked by extracting the
+  **real** `fall_clock`, `stump_drop_secs`, `drop_step`, `log_centres` and constants into a
+  throwaway harness (`cargo test` + `cargo clippy -D warnings` clean):
+  - hold → `(0.0, 0.0)` for `secs <= 0.25`;
+  - drop takes 0.378 s, mono­tonically down to exactly `-1.0`, half-way is exactly `-0.5`, and `p`
+    stays 0 throughout;
+  - after landing `stump_shift == -1.0`, then `p` runs 0→1 over exactly `DURATION`;
+  - combined with `drop_step`, a trunk cut 7 blocks up lands on the stump and then on the ground
+    (lowest bottom face within 0.01 blocks of the surface), while a ground-level cut rests on the
+    stump with no further drop.
+
+## Commands and real output
+
+```sh
+cargo fmt --manifest-path native-mods/timber_fall/Cargo.toml --check
+cargo clippy --manifest-path native-mods/timber_fall/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path native-mods/timber_fall/Cargo.toml
+```
+
+```
+$ cargo fmt --check
+fmt=0
+
+$ cargo clippy … -- -D warnings
+    Checking timber_fall v0.1.0 (/root/starling/native-mods/timber_fall)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.20s
+
+$ cargo test …
+running 84 tests
+test result: ok. 84 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+`rustfmt --check --edition 2024` on the mixin reports the same six pre-existing hunks as the
+committed file and none in the new code; there are no `#![…]`/`//!` attributes and no symlinks in
+`mixins/timber_fall/`. `native-mods/timber_fall/target/` was removed after the runs.
+
+## Untested
+
+- Not built inside `horizon-client` and not run in game: the feel of the 0.25 s hold, the one-block
+  drop, the `0.4×` landing shake and how they blend into the tip are unverified visually. The APK
+  build was not run.
+
+## Blockers
+
+None.
