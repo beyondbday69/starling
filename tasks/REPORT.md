@@ -1954,3 +1954,97 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 ## Blockers
 
 None.
+
+
+---
+
+# Feature Report — Timber Fall: Smooth Fall + Dust Particles
+
+## Smooth animation (`native-mods/timber_fall/mixins/timber_fall/runtime.rs`)
+
+- **`smooth_secs` locked to the tick clock**: the render no longer accumulates its own frames
+  (and no longer needs `last_render_at`, removed). It is now
+  `smooth_secs = (elapsed_secs + last_tick_at.elapsed().min(TICK_SECS)).max(smooth_secs).min(DURATION)` —
+  the tick's fraction extrapolated by wall clock, monotonic, so 60/120 FPS frames are silky, the
+  clock never drifts from the server's, and a stalled server freezes the animation with the world.
+- **Organic shape curve**: `shape_curve` now integrates from an initial push (`w = 0.3`, was 0.0),
+  so the trunk leaves with a little of its own speed instead of hanging nearly still for ~0.8 s
+  and then whipping down. Its seed also starts at the lean itself (`vec![th]`), which normalizes
+  to exactly 0 instead of a negative first sample. The timeline is re-proportioned to a weighty
+  fall: `DURATION = 2.4`, `IMPACT = 0.44`, `BREAK = 0.64` (`LAST` unchanged) — the fall itself is
+  `IMPACT * DURATION ≈ 1.06 s`.
+- **`impact_p: Option<f64>`** on `ActiveTree`: the tick records the fraction where
+  `timber_fall_hits` first stops the trunk (and stops checking terrain after that). `tree_angle`
+  bounces from there — the hop timeline is remapped `IMPACT + (p - q) * (BREAK - IMPACT)/(BREAK - q)`
+  — so a trunk the ground caught early dips and settles immediately instead of freezing flat until
+  `IMPACT` and then snapping into the bounce. `timber_fall_camera_shake` uses `impact_p` too, so
+  the shake begins when the trunk actually lands. The thud sound already fired on that tick.
+
+## Dust particles
+
+- New `timber_fall_particles(dimension, options, state, at, spread, speed, count)` helper:
+  `self.level(dimension)` + `self.level_send_particles(level, …)` — the same level-handle route the
+  sounds use (`native_level_effects.rs:60`, `pub(super)` in `game::modding`).
+- **Ground impact** (the `thudded` tick): `timber_fall_impact_dust` sends warm earthy
+  `ParticleOptions::dust_transition([0.55, 0.45, 0.33], [0.72, 0.65, 0.55], 1.6)` puffs (count 6,
+  spread `[0.45, 0.1, 0.45]`, speed 0.08) at four points along the fallen trunk from the stump to
+  the tip (`rotate_point` at `impact_angle`), plus a `ParticleOptions::simple(ParticleType::Poof)`
+  burst (count 4) where the base landed.
+- **Log pop** (at most once a tick, at `popped_at`): a light `Poof` puff, count 3, spread
+  `[0.25; 3]`, speed 0.02, right where the log broke free.
+- Verified against the engine: `ParticleType::Poof`/`Cloud`/`Smoke`/`DustColorTransition` need no
+  block state under `mod_particles_ok` (`_ => true` arm; only `Block`/`BlockCrumble`/… need a valid
+  state, which we pass as `None` never using), and the finite at/spread/speed/colour/scale checks
+  all pass for these values. `ParticleOptions::simple`/`dust_transition` signatures read from
+  `crates/horizon-client-render/src/particles/options.rs`.
+
+## Verification
+
+- The mixin file is not in the crate's `[lib]`, so the **real** `shape_curve`, `angle_at`,
+  `tree_angle` and the timeline constants were extracted into a throwaway harness (4 tests +
+  `clippy -D warnings` clean): the curve is monotonic 0→1 with no stall (9.7°+ a quarter of the way
+  into the fall, ~27° at half — the natural weighty pole shape), the fall is 1.056 s; a trunk the
+  ground stopped at `q = 0.2` is continuous at the hit, dips below its resting angle and comes back
+  (no freeze), rests exactly at `impact_angle` from `BREAK` on and never overshoots it; a trunk
+  nobody stopped behaves exactly as before; the shake's `t = (p - impact_p) * DURATION` numbers
+  check out.
+- The particle helpers were compile-checked against a mock with `level_send_particles`'s exact
+  signature and `ParticleOptions::simple`/`dust_transition` shapes (test runs, clippy clean). The
+  workspace allows `clippy::too_many_arguments`, so the 7-argument helper needs no attribute (the
+  game's own `level_send_particles` has the same shape).
+- `rustfmt --check --edition 2024` on the mixin still reports only the six pre-existing hunks.
+
+## Commands and real output
+
+```sh
+cargo fmt --manifest-path native-mods/timber_fall/Cargo.toml --check
+cargo clippy --manifest-path native-mods/timber_fall/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path native-mods/timber_fall/Cargo.toml
+```
+
+```
+$ cargo fmt --check
+fmt=0
+
+$ cargo clippy … -- -D warnings
+    Checking timber_fall v0.1.0 (/root/starling/native-mods/timber_fall)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.84s
+
+$ cargo test …
+running 80 tests
+test result: ok. 80 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+```
+
+`native-mods/timber_fall/target/` was removed after the runs.
+
+## Untested
+
+- Not built inside `horizon-client` and not run in game: how smooth the fall now looks at 60/120
+  FPS, the bounce off an early hit, and the dust puffs themselves are unverified visually. The
+  Android build was not run.
+
+## Blockers
+
+None.

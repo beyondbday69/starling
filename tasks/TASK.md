@@ -1,33 +1,21 @@
-# Task: Fix Sound Playback Method in Timber Fall Mixin
+# Task: Smooth Tree Fall Animation + Dust Particles
 
-## Build Failure in CI (`android.yml` Run #46121778511)
-```
-error[E0599]: no method named `native_play_sound` found for mutable reference `&mut game::Game<'_>` in the current scope
-     --> crates/horizon-client/src/game.rs:19303:18
-```
-`native_play_sound` is on `NativeLevelHandle`, not `Game<'_>`.
+## User Request
+> "tree fall looks robotic not smopth zero dust psrticels"
 
-## Fix
-- In `native-mods/timber_fall/mixins/timber_fall/runtime.rs`:
-  - Update `timber_fall_sound` to take `dimension: &str` (instead of `native_play_sound`), look up `let Some(level) = self.level(dimension) else { return; };` (from `crates/horizon-client/src/game/modding/native_entity_refs.rs:190`), and call:
-    ```rust
-    let _ = self.level_play_sound(
-        level,
-        sound.0,
-        at,
-        crate::mod_api::SoundSource::Blocks,
-        sound.1,
-        sound.2,
-    );
-    ```
-    (from `crates/horizon-client/src/game/modding/native_level_effects.rs:24`).
-  - Pass `&tree.dimension` from `timber_fall_tick` (keeping the borrow clean since `tree.dimension` can be cloned or passed after `tree` borrow ends, or `let dim = tree.dimension.clone();` if needed, or queueing `(sound, at, dim)` / passing `&tree.dimension` if `tree` is not borrowed across `&mut self`). Note: in the existing `timber_fall_tick`, `tree` is `&mut ActiveTree` inside `{ let tree = &mut s.active[i]; ... }` while `s` is `MutexGuard` — wait: `self.level(&tree.dimension)` borrows `&self` (not `s`), and `self.level_play_sound` borrows `&mut self` (not `s`), so `self.timber_fall_sound(&tree.dimension, sounds::CREAK, at)` works cleanly without borrowing `s`!
-- Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` on `native-mods/timber_fall/Cargo.toml`, clean `native-mods/timber_fall/target/`, append to `/root/starling/tasks/REPORT.md`, and run:
+## Root Causes Found in `native-mods/timber_fall/mixins/timber_fall/runtime.rs`
+1. **Robotic / stuttery motion:**
+   - `timber_fall_render` increments `tree.smooth_secs` by `frame.clamp(0.0, 0.05)` independently of `elapsed_secs` and freezes if `last_tick_at.elapsed() >= 0.25`. Instead, lock `smooth_secs` to `(tree.elapsed_secs + tree.last_tick_at.elapsed().as_secs_f64().min(TICK_SECS)).max(tree.smooth_secs).min(DURATION)` so it stays silky 60/120 FPS and never drifts or stutters.
+   - `shape_curve()` starts with `w = 0.0` at `th = 0.08`, causing the tree to stall nearly motionless for ~0.8 s and then whip down. Give it a small initial angular velocity (e.g. `w = 0.25..0.4`) and a natural, weighty ~1.0–1.15 s fall (`DURATION = 2.4`, `IMPACT = 0.44`, `BREAK = 0.64`, `LAST = 0.80` or similar well-proportioned timeline).
+   - When `tree.impact_angle < FRAC_PI_2` (terrain hit before `IMPACT`), `tree_angle` hard-clamps `angle_at(p).min(tree.impact_angle)` and **freezes flat** until `p = IMPACT`, then suddenly snaps into the bounce. Track `impact_p: Option<f64>` when `timber_fall_hits` lowers `impact_angle`, and start the damped 3-hop bounce, `thud` sound, dust particles, and `timber_fall_camera_shake` **immediately** from `impact_p` (and use `impact_p` in `tree_angle` and `timber_fall_camera_shake`!).
+2. **Zero dust particles:**
+   - Inspect `crates/horizon-client/src/game/modding/native_level_effects.rs` (`level_send_particles`), `crates/horizon-client/src/game/modding/native_hooks/shared.rs` (`mod_particles_ok`), and `crates/horizon-client-render/src/particles/options.rs` (`ParticleOptions`, `ParticleType`).
+   - Add a `timber_fall_particles(&mut self, dimension: &str, options: &ParticleOptions, state: Option<BlockStateId>, at: [f64; 3], spread: [f64; 3], speed: f64, count: i32)` helper using `self.level(dimension)` + `self.level_send_particles(...)`.
+   - On **ground impact** (once when `thudded` triggers), emit dust puffs along 3–5 points of the fallen trunk (base, middle, tip using `rotate_point`) using `ParticleOptions::simple(ParticleType::Poof)` / `ParticleOptions::simple(ParticleType::Cloud)` and warm earthy `ParticleOptions::dust_transition([0.55, 0.45, 0.33], [0.72, 0.65, 0.55], 1.6)` (or `Block` crumbs if `mod_particles_ok` allows).
+   - On **log pop** (at most once per tick at `popped_at`), emit a light `Poof` / `Smoke` puff (`count: 3`, `spread: [0.25, 0.25, 0.25]`, `speed: 0.02`).
+
+## Verification & Reporting
+- Verify every `ParticleOptions` / `ParticleType` path and `mod_particles_ok` acceptance rules in `horizon-client` (plus a small mock compile check for the new `level_send_particles` call and `impact_p` bounce math).
+- Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, and `cargo test` on `native-mods/timber_fall/Cargo.toml`.
+- Remove `native-mods/timber_fall/target/`, append a concise report to `/root/starling/tasks/REPORT.md`, and run:
   `tmux send-keys -t 1 "review" Enter`
-
-## Test Commands
-```sh
-cargo fmt --manifest-path /root/starling/native-mods/timber_fall/Cargo.toml --check
-cargo clippy --manifest-path /root/starling/native-mods/timber_fall/Cargo.toml --all-targets -- -D warnings
-cargo test --manifest-path /root/starling/native-mods/timber_fall/Cargo.toml
-```

@@ -13,6 +13,7 @@ use super::Game;
 use crate::items::{BlockLootRoll, ItemStack};
 use crate::mod_api::NativeMod;
 use horizon_client::mesher::Vertex;
+use horizon_client::particles::{ParticleOptions, ParticleType};
 use horizon_core::position::BlockPos;
 use horizon_world::registry::BlockStateId;
 use winit::keyboard::KeyCode;
@@ -27,11 +28,12 @@ pub const DESCRIPTION: &str =
 const MAX_LOGS: usize = 256;
 /// The deepest a leaf may sit from a log and still belong to the tree.
 const MAX_LEAVES_RADIUS: u32 = 10;
-/// The whole animation lasts this long, in seconds.
-const DURATION: f64 = 3.0;
+/// The whole animation lasts this long, in seconds: a weighty fall, not a stall
+/// and then a whip.
+const DURATION: f64 = 2.4;
 /// Timeline fractions from `voxel-tree-fall.html`.
-const IMPACT: f64 = 0.50;
-const BREAK: f64 = 0.66;
+const IMPACT: f64 = 0.44;
+const BREAK: f64 = 0.64;
 const LAST: f64 = 0.80;
 /// Free-fall gravity for logs and leaves, in the reference animation.
 const GRAVITY_FALL: f64 = 14.0;
@@ -294,9 +296,12 @@ struct ActiveTree {
     smooth_secs: f64,
     /// The last server tick; a gap over 0.25 s freezes the animation.
     last_tick_at: Instant,
-    last_render_at: Option<Instant>,
     /// The angle the trunk stops at (lowered by terrain hit during the fall).
     impact_angle: f64,
+    /// The timeline fraction where the ground stopped the trunk, if it did: the
+    /// bounce, the thud and the dust start there instead of freezing flat until
+    /// the timeline's own impact.
+    impact_p: Option<f64>,
     /// The creak and the leaf burst play once, as the fall starts.
     creaked: bool,
     /// The thud plays once, when the trunk first meets the ground.
@@ -522,8 +527,8 @@ impl Game<'_> {
                 elapsed_secs: 0.0,
                 smooth_secs: 0.0,
                 last_tick_at: Instant::now(),
-                last_render_at: None,
                 impact_angle: std::f64::consts::FRAC_PI_2,
+                impact_p: None,
                 creaked: false,
                 thudded: false,
                 logs,
@@ -550,11 +555,13 @@ impl Game<'_> {
                     tree.last_tick_at = Instant::now();
                     let p = (tree.elapsed_secs / DURATION).clamp(0.0, 1.0);
 
-                    // Solid ground can stop the fall before the whole 90 degrees.
-                    if p < IMPACT {
+                    // Solid ground can stop the fall before the whole 90 degrees:
+                    // the bounce, the thud and the dust then start right there.
+                    if p < IMPACT && tree.impact_p.is_none() {
                         let angle = angle_at(p);
                         if angle < tree.impact_angle && self.timber_fall_hits(tree, angle) {
                             tree.impact_angle = angle;
+                            tree.impact_p = Some(p);
                         }
                     }
 
@@ -574,6 +581,7 @@ impl Game<'_> {
                         let at = stump_top(tree.cut);
                         self.timber_fall_sound(&tree.dimension, sounds::THUD, at);
                         self.timber_fall_sound(&tree.dimension, sounds::THUD_BREAK, at);
+                        self.timber_fall_impact_dust(tree);
                     }
 
                     let mut popped_at: Option<[f64; 3]> = None;
@@ -619,9 +627,20 @@ impl Game<'_> {
                             ));
                         }
                     }
-                    // One pop sound a tick at the most, at the log that came off.
+                    // One pop sound a tick at the most, at the log that came off,
+                    // with a light puff of dust where it broke free.
                     if let Some(at) = popped_at {
                         self.timber_fall_sound(&tree.dimension, sounds::POP, at);
+                        let poof = ParticleOptions::simple(ParticleType::Poof);
+                        self.timber_fall_particles(
+                            &tree.dimension,
+                            &poof,
+                            None,
+                            at,
+                            [0.25, 0.25, 0.25],
+                            0.02,
+                            3,
+                        );
                     }
                     p >= 1.0
                 };
@@ -638,6 +657,54 @@ impl Game<'_> {
         for tree in landed {
             self.timber_fall_wear(tree);
         }
+    }
+
+    /// Sends `count` of `options` around `at` in the tree's level, as
+    /// `ServerLevel.sendParticles` does. False just means the game could not
+    /// send them (no level handle for that dimension, say).
+    fn timber_fall_particles(
+        &mut self,
+        dimension: &str,
+        options: &ParticleOptions,
+        state: Option<BlockStateId>,
+        at: [f64; 3],
+        spread: [f64; 3],
+        speed: f64,
+        count: i32,
+    ) -> bool {
+        let Some(level) = self.level(dimension) else {
+            return false;
+        };
+        self.level_send_particles(level, options, state, at, spread, speed, count)
+    }
+
+    /// Dust along the fallen trunk where it hit the ground: warm puffs at points
+    /// from the stump to the tip, and a poof where the base landed.
+    fn timber_fall_impact_dust(&mut self, tree: &ActiveTree) {
+        let dust = ParticleOptions::dust_transition([0.55, 0.45, 0.33], [0.72, 0.65, 0.55], 1.6);
+        let angle = tree.impact_angle;
+        let logs = tree.logs.len();
+        if logs == 0 {
+            return;
+        }
+        // Four points from the stump to the tip of the fallen trunk.
+        for part in [0.0, 1.0 / 3.0, 2.0 / 3.0, 1.0] {
+            let index = ((logs - 1) as f64 * part).round() as usize;
+            let home = block_center(tree.logs[index].pos);
+            let at = rotate_point(tree.cut, tree.toward, home, angle);
+            self.timber_fall_particles(
+                &tree.dimension,
+                &dust,
+                None,
+                at,
+                [0.45, 0.1, 0.45],
+                0.08,
+                6,
+            );
+        }
+        let poof = ParticleOptions::simple(ParticleType::Poof);
+        let base = rotate_point(tree.cut, tree.toward, block_center(tree.logs[0].pos), angle);
+        self.timber_fall_particles(&tree.dimension, &poof, None, base, [0.5, 0.2, 0.5], 0.1, 4);
     }
 
     /// Plays one of the fall's vanilla sounds at `at` in the tree's own level, as
@@ -698,8 +765,11 @@ impl Game<'_> {
             if tree.dimension != dimension {
                 continue;
             }
+            // The tip-over's own hit on the ground, at the fraction where the
+            // terrain actually stopped the trunk, if it did.
             let p = (tree.smooth_secs / DURATION).clamp(0.0, 1.0);
-            let t = (p - IMPACT) * DURATION;
+            let impact_p = tree.impact_p.unwrap_or(IMPACT);
+            let t = (p - impact_p) * DURATION;
             if !(0.0..0.35).contains(&t) {
                 continue;
             }
@@ -759,15 +829,13 @@ impl Game<'_> {
             if tree.dimension != dimension {
                 continue;
             }
-            // Wall-clock seconds keep the animation smooth between 20 TPS server ticks.
-            let now = Instant::now();
-            if tree.last_tick_at.elapsed().as_secs_f64() < 0.25 {
-                if let Some(last) = tree.last_render_at {
-                    let frame = now.duration_since(last).as_secs_f64().clamp(0.0, 0.05);
-                    tree.smooth_secs = (tree.smooth_secs + frame).min(DURATION);
-                }
-            }
-            tree.last_render_at = Some(now);
+            // Wall-clock seconds locked to the tick clock plus the fraction of the
+            // tick gone: frames stay silky at 60/120 FPS, never drift or stutter,
+            // and a stalled server freezes the animation with the world.
+            tree.smooth_secs = (tree.elapsed_secs
+                + tree.last_tick_at.elapsed().as_secs_f64().min(TICK_SECS))
+            .max(tree.smooth_secs)
+            .min(DURATION);
             let p = (tree.smooth_secs / DURATION).clamp(0.0, 1.0);
             let angle = tree_angle(tree, p) as f32;
             let axis = glam::Vec3::new(tree.toward[2] as f32, 0.0, -(tree.toward[0] as f32));
@@ -864,9 +932,12 @@ fn is_tree_block(block: &str) -> bool {
 fn shape_curve() -> &'static [f64] {
     static SHAPE: std::sync::OnceLock<Vec<f64>> = std::sync::OnceLock::new();
     SHAPE.get_or_init(|| {
-        let mut angles = vec![0.0];
+        // The curve starts at the seed lean, which normalizes to exactly 0.
         let mut th = 0.08;
-        let mut w = 0.0;
+        let mut angles = vec![th];
+        // A push to start with: a trunk let go does not hang nearly still before
+        // it moves, it leaves with a little of its own speed.
+        let mut w = 0.3;
         while th < std::f64::consts::FRAC_PI_2 {
             w += th.sin() * 0.002;
             th += w * 0.002;
@@ -911,11 +982,17 @@ fn angle_at(p: f64) -> f64 {
 
 /// The trunk angle at `p`, respecting a terrain hit and the bounce around it.
 fn tree_angle(tree: &ActiveTree, p: f64) -> f64 {
-    if p < IMPACT {
-        angle_at(p).min(tree.impact_angle)
-    } else {
-        let offset = std::f64::consts::FRAC_PI_2 - angle_at(p);
-        (tree.impact_angle - offset).max(0.0)
+    let impact = tree.impact_angle;
+    match tree.impact_p {
+        // The ground stopped the trunk at `q`: the bounce runs from there, not
+        // from the timeline's own impact, so the trunk never freezes flat in
+        // between and the hops land where it actually came to rest.
+        Some(q) if p >= q => {
+            let bounced = IMPACT + (p - q) * (BREAK - IMPACT) / (BREAK - q);
+            let offset = std::f64::consts::FRAC_PI_2 - angle_at(bounced);
+            (impact - offset).max(0.0)
+        }
+        _ => angle_at(p).min(impact),
     }
 }
 
