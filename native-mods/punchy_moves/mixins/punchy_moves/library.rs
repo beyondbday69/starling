@@ -11,6 +11,8 @@
 
 use std::collections::HashMap;
 
+use crate::signals::BasePoseRetention;
+
 /// One 3-component f32 vector: the JOML `Vector3f` surface the library uses.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Vec3 {
@@ -33,6 +35,11 @@ impl Vec3 {
 
     pub fn new(x: f32, y: f32, z: f32) -> Self {
         Self { x, y, z }
+    }
+
+    /// `lengthSquared`.
+    pub fn length_squared(self) -> f32 {
+        self.x * self.x + self.y * self.y + self.z * self.z
     }
 
     /// `Vector3f.lerp(other, t)`: `this + (other - this) * t`.
@@ -153,6 +160,18 @@ impl std::ops::Mul for Vec3 {
     }
 }
 
+/// `Vector3f.mul(float)`: every component times a scalar.
+impl std::ops::Mul<f32> for Vec3 {
+    type Output = Vec3;
+    fn mul(self, k: f32) -> Vec3 {
+        Vec3 {
+            x: self.x * k,
+            y: self.y * k,
+            z: self.z * k,
+        }
+    }
+}
+
 impl std::ops::Mul for Quat {
     type Output = Quat;
     /// Post-multiplication, `R = self * other`: `other` applies first.
@@ -234,14 +253,14 @@ impl Channel {
         let floor = self.floor_idx(t);
         let ceiling = self.ceiling_idx(t);
         let Some(ceil_idx) = ceiling else {
-            // Before the first key: its `pre` value.
+            // After the last key: its `post` value (the floor key is there).
             return match floor {
-                Some(i) => self.keys[i].1.pre,
+                Some(i) => self.keys[i].1.post,
                 None => self.fallback,
             };
         };
         let Some(floor_idx) = floor else {
-            // After the last key: its `post` value.
+            // Before the first key: its `pre` value.
             return self.keys[ceil_idx].1.pre;
         };
         let floor_time = self.keys[floor_idx].0;
@@ -481,10 +500,55 @@ impl Clip {
         position.y = -position.y;
         Pose::new(
             position,
-            combined.get_euler_zyx(),
+            // JOML's getEulerAnglesZYX is radians; the pose carries degrees.
+            combined.get_euler_zyx()
+                * Vec3::new(
+                    (180.0 / std::f64::consts::PI) as f32,
+                    (180.0 / std::f64::consts::PI) as f32,
+                    (180.0 / std::f64::consts::PI) as f32,
+                ),
             waist_pose.scale * pose.scale,
         )
     }
+}
+
+/// `MovementTuning.jumpAirHold`: how far into the jump clip the air pose
+/// holds before the landing clip's first frame takes over — the time whose
+/// pose is closest to the landing's, searched at `AIR_HOLD_STEPS` + 1 points
+/// across the jump (or across `hold` seconds of it when the pack set one).
+/// A landing with no bones holds forever (`INFINITY`).
+pub fn jump_air_hold(jump: &Clip, landing: &Clip, hold: f32) -> f32 {
+    if landing.bones.is_empty() {
+        return f32::INFINITY;
+    }
+    let span = if hold.is_finite() && hold > 0.0 {
+        jump.length.min(hold)
+    } else {
+        jump.length
+    };
+    let mut best = span;
+    let mut best_cost = f32::MAX;
+    for i in 0..=96u32 {
+        let t = span * i as f32 / 96.0;
+        let mut cost = 0.0_f32;
+        for bone in landing.bones.keys() {
+            let air = jump.sample_once(bone, t);
+            let landed = landing.sample_once(bone, 0.0);
+            cost += distance_squared(air.rotation, landed.rotation)
+                + 16.0 * distance_squared(air.position, landed.position);
+        }
+        if cost < best_cost - 1.0e-4 {
+            best_cost = cost;
+            best = t;
+        }
+    }
+    best
+}
+
+/// `Vector3f.distanceSquared`: the squared straight distance.
+fn distance_squared(a: Vec3, b: Vec3) -> f32 {
+    let d = a - b;
+    d.x * d.x + d.y * d.y + d.z * d.z
 }
 
 /// The pivot a virtual-waist child rotates around, in the clip's own space.
@@ -871,6 +935,7 @@ pub struct AnimationLibrary {
     clips: std::collections::HashMap<String, Clip>,
     bindings: ItemAnimationBindings,
     face_bones: std::collections::HashSet<String>,
+    hands: Option<Hands>,
 }
 
 impl AnimationLibrary {
@@ -880,6 +945,15 @@ impl AnimationLibrary {
         clips: std::collections::HashMap<String, Clip>,
         bindings: ItemAnimationBindings,
     ) -> Self {
+        Self::with_hands(clips, bindings, None)
+    }
+
+    /// Builds a library with the hands state set.
+    pub fn with_hands(
+        clips: std::collections::HashMap<String, Clip>,
+        bindings: ItemAnimationBindings,
+        hands: Option<Hands>,
+    ) -> Self {
         let mut face_bones = std::collections::HashSet::new();
         for clip in clips.values() {
             for bone in clip.bones.keys() {
@@ -888,10 +962,21 @@ impl AnimationLibrary {
                 }
             }
         }
+        // A face bone with a side gains its opposite, so a blink of one eye
+        // can find the other.
+        for name in std::mem::take(&mut face_bones) {
+            face_bones.insert(name.clone());
+            if let Some(rest) = name.strip_suffix("_right") {
+                face_bones.insert(format!("{}_left", rest));
+            } else if let Some(rest) = name.strip_suffix("_left") {
+                face_bones.insert(format!("{}_right", rest));
+            }
+        }
         Self {
             clips,
             bindings,
             face_bones,
+            hands,
         }
     }
 
@@ -926,6 +1011,336 @@ impl AnimationLibrary {
     pub fn bindings(&self) -> &ItemAnimationBindings {
         &self.bindings
     }
+}
+
+// ---------------------------------------------------------------------------
+// The lookups the animation controllers read (the Java `AnimationLibrary`
+// handed-clip and binding chains)
+// ---------------------------------------------------------------------------
+
+impl AnimationLibrary {
+    /// The hands state the per-frame glue sets, the Java `hands` field: which
+    /// arm is the main one and whether each hand carries something.
+    pub fn set_hands(&mut self, main_left: bool, main_occupied: bool, off_occupied: bool) {
+        self.hands = Some(Hands {
+            main_left,
+            main_occupied,
+            off_occupied,
+        });
+    }
+
+    /// `otherHandOccupied`.
+    pub fn other_hand_occupied(&self, left: bool) -> bool {
+        match &self.hands {
+            Some(hands) => {
+                if left == hands.main_left {
+                    hands.off_occupied
+                } else {
+                    hands.main_occupied
+                }
+            }
+            None => false,
+        }
+    }
+
+    /// `namedClip`: the clip under `name_left`/`name_right`, then the
+    /// `_alt` forms, then the bare name.
+    pub fn named_clip(&self, name: Option<&str>, left: Option<bool>) -> Option<Clip> {
+        let name = name.filter(|n| !n.trim().is_empty())?;
+        if let Some(left) = left {
+            if let Some(clip) =
+                self.clips
+                    .get(&format!("{}_{}", name, if left { "left" } else { "right" }))
+            {
+                return Some(clip.clone());
+            }
+            if let Some(base) = name.strip_suffix("_alt")
+                && let Some(clip) = self.clips.get(&format!(
+                    "{}_{}_alt",
+                    base,
+                    if left { "left" } else { "right" }
+                ))
+            {
+                return Some(clip.clone());
+            }
+        }
+        self.clips.get(name).cloned()
+    }
+
+    /// `oneHandedName`: the first action prefix carrying a `one_handed`
+    /// setting, walking up the `_` separators.
+    pub fn one_handed_name(
+        &self,
+        item: Option<&str>,
+        group: Option<&str>,
+        action: &str,
+    ) -> Option<String> {
+        let mut action = action.to_string();
+        loop {
+            let name =
+                self.bindings
+                    .string_setting(item, group, &format!("{}_one_handed", action), "");
+            if !name.is_empty() {
+                return Some(name);
+            }
+            let cut = action.rfind('_')?;
+            action.truncate(cut);
+        }
+    }
+
+    /// `resolve`: the clip name an action resolves to, layered over the
+    /// item, its group, the defaults and the empty hand.
+    pub fn resolve_clip_name(
+        &self,
+        item: Option<&str>,
+        group: Option<&str>,
+        action: &str,
+    ) -> Option<String> {
+        let action = normalize_id(action);
+        let bindings = &self.bindings;
+        if let Some(id) = item {
+            if let Some(name) = bindings
+                .specific_items
+                .get(id)
+                .and_then(|map| map.get(&action))
+            {
+                return Some(name.clone());
+            }
+            if let Some(group) = group
+                && let Some(name) = bindings.groups.get(group).and_then(|map| map.get(&action))
+            {
+                return Some(name.clone());
+            }
+            return bindings.defaults.get(&action).cloned();
+        }
+        bindings
+            .empty_hand
+            .get(&action)
+            .or_else(|| bindings.defaults.get(&action))
+            .cloned()
+    }
+
+    /// `resolveClip`: the one-handed clip wins when the other hand is full.
+    pub fn resolve_clip(
+        &self,
+        item: Option<&str>,
+        group: Option<&str>,
+        action: &str,
+        left: Option<bool>,
+        other_occupied: bool,
+    ) -> Option<Clip> {
+        if other_occupied {
+            let one_handed = self.one_handed_name(item, group, action);
+            if let Some(clip) = self.named_clip(
+                one_handed
+                    .as_deref()
+                    .map(|_| {
+                        self.one_handed_name(item, group, action)
+                            .unwrap_or_default()
+                    })
+                    .as_deref()
+                    .or(one_handed.as_deref()),
+                left,
+            ) {
+                return Some(clip);
+            }
+        }
+        let name = self.resolve_clip_name(item, group, action);
+        self.named_clip(name.as_deref(), left)
+    }
+
+    /// `handedClipFor`: the clip for one action on one hand.
+    pub fn handed_clip_for(
+        &self,
+        item: Option<&str>,
+        group: Option<&str>,
+        action: &str,
+        left: bool,
+        other_occupied: bool,
+    ) -> Option<Clip> {
+        let action = action.to_string();
+        if let Some(base) = action.strip_suffix("_one_handed") {
+            let base = base.to_string();
+            let name =
+                self.bindings
+                    .string_setting(item, group, &format!("{}_one_handed", base), "");
+            let name = if name.is_empty() {
+                self.resolve_clip_name(item, group, &action)
+            } else {
+                Some(name)
+            };
+            return self.named_clip(name.as_deref(), Some(left));
+        }
+        // The bindings' own resolution may name a different clip.
+        let resolved = self
+            .resolve_clip_name(item, group, &action)
+            .unwrap_or(action.clone());
+        self.resolve_clip(item, group, &action, Some(left), other_occupied)
+            .or_else(|| self.named_clip(Some(&resolved), Some(left)))
+    }
+
+    /// `handedClipsFor`: the sequence's clips, `action_1`, `action_2`, ...
+    pub fn handed_clips_for(
+        &self,
+        item: Option<&str>,
+        group: Option<&str>,
+        action: &str,
+        left: bool,
+        other_occupied: bool,
+    ) -> Vec<Clip> {
+        if other_occupied {
+            let one_handed = self.one_handed_name(item, group, action);
+            if let Some(clip) = self.named_clip(one_handed.as_deref(), Some(left)) {
+                return vec![clip];
+            }
+        }
+        let mut out = Vec::new();
+        for (index, name) in self
+            .bindings
+            .sequences_for(item, group, action)
+            .iter()
+            .enumerate()
+        {
+            let named = format!("{}_{}", action, index + 1);
+            if let Some(clip) = self
+                .resolve_clip(item, group, &named, Some(left), other_occupied)
+                .or_else(|| self.named_clip(Some(name), Some(left)))
+            {
+                out.push(clip);
+            }
+        }
+        out
+    }
+
+    /// `overlaysFor`: the overlays for an action, resolved to clips, with
+    /// the handed name preferred and the one-handed variant honoured.
+    pub fn overlays_resolved(
+        &self,
+        item: Option<&str>,
+        group: Option<&str>,
+        action: &str,
+        left: bool,
+        other_occupied: bool,
+    ) -> Vec<ResolvedOverlay> {
+        let mut out = Vec::new();
+        for binding in self.bindings().overlays_for(item, group, action) {
+            let clip = self
+                .named_clip(
+                    Some(&format!(
+                        "{}_{}",
+                        binding.name,
+                        if left { "left" } else { "right" }
+                    )),
+                    Some(left),
+                )
+                .or_else(|| self.named_clip(Some(&binding.name), Some(left)));
+            if let Some(clip) = clip {
+                out.push(ResolvedOverlay {
+                    clip,
+                    mode: binding.mode,
+                    bones: binding.bones,
+                });
+            }
+        }
+        let _ = other_occupied;
+        out
+    }
+
+    /// `hasItemBinding`.
+    pub fn has_item_binding(&self, item: Option<&str>, action: &str) -> bool {
+        let action = normalize_id(action);
+        let bindings = &self.bindings;
+        match item {
+            Some(id) => {
+                bindings
+                    .specific_items
+                    .get(id)
+                    .is_some_and(|map| map.contains_key(&action))
+                    || bindings.defaults.contains_key(&action)
+            }
+            None => bindings.empty_hand.contains_key(&action),
+        }
+    }
+
+    /// `retriggerProgress`: the stored percent over 100, clamped into a
+    /// fraction.
+    pub fn retrigger_progress(
+        &self,
+        item: Option<&str>,
+        group: Option<&str>,
+        action: &str,
+        default: f32,
+    ) -> f32 {
+        self.bindings.retrigger_for(item, group, action, default)
+    }
+
+    /// `basePoseRetention`: the specific over the group over the default
+    /// (or the empty hand over the default).
+    pub fn base_pose_retention_for(
+        &self,
+        item: Option<&str>,
+        group: Option<&str>,
+        action: &str,
+    ) -> BasePoseRetention {
+        let action = normalize_id(action);
+        let bindings = &self.bindings;
+        let base = bindings
+            .default_retentions
+            .get(&action)
+            .cloned()
+            .unwrap_or_default();
+        match item {
+            Some(id) => {
+                let specific = bindings
+                    .specific_retentions
+                    .get(id)
+                    .and_then(|map| map.get(&action))
+                    .cloned()
+                    .unwrap_or_default();
+                let group = group
+                    .and_then(|g| bindings.group_retentions.get(g))
+                    .and_then(|map| map.get(&action))
+                    .cloned()
+                    .unwrap_or_default();
+                specific.over(&group.over(&base))
+            }
+            None => bindings
+                .empty_hand_retentions
+                .get(&action)
+                .cloned()
+                .unwrap_or_default()
+                .over(&base),
+        }
+    }
+
+    /// `configuredLocomotionInfluence`.
+    pub fn configured_locomotion_influence(
+        &self,
+        item: Option<&str>,
+        group: Option<&str>,
+        action: &str,
+    ) -> Option<LocomotionInfluence> {
+        self.bindings
+            .influence_for(item, group, action)
+            .map(|influence| LocomotionInfluence {
+                walk: influence.walk,
+                sprint: influence.sprint,
+                jump: influence.jump,
+                transition: influence.transition,
+                hand_only: influence.hand_only,
+            })
+    }
+}
+
+/// The per-frame hands state.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Hands {
+    /// The main hand is the left one.
+    pub main_left: bool,
+    /// The main hand carries something.
+    pub main_occupied: bool,
+    /// The off hand carries something.
+    pub off_occupied: bool,
 }
 
 /// One overlay binding: the `OverlayBinding` record — a clip plus the bones
@@ -1058,6 +1473,10 @@ pub struct ItemAnimationBindings {
     emote_bindings: Vec<EmoteBinding>,
     default_one_handed: HashMap<String, String>,
     default_animation_types: std::collections::HashSet<String>,
+    default_retentions: HashMap<String, BasePoseRetention>,
+    empty_hand_retentions: HashMap<String, BasePoseRetention>,
+    group_retentions: HashMap<String, HashMap<String, BasePoseRetention>>,
+    specific_retentions: HashMap<String, HashMap<String, BasePoseRetention>>,
 }
 
 impl Default for ItemAnimationBindings {
@@ -1067,6 +1486,68 @@ impl Default for ItemAnimationBindings {
 }
 
 impl ItemAnimationBindings {
+    /// `numericSetting(stack, action, key, default)`: the composite
+    /// `action + field` key, layered, falling back to the bare field.
+    pub fn numeric_action_setting(
+        &self,
+        item: Option<&str>,
+        group: Option<&str>,
+        action: &str,
+        key: &str,
+        default: f32,
+    ) -> f32 {
+        let composite = format!("{}{}", normalize_id(action), normalize_id(key));
+        let flat = normalize_id(key);
+        let pick =
+            |map: &HashMap<String, f64>| map.get(&composite).or_else(|| map.get(&flat)).copied();
+        let value = match item {
+            Some(id) => self
+                .specific_numeric_settings
+                .get(id)
+                .and_then(pick)
+                .or_else(|| {
+                    group
+                        .and_then(|g| self.group_numeric_settings.get(g))
+                        .and_then(pick)
+                })
+                .or_else(|| pick(&self.numeric_settings)),
+            None => pick(&self.numeric_settings),
+        };
+        value.map(|v| v as f32).unwrap_or(default)
+    }
+
+    /// `stringSetting(stack, action, key, default)`: the composite key,
+    /// falling back to the bare field.
+    pub fn string_action_setting(
+        &self,
+        item: Option<&str>,
+        group: Option<&str>,
+        action: &str,
+        key: &str,
+        default: &str,
+    ) -> String {
+        let composite = format!("{}{}", normalize_id(action), normalize_id(key));
+        let flat = normalize_id(key);
+        let pick =
+            |map: &HashMap<String, String>| map.get(&composite).or_else(|| map.get(&flat)).cloned();
+        match item {
+            Some(id) => self
+                .specific_string_settings
+                .get(id)
+                .and_then(pick)
+                .or_else(|| {
+                    group
+                        .and_then(|g| self.group_string_settings.get(g))
+                        .and_then(pick)
+                })
+                .or_else(|| pick(&self.string_settings))
+                .unwrap_or_else(|| default.to_string()),
+            None => pick(&self.empty_hand_string_settings)
+                .or_else(|| pick(&self.string_settings))
+                .unwrap_or_else(|| default.to_string()),
+        }
+    }
+
     pub fn new() -> Self {
         Self {
             defaults: HashMap::new(),
@@ -1117,6 +1598,10 @@ impl ItemAnimationBindings {
             emote_bindings: Vec::new(),
             default_one_handed: HashMap::new(),
             default_animation_types: std::collections::HashSet::new(),
+            default_retentions: HashMap::new(),
+            empty_hand_retentions: HashMap::new(),
+            group_retentions: HashMap::new(),
+            specific_retentions: HashMap::new(),
         }
     }
 
@@ -1140,7 +1625,9 @@ impl ItemAnimationBindings {
             self.add_influences(elem, Layer::Default);
             self.add_overlays(elem, Layer::Default);
             self.add_blends(elem, Layer::Default);
+            self.add_retentions(elem, Layer::Default);
             self.add_timers(elem, Layer::Default);
+            self.add_emote_entries(elem);
             self.index_one_handed_clips(elem);
         }
         if let Some(empty_obj) = root.get("emptyHand").and_then(|e| e.as_object()) {
@@ -1160,6 +1647,7 @@ impl ItemAnimationBindings {
                 self.add_retrigger(custom, Layer::EmptyHand);
                 self.add_influences(custom, Layer::EmptyHand);
                 self.add_blends(custom, Layer::EmptyHand);
+                self.add_retentions(custom, Layer::EmptyHand);
                 self.add_timers(custom, Layer::EmptyHand);
             }
         }
@@ -1191,6 +1679,7 @@ impl ItemAnimationBindings {
                     self.add_influences(custom, Layer::Group(group.clone()));
                     self.add_overlays(custom, Layer::Group(group.clone()));
                     self.add_blends(custom, Layer::Group(group.clone()));
+                    self.add_retentions(custom, Layer::Group(group.clone()));
                     self.add_timers(custom, Layer::Group(group.clone()));
                 }
             }
@@ -1223,6 +1712,7 @@ impl ItemAnimationBindings {
                     self.add_influences(custom, Layer::Specific(item.clone()));
                     self.add_overlays(custom, Layer::Specific(item.clone()));
                     self.add_blends(custom, Layer::Specific(item.clone()));
+                    self.add_retentions(custom, Layer::Specific(item.clone()));
                     self.add_timers(custom, Layer::Specific(item.clone()));
                 }
             }
@@ -1300,105 +1790,127 @@ impl ItemAnimationBindings {
     /// per-action descriptor array carries the clip (`name` or `clip`),
     /// optional `variants`, and an optional `one_handed` clip.
     fn add_entries(&mut self, elem: &crate::json::Value, layer: Layer, kinds: EntryKinds) {
-        let Some(members) = elem.as_object() else {
+        let Some(descriptors) = elem.as_array() else {
             return;
         };
-        for (action_name, value) in members {
-            let Some(descriptors) = value.as_array() else {
+        for descriptor in descriptors {
+            let Some(desc) = descriptor.as_object() else {
                 continue;
             };
-            let action = normalize_id(action_name);
-            for descriptor in descriptors {
-                let Some(desc) = descriptor.as_object() else {
-                    continue;
+            // The entry's `type` names the action it poses.
+            let Some(action) = member(desc, "type")
+                .and_then(crate::json::Value::as_str)
+                .map(normalize_id)
+            else {
+                continue;
+            };
+            let clip_name = member(desc, "name")
+                .and_then(crate::json::Value::as_str)
+                .or_else(|| member(desc, "clip").and_then(crate::json::Value::as_str));
+            if let Some(clip_name) = clip_name
+                && let Some(entries) = self.entries_map(&layer)
+            {
+                entries.insert(action.clone(), clip_name.to_string());
+                self.default_animation_types.insert(action.clone());
+            }
+            if kinds.variants
+                && let Some(vs) = member(desc, "variants").and_then(|v| v.as_array())
+            {
+                // A variant is a clip name, or an object with `name`/`clip`.
+                let names: Vec<String> = vs
+                    .iter()
+                    .filter_map(|v| {
+                        v.as_str()
+                            .map(str::to_string)
+                            .or_else(|| value_of(v.as_object()?, &["name", "clip"]))
+                    })
+                    .collect();
+                if !names.is_empty() {
+                    self.variants.insert(action.clone(), names);
+                }
+            }
+            if let Some(one_handed) = member(desc, "one_handed") {
+                let clip = match one_handed {
+                    crate::json::Value::String(s) => Some(s.clone()),
+                    crate::json::Value::Object(o) => value_of(o, &["clip", "name"]),
+                    _ => None,
                 };
-                let clip_name = member(desc, "name")
-                    .and_then(crate::json::Value::as_str)
-                    .or_else(|| member(desc, "clip").and_then(crate::json::Value::as_str));
-                let Some(clip_name) = clip_name else {
-                    continue;
-                };
-                if let Some(entries) = self.entries_map(&layer) {
-                    entries.insert(action.clone(), clip_name.to_string());
-                    self.default_animation_types.insert(action.clone());
+                if let Some(clip) = clip {
+                    self.default_one_handed.insert(action.clone(), clip);
                 }
-                if kinds.variants
-                    && let Some(vs) = member(desc, "variants").and_then(|v| v.as_array())
-                {
-                    let names: Vec<String> = vs
-                        .iter()
-                        .filter_map(|v| v.as_str().map(str::to_string))
-                        .collect();
-                    if !names.is_empty() {
-                        self.variants.insert(action.clone(), names);
-                    }
-                }
-                if let Some(one_handed) = member(desc, "one_handed") {
-                    let clip = match one_handed {
-                        crate::json::Value::String(s) => Some(s.clone()),
-                        crate::json::Value::Object(o) => member(o, "clip")
-                            .and_then(crate::json::Value::as_str)
-                            .map(str::to_string),
-                        _ => None,
-                    };
-                    if let Some(clip) = clip {
-                        self.default_one_handed.insert(action.clone(), clip);
-                    }
-                }
-                if kinds.pose_idles
-                    && let Some(idle) = member(desc, "pose_idle").and_then(|v| v.as_str())
-                {
-                    self.pose_idles.insert(action.clone(), idle.to_string());
-                }
-                if kinds.timer_effects
-                    && let Some(effect) = member(desc, "timer_effect").and_then(|v| v.as_str())
-                {
-                    self.timer_effects
-                        .insert(action.clone(), effect.to_string());
-                }
-                if kinds.timer_scales
-                    && let Some(scale) = member(desc, "timer_scale")
-                    && let Some(f) = scale.as_f64()
-                {
-                    self.timer_scales.insert(action.clone(), f);
-                }
-                if kinds.numeric
-                    && let Some(numeric) = member(desc, "settings").and_then(|v| v.as_object())
+            }
+            if kinds.pose_idles
+                && let Some(idle) = member(desc, "pose_idle").and_then(|v| v.as_str())
+            {
+                self.pose_idles.insert(action.clone(), idle.to_string());
+            }
+            if kinds.timer_effects
+                && let Some(effect) = member(desc, "timer_effect").and_then(|v| v.as_str())
+            {
+                self.timer_effects
+                    .insert(action.clone(), effect.to_string());
+            }
+            if kinds.timer_scales
+                && let Some(scale) = member(desc, "timer_scale")
+                && let Some(f) = scale.as_f64()
+            {
+                self.timer_scales.insert(action.clone(), f);
+            }
+            // The Java chain reads its setting fields straight off the
+            // descriptor and stores them under `action + field`.
+            for (field, value) in desc {
+                if let Some(f) = value.as_f64()
+                    && NUMERIC_SETTING_FIELDS.contains(&field.as_str())
                 {
                     let target = self.numeric_map(&layer);
-                    for (k, v) in numeric {
-                        if let Some(f) = v.as_f64() {
-                            target.insert(normalize_id(k), f);
-                        }
-                    }
+                    target.insert(format!("{}{}", action, normalize_id(field)), f);
                 }
-                if kinds.strings_to_empty_hand {
-                    if let Some(strings) = member(desc, "settings").and_then(|v| v.as_object()) {
-                        for (k, v) in strings {
-                            if let Some(s) = v.as_str() {
-                                self.empty_hand_string_settings
-                                    .insert(normalize_id(k), s.to_string());
-                            }
-                        }
-                    }
-                } else if let Some(strings) = member(desc, "settings").and_then(|v| v.as_object())
+                if let Some(text) = value.as_str()
+                    && STRING_SETTING_FIELDS.contains(&field.as_str())
                     && let Some(target) = self.string_map(&layer)
                 {
+                    target.insert(
+                        format!("{}{}", action, normalize_id(field)),
+                        text.to_string(),
+                    );
+                }
+            }
+            if kinds.numeric
+                && let Some(numeric) = member(desc, "settings").and_then(|v| v.as_object())
+            {
+                let target = self.numeric_map(&layer);
+                for (k, v) in numeric {
+                    if let Some(f) = v.as_f64() {
+                        target.insert(normalize_id(k), f);
+                    }
+                }
+            }
+            if kinds.strings_to_empty_hand {
+                if let Some(strings) = member(desc, "settings").and_then(|v| v.as_object()) {
                     for (k, v) in strings {
                         if let Some(s) = v.as_str() {
-                            target.insert(normalize_id(k), s.to_string());
+                            self.empty_hand_string_settings
+                                .insert(normalize_id(k), s.to_string());
                         }
                     }
                 }
-                if kinds.locomotion
-                    && let Some(loc) = member(desc, "locomotion")
-                {
-                    let binding = parse_locomotion_binding(loc);
-                    self.locomotion
-                        .entry(action.clone())
-                        .or_default()
-                        .push(binding);
+            } else if let Some(strings) = member(desc, "settings").and_then(|v| v.as_object())
+                && let Some(target) = self.string_map(&layer)
+            {
+                for (k, v) in strings {
+                    if let Some(s) = v.as_str() {
+                        target.insert(normalize_id(k), s.to_string());
+                    }
                 }
+            }
+            if kinds.locomotion
+                && let Some(loc) = member(desc, "locomotion")
+            {
+                let binding = parse_locomotion_binding(loc);
+                self.locomotion
+                    .entry(action.clone())
+                    .or_default()
+                    .push(binding);
             }
         }
     }
@@ -1407,8 +1919,8 @@ impl ItemAnimationBindings {
         match layer {
             Layer::Default => Some(&mut self.defaults),
             Layer::EmptyHand => Some(&mut self.empty_hand),
-            Layer::Group(g) => self.groups.get_mut(g),
-            Layer::Specific(i) => self.specific_items.get_mut(i),
+            Layer::Group(g) => Some(self.groups.entry(g.clone()).or_default()),
+            Layer::Specific(i) => Some(self.specific_items.entry(i.clone()).or_default()),
         }
     }
 
@@ -1425,256 +1937,365 @@ impl ItemAnimationBindings {
         match layer {
             Layer::Default => Some(&mut self.string_settings),
             Layer::EmptyHand => Some(&mut self.empty_hand_string_settings),
-            Layer::Group(g) => self.group_string_settings.get_mut(g),
-            Layer::Specific(i) => self.specific_string_settings.get_mut(i),
+            Layer::Group(g) => Some(self.group_string_settings.entry(g.clone()).or_default()),
+            Layer::Specific(i) => Some(self.specific_string_settings.entry(i.clone()).or_default()),
         }
     }
 
     fn add_sequences(&mut self, elem: &crate::json::Value, layer: Layer) {
-        let Some(sequences) = elem.get("sequences").and_then(|e| e.as_object()) else {
+        let Some(descriptors) = elem.as_array() else {
             return;
         };
-        for (action, value) in sequences {
-            let names: Vec<String> = value
-                .as_array()
-                .map(|items| {
-                    items
-                        .iter()
-                        .filter_map(|v| v.as_str().map(str::to_string))
-                        .collect()
-                })
-                .unwrap_or_default();
+        for descriptor in descriptors {
+            let Some(obj) = descriptor.as_object() else {
+                continue;
+            };
+            let Some(action) = member(obj, "type")
+                .and_then(crate::json::Value::as_str)
+                .map(normalize_id)
+            else {
+                continue;
+            };
+            // The sequence is the entry's `var_1`, `var_2`, ... clips.
+            let mut names = Vec::new();
+            let mut index = 1;
+            while let Some(name) = value_of(obj, &[&format!("var_{}", index)]) {
+                names.push(name);
+                index += 1;
+            }
             if names.is_empty() {
                 continue;
             }
             match &layer {
                 Layer::Default => {
-                    self.default_sequences.insert(normalize_id(action), names);
+                    self.default_sequences.insert(action, names);
                 }
                 Layer::EmptyHand => {
-                    self.empty_hand_sequences
-                        .insert(normalize_id(action), names);
+                    self.empty_hand_sequences.insert(action, names);
                 }
                 Layer::Group(g) => {
                     self.group_sequences
                         .entry(g.clone())
                         .or_default()
-                        .insert(normalize_id(action), names);
+                        .insert(action, names);
                 }
                 Layer::Specific(i) => {
                     self.specific_sequences
                         .entry(i.clone())
                         .or_default()
-                        .insert(normalize_id(action), names);
+                        .insert(action, names);
                 }
             }
         }
     }
 
     fn add_retrigger(&mut self, elem: &crate::json::Value, layer: Layer) {
-        let Some(progress) = elem.get("retrigger_progress").and_then(|e| e.as_object()) else {
+        let Some(descriptors) = elem.as_array() else {
             return;
         };
-        for (action, value) in progress {
-            let Some(f) = value.as_f64() else {
+        for descriptor in descriptors {
+            let Some(obj) = descriptor.as_object() else {
+                continue;
+            };
+            let Some(action) = member(obj, "type")
+                .and_then(crate::json::Value::as_str)
+                .map(normalize_id)
+            else {
+                continue;
+            };
+            let Some(f) = member(obj, "retrigger_progress").and_then(|v| v.as_f64()) else {
                 continue;
             };
             match &layer {
                 Layer::Default => {
-                    self.default_retrigger.insert(normalize_id(action), f);
+                    self.default_retrigger.insert(action, f);
                 }
                 Layer::EmptyHand => {
-                    self.empty_hand_retrigger.insert(normalize_id(action), f);
+                    self.empty_hand_retrigger.insert(action, f);
                 }
                 Layer::Group(g) => {
                     self.group_retrigger
                         .entry(g.clone())
                         .or_default()
-                        .insert(normalize_id(action), f);
+                        .insert(action, f);
                 }
                 Layer::Specific(i) => {
                     self.specific_retrigger
                         .entry(i.clone())
                         .or_default()
-                        .insert(normalize_id(action), f);
+                        .insert(action, f);
                 }
             }
         }
     }
 
     fn add_influences(&mut self, elem: &crate::json::Value, layer: Layer) {
-        let Some(influences) = elem.get("locomotion_influence").and_then(|e| e.as_object()) else {
+        let Some(descriptors) = elem.as_array() else {
             return;
         };
-        for (action, value) in influences {
-            let Some(obj) = value.as_object() else {
+        for descriptor in descriptors {
+            let Some(obj) = descriptor.as_object() else {
                 continue;
             };
-            let influence = BindLocomotionInfluence {
-                walk: normalize_influence(member(obj, "walk")),
-                sprint: normalize_influence(member(obj, "sprint")),
-                jump: normalize_influence(member(obj, "jump")),
-                transition: member(obj, "transition")
-                    .and_then(|v| v.as_f64())
-                    .map(|f| f as f32)
-                    .unwrap_or(0.0),
-                hand_only: member(obj, "hand_only")
-                    .map(|v| matches!(v, crate::json::Value::Bool(true)))
-                    .unwrap_or(false),
+            let Some(action) = member(obj, "type")
+                .and_then(crate::json::Value::as_str)
+                .map(normalize_id)
+            else {
+                continue;
+            };
+            let Some(influence) = locomotion_influence(member(obj, "locomotion_influence")) else {
+                continue;
             };
             match &layer {
                 Layer::Default => {
-                    self.default_influences
-                        .insert(normalize_id(action), influence);
+                    self.default_influences.insert(action, influence);
                 }
                 Layer::EmptyHand => {
-                    self.empty_hand_influences
-                        .insert(normalize_id(action), influence);
+                    self.empty_hand_influences.insert(action, influence);
                 }
                 Layer::Group(g) => {
                     self.group_influences
                         .entry(g.clone())
                         .or_default()
-                        .insert(normalize_id(action), influence);
+                        .insert(action, influence);
                 }
                 Layer::Specific(i) => {
                     self.specific_influences
                         .entry(i.clone())
                         .or_default()
-                        .insert(normalize_id(action), influence);
+                        .insert(action, influence);
                 }
             }
         }
     }
 
     fn add_overlays(&mut self, elem: &crate::json::Value, layer: Layer) {
-        let Some(overlays) = elem.get("overlays").and_then(|e| e.as_object()) else {
+        let Some(descriptors) = elem.as_array() else {
             return;
         };
-        for (action, value) in overlays {
-            let bindings: Vec<OverlayBinding> = value
-                .as_array()
-                .map(|items| items.iter().filter_map(parse_overlay_binding).collect())
-                .unwrap_or_default();
-            if bindings.is_empty() {
+        for descriptor in descriptors {
+            let Some(obj) = descriptor.as_object() else {
                 continue;
-            }
-            match &layer {
-                Layer::Default => {
-                    self.default_overlays.insert(normalize_id(action), bindings);
+            };
+            let Some(ty) = member(obj, "type").and_then(crate::json::Value::as_str) else {
+                continue;
+            };
+            let action = normalize_id(ty);
+            for (field, suffix) in [("overlays", ""), ("one_handed_overlays", "onehanded")] {
+                let Some(list) = member(obj, field).and_then(|v| v.as_array()) else {
+                    continue;
+                };
+                let bindings: Vec<OverlayBinding> =
+                    list.iter().filter_map(parse_overlay_binding).collect();
+                if bindings.is_empty() {
+                    continue;
                 }
-                Layer::EmptyHand => {}
-                Layer::Group(g) => {
-                    self.group_overlays
-                        .entry(g.clone())
-                        .or_default()
-                        .insert(normalize_id(action), bindings);
-                }
-                Layer::Specific(i) => {
-                    self.specific_overlays
-                        .entry(i.clone())
-                        .or_default()
-                        .insert(normalize_id(action), bindings);
+                let key = format!("{}{}", action, suffix);
+                match &layer {
+                    Layer::Default => {
+                        self.default_overlays.insert(key, bindings);
+                    }
+                    Layer::EmptyHand => {}
+                    Layer::Group(g) => {
+                        self.group_overlays
+                            .entry(g.clone())
+                            .or_default()
+                            .insert(key, bindings);
+                    }
+                    Layer::Specific(i) => {
+                        self.specific_overlays
+                            .entry(i.clone())
+                            .or_default()
+                            .insert(key, bindings);
+                    }
                 }
             }
         }
     }
 
     fn add_blends(&mut self, elem: &crate::json::Value, layer: Layer) {
-        let Some(blends) = elem.get("blending").and_then(|e| e.as_object()) else {
+        let Some(descriptors) = elem.as_array() else {
             return;
         };
-        for (action, value) in blends {
-            let Some(obj) = value.as_object() else {
+        for descriptor in descriptors {
+            let Some(obj) = descriptor.as_object() else {
+                continue;
+            };
+            let Some(action) = member(obj, "type")
+                .and_then(crate::json::Value::as_str)
+                .map(normalize_id)
+            else {
+                continue;
+            };
+            let Some(blending) = member(obj, "blending").and_then(|v| v.as_object()) else {
                 continue;
             };
             let binding = BlendBinding {
-                from: member(obj, "from").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
-                to: member(obj, "to").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
-                duration_seconds: member(obj, "duration_seconds")
-                    .and_then(|v| v.as_f64())
-                    .unwrap_or(0.0) as f32,
-                condition: member(obj, "condition")
-                    .map(|v| matches!(v, crate::json::Value::Bool(true)))
-                    .unwrap_or(false),
-                condition_expression: member(obj, "condition")
-                    .and_then(|v| v.as_str())
-                    .and_then(crate::expressions::compile),
-                modifier: member(obj, "modifier")
-                    .and_then(|v| v.as_f64())
-                    .unwrap_or(0.0) as f32,
-                modifier_expression: member(obj, "modifier")
-                    .and_then(|v| v.as_str())
-                    .and_then(crate::expressions::compile),
+                from: bounded_float(blending, "from", 0.0),
+                to: bounded_float(blending, "to", 1.0),
+                duration_seconds: non_negative_float(obj, "blending_progression", 0.0),
+                condition: literal_blend_condition(member(obj, "blending_condition")),
+                condition_expression: expression(obj, "blending_condition", "true"),
+                modifier: non_negative_float(obj, "blending_modifier", 1.0),
+                modifier_expression: expression(obj, "blending_modifier", "1"),
             };
             match &layer {
                 Layer::Default => {
-                    self.default_blends.insert(normalize_id(action), binding);
+                    self.default_blends.insert(action, binding);
                 }
                 Layer::EmptyHand => {
-                    self.empty_hand_blends.insert(normalize_id(action), binding);
+                    self.empty_hand_blends.insert(action, binding);
                 }
                 Layer::Group(g) => {
                     self.group_blends
                         .entry(g.clone())
                         .or_default()
-                        .insert(normalize_id(action), binding);
+                        .insert(action, binding);
                 }
                 Layer::Specific(i) => {
                     self.specific_blends
                         .entry(i.clone())
                         .or_default()
-                        .insert(normalize_id(action), binding);
+                        .insert(action, binding);
                 }
             }
         }
     }
 
     fn add_timers(&mut self, elem: &crate::json::Value, layer: Layer) {
-        let timers = elem
-            .get("timers")
-            .or_else(|| elem.get("timer"))
-            .and_then(|e| e.as_object());
-        let Some(timers) = timers else {
+        let Some(descriptors) = elem.as_array() else {
             return;
         };
-        for (action, value) in timers {
-            let Some(obj) = value.as_object() else {
+        for descriptor in descriptors {
+            let Some(obj) = descriptor.as_object() else {
                 continue;
             };
+            let Some(action) = member(obj, "type")
+                .and_then(crate::json::Value::as_str)
+                .map(normalize_id)
+            else {
+                continue;
+            };
+            if member(obj, "timer_modifier").is_none() && member(obj, "timer_condition").is_none() {
+                continue;
+            }
             let binding = TimerBinding {
-                modifier: member(obj, "modifier")
-                    .and_then(|v| v.as_f64())
-                    .unwrap_or(0.0) as f32,
-                condition: member(obj, "condition")
-                    .map(|v| matches!(v, crate::json::Value::Bool(true)))
-                    .unwrap_or(false),
-                modifier_expression: member(obj, "modifier")
-                    .and_then(|v| v.as_str())
-                    .and_then(crate::expressions::compile),
-                condition_expression: member(obj, "condition")
-                    .and_then(|v| v.as_str())
-                    .and_then(crate::expressions::compile),
+                modifier: non_negative_float(obj, "timer_modifier", 1.0),
+                condition: literal_blend_condition(member(obj, "timer_condition")),
+                modifier_expression: expression(obj, "timer_modifier", "1"),
+                condition_expression: expression(obj, "timer_condition", "true"),
             };
             match &layer {
                 Layer::Default => {
-                    self.default_timers.insert(normalize_id(action), binding);
+                    self.default_timers.insert(action, binding);
                 }
                 Layer::EmptyHand => {
-                    self.empty_hand_timers.insert(normalize_id(action), binding);
+                    self.empty_hand_timers.insert(action, binding);
                 }
                 Layer::Group(g) => {
                     self.group_timers
                         .entry(g.clone())
                         .or_default()
-                        .insert(normalize_id(action), binding);
+                        .insert(action, binding);
                 }
                 Layer::Specific(i) => {
                     self.specific_timers
                         .entry(i.clone())
                         .or_default()
-                        .insert(normalize_id(action), binding);
+                        .insert(action, binding);
                 }
+            }
+        }
+    }
+
+    /// `addRetentions`: the entry's `base_pose_retain`, parsed with the
+    /// entry's type as the error context.
+    fn add_retentions(&mut self, elem: &crate::json::Value, layer: Layer) {
+        let Some(descriptors) = elem.as_array() else {
+            return;
+        };
+        for descriptor in descriptors {
+            let Some(obj) = descriptor.as_object() else {
+                continue;
+            };
+            let Some(ty) = member(obj, "type").and_then(crate::json::Value::as_str) else {
+                continue;
+            };
+            let Some(retain) = member(obj, "base_pose_retain") else {
+                continue;
+            };
+            let Ok(retention) =
+                BasePoseRetention::parse(Some(retain), &format!("{}.base_pose_retain", ty))
+            else {
+                continue;
+            };
+            let action = normalize_id(ty);
+            match &layer {
+                Layer::Default => {
+                    self.default_retentions.insert(action, retention);
+                }
+                Layer::EmptyHand => {
+                    self.empty_hand_retentions.insert(action, retention);
+                }
+                Layer::Group(g) => {
+                    self.group_retentions
+                        .entry(g.clone())
+                        .or_default()
+                        .insert(action, retention);
+                }
+                Layer::Specific(i) => {
+                    self.specific_retentions
+                        .entry(i.clone())
+                        .or_default()
+                        .insert(action, retention);
+                }
+            }
+        }
+    }
+
+    /// `addEmoteEntries`: the `emotes` entry's menu key and its emote list.
+    fn add_emote_entries(&mut self, elem: &crate::json::Value) {
+        let Some(descriptors) = elem.as_array() else {
+            return;
+        };
+        for descriptor in descriptors {
+            let Some(obj) = descriptor.as_object() else {
+                continue;
+            };
+            let is_emotes = member(obj, "type")
+                .and_then(crate::json::Value::as_str)
+                .is_some_and(|ty| normalize_id(ty) == "emotes");
+            if !is_emotes {
+                continue;
+            }
+            if let Some(key) = value_of(obj, &["menu_key", "keybind", "key"]) {
+                self.emote_menu_key = Some(key);
+            }
+            let entries = member(obj, "entries")
+                .or_else(|| member(obj, "emotes"))
+                .and_then(|v| v.as_array());
+            let Some(entries) = entries else {
+                continue;
+            };
+            for entry in entries {
+                let Some(entry) = entry.as_object() else {
+                    continue;
+                };
+                let Some(animation) = value_of(entry, &["animation", "name", "clip"]) else {
+                    continue;
+                };
+                let id = value_of(entry, &["id"]).unwrap_or_else(|| animation.clone());
+                let display_name = value_of(entry, &["display_name", "label", "title"])
+                    .unwrap_or_else(|| id.clone());
+                let key = value_of(entry, &["keybind", "key"]).unwrap_or_else(|| "UNKNOWN".into());
+                let face = value_of(entry, &["face", "expression"]);
+                self.emote_bindings.push(EmoteBinding {
+                    id,
+                    display_name,
+                    animation,
+                    key: Some(key),
+                    face,
+                });
             }
         }
     }
@@ -1720,33 +2341,58 @@ impl ItemAnimationBindings {
         }
     }
 
+    /// `indexOneHandedClips`: the entry's `one_handed` clip, or the first
+    /// one found on a nested entry under `subanimations`.
     fn index_one_handed_clips(&mut self, elem: &crate::json::Value) {
-        let Some(members) = elem.as_object() else {
+        self.index_one_handed(elem, None);
+    }
+
+    fn index_one_handed(&mut self, elem: &crate::json::Value, action: Option<&str>) {
+        if let Some(items) = elem.as_array() {
+            for item in items {
+                self.index_one_handed(item, action);
+            }
+            return;
+        }
+        let Some(obj) = elem.as_object() else {
             return;
         };
-        for (action, value) in members {
-            let Some(descriptors) = value.as_array() else {
-                continue;
+        let action = member(obj, "type")
+            .and_then(crate::json::Value::as_str)
+            .map(normalize_id)
+            .or_else(|| action.map(str::to_string));
+        if let Some(one_handed) = member(obj, "one_handed") {
+            let clip = match one_handed {
+                crate::json::Value::String(s) => Some(s.clone()),
+                crate::json::Value::Object(o) => value_of(o, &["clip", "name"]),
+                _ => None,
             };
-            for descriptor in descriptors {
-                let Some(obj) = descriptor.as_object() else {
-                    continue;
-                };
-                let Some(one_handed) = member(obj, "one_handed") else {
-                    continue;
-                };
-                let clip = match one_handed {
-                    crate::json::Value::String(s) => Some(s.clone()),
-                    crate::json::Value::Object(o) => member(o, "clip")
-                        .and_then(crate::json::Value::as_str)
-                        .map(str::to_string),
-                    _ => None,
-                };
-                if let Some(clip) = clip {
-                    self.default_one_handed.insert(normalize_id(action), clip);
-                }
+            if let (Some(clip), Some(action)) = (clip, action.as_deref()) {
+                self.default_one_handed
+                    .entry(action.to_string())
+                    .or_insert(clip);
             }
         }
+        if let Some(children) = member(obj, "subanimations") {
+            self.index_one_handed(children, action.as_deref());
+        }
+    }
+
+    /// `firstRetention`: the specific, then group, then empty-hand, then
+    /// default retention for an action.
+    #[allow(dead_code)] // the game layer calls this once retention lookups land
+    fn first_retention(&self, item: &str, group: &str, action: &str) -> Option<BasePoseRetention> {
+        self.specific_retentions
+            .get(item)
+            .and_then(|map| map.get(action))
+            .or_else(|| {
+                self.group_retentions
+                    .get(group)
+                    .and_then(|map| map.get(action))
+            })
+            .or_else(|| self.empty_hand_retentions.get(action))
+            .or_else(|| self.default_retentions.get(action))
+            .cloned()
     }
 }
 
@@ -1756,6 +2402,109 @@ fn optional_boolean(v: &crate::json::Value) -> Option<bool> {
         crate::json::Value::Bool(b) => Some(*b),
         _ => None,
     }
+}
+
+/// `value`: the first member of `keys` holding a non-blank string.
+fn value_of(obj: &[(String, crate::json::Value)], keys: &[&str]) -> Option<String> {
+    for key in keys {
+        if let Some(value) = member(obj, key)
+            && let Some(text) = value.as_str()
+            && !text.trim().is_empty()
+        {
+            return Some(text.to_string());
+        }
+    }
+    None
+}
+
+/// `boundedFloat`: a number clamped into `0.0..=1.0`, `fallback` when the
+/// member is missing or not a number.
+fn bounded_float(obj: &[(String, crate::json::Value)], key: &str, fallback: f32) -> f32 {
+    match member(obj, key).and_then(|v| v.as_f64()) {
+        Some(f) => (f as f32).clamp(0.0, 1.0),
+        None => fallback,
+    }
+}
+
+/// `nonNegativeFloat` (and `positiveFloat`, the same body): a number floored
+/// at `0.0`, `fallback` when the member is missing or not a number.
+fn non_negative_float(obj: &[(String, crate::json::Value)], key: &str, fallback: f32) -> f32 {
+    match member(obj, key).and_then(|v| v.as_f64()) {
+        Some(f) => (f as f32).max(0.0),
+        None => fallback,
+    }
+}
+
+/// `literalBlendCondition`: the condition as a plain value — absent is true,
+/// a boolean is itself, a string is anything but `false`, `never` and `0`
+/// (normalized), and anything else is true.
+fn literal_blend_condition(value: Option<&crate::json::Value>) -> bool {
+    let Some(value) = value else {
+        return true;
+    };
+    if value.is_null() {
+        return true;
+    }
+    match value {
+        crate::json::Value::Bool(b) => *b,
+        crate::json::Value::String(s) => {
+            let normalized = normalize_id(s);
+            normalized != "false" && normalized != "never" && normalized != "0"
+        }
+        _ => true,
+    }
+}
+
+/// `expression`: the field compiled, the fallback compiled when the field is
+/// missing or does not compile.
+fn expression(
+    obj: &[(String, crate::json::Value)],
+    field: &str,
+    fallback: &str,
+) -> Option<crate::expressions::Expression> {
+    let source = value_of(obj, &[field]).unwrap_or_else(|| fallback.to_string());
+    crate::expressions::compile(&source).or_else(|| crate::expressions::compile(fallback))
+}
+
+/// `locomotionInfluence`: a number is all three weights at once; an object
+/// carries `default`, `walk`/`walking`, `sprint`/`run`, `jump`,
+/// `transition` and `hand_only`.
+fn locomotion_influence(value: Option<&crate::json::Value>) -> Option<BindLocomotionInfluence> {
+    let value = value.filter(|v| !v.is_null())?;
+    if let Some(f) = value.as_f64() {
+        let f = normalize_locomotion_influence(f as f32);
+        return Some(BindLocomotionInfluence {
+            walk: f,
+            sprint: f,
+            jump: f,
+            transition: 1.0,
+            hand_only: false,
+        });
+    }
+    let obj = value.as_object()?;
+    let default = normalize_locomotion_influence(number(obj, "default", 1.0));
+    let walk = normalize_locomotion_influence(number(obj, "walk", number(obj, "walking", default)));
+    let sprint = normalize_locomotion_influence(number(obj, "sprint", number(obj, "run", default)));
+    let jump = normalize_locomotion_influence(number(obj, "jump", default));
+    let transition = normalize_locomotion_influence(number(obj, "transition", 1.0));
+    let hand_only = member(obj, "hand_only")
+        .map(|v| matches!(v, crate::json::Value::Bool(true)))
+        .unwrap_or(false);
+    Some(BindLocomotionInfluence {
+        walk,
+        sprint,
+        jump,
+        transition,
+        hand_only,
+    })
+}
+
+/// `number`: the member as an f32, `fallback` when missing or not a number.
+fn number(obj: &[(String, crate::json::Value)], key: &str, fallback: f32) -> f32 {
+    member(obj, key)
+        .and_then(|v| v.as_f64())
+        .map(|f| f as f32)
+        .unwrap_or(fallback)
 }
 
 /// The Java `normalize`: lowercase, then strip `_`, `-` and spaces.
@@ -1823,19 +2572,88 @@ fn parse_locomotion_binding(value: &crate::json::Value) -> LocomotionBinding {
     }
 }
 
-/// `normalizeLocomotionInfluence`: a finite weight clamped to `[0, 1]`,
-/// everything else 0.0.
-fn normalize_influence(elem: Option<&crate::json::Value>) -> f32 {
-    let Some(f) = elem.and_then(|v| v.as_f64()) else {
-        return 0.0;
-    };
-    let f = f as f32;
-    if f.is_finite() {
-        f.clamp(0.0, 1.0)
-    } else {
-        0.0
+/// `normalizeLocomotionInfluence`: a weight over `1.0` reads as a percentage
+/// and comes down by a hundred; everything clamps into `0.0..=1.0`, and a
+/// broken weight reads as `1.0`.
+fn normalize_locomotion_influence(value: f32) -> f32 {
+    if !value.is_finite() {
+        return 1.0;
+    }
+    let value = if value > 1.0 { value / 100.0 } else { value };
+    value.clamp(0.0, 1.0)
+}
+
+impl ItemAnimationBindings {
+    /// `resolveSequence`: the sequence's clip names, layered.
+    pub fn sequences_for(
+        &self,
+        item: Option<&str>,
+        group: Option<&str>,
+        action: &str,
+    ) -> Vec<String> {
+        let action = normalize_id(action);
+        let at = |sequences: Option<&HashMap<String, Vec<String>>>,
+                  entries: Option<&HashMap<String, String>>|
+         -> Option<Vec<String>> {
+            if let Some(map) = sequences
+                && let Some(list) = map.get(&action)
+            {
+                return Some(list.clone());
+            }
+            entries
+                .and_then(|map| map.get(&action))
+                .map(|n| vec![n.clone()])
+        };
+        match item {
+            Some(id) => at(self.specific_sequences.get(id), self.specific_items.get(id))
+                .or_else(|| group.and_then(|g| at(self.group_sequences.get(g), self.groups.get(g))))
+                .or_else(|| at(Some(&self.default_sequences), Some(&self.defaults)))
+                .unwrap_or_default(),
+            None => at(Some(&self.empty_hand_sequences), Some(&self.empty_hand))
+                .or_else(|| at(Some(&self.default_sequences), Some(&self.defaults)))
+                .unwrap_or_default(),
+        }
     }
 }
+
+/// The numeric setting fields the Java per-action chain reads off a
+/// descriptor.
+pub(crate) const NUMERIC_SETTING_FIELDS: &[&str] = &[
+    "transition_seconds",
+    "locomotion_retain",
+    "start_at_end",
+    "moving_legs_influence",
+    "legs_locomotion_retain",
+    "over_idle",
+    "fence_balance_influence",
+    "charge_ticks",
+    "minimum_charge_ticks",
+    "charge_height",
+    "smash_distance",
+    "additive",
+    "disable_locomotion_arm_swing",
+    "stride_blocks_per_cycle",
+    "sprint_stride_blocks_per_cycle",
+    "crouch_stride_blocks_per_cycle",
+    "max_cycles_per_second",
+    "sprint_max_cycles_per_second",
+    "crouch_max_cycles_per_second",
+    "minimum_displacement",
+    "maximum_displacement",
+    "reverse_backward",
+    "amplitude_reference_speed",
+    "max_amplitude",
+    "horizontal",
+    "vertical",
+    "depth",
+    "fov",
+    "response",
+    "timer_scale",
+];
+
+/// The string setting fields the Java chain reads off a descriptor.
+pub(crate) const STRING_SETTING_FIELDS: &[&str] =
+    &["behavior", "one_handed", "sprint_overlay", "timer_effect"];
 
 /// Which bindings layer an ingest pass writes to.
 #[derive(Clone)]
@@ -2346,7 +3164,17 @@ pub mod compat_format {
                 deep_copy(static_when_using),
             ));
         }
-        let mut default_animations: Vec<(String, crate::json::Value)> = Vec::new();
+        let mut default_animations: Vec<crate::json::Value> = Vec::new();
+        // defaults.animations → the default entries.
+        let defaults_animations = animations(
+            defaults.get("animations"),
+            &crate::json::Value::Object(Vec::new()),
+            false,
+            "defaults.animations",
+        )?;
+        if let crate::json::Value::Array(items) = defaults_animations {
+            default_animations.extend(items);
+        }
         // cameras → camera entries appended to the default animations.
         let cameras = object_or_empty(root, "cameras", "cameras")?;
         keys(cameras, &["proximity", "aiming"], "cameras")?;
@@ -2362,13 +3190,13 @@ pub mod compat_format {
                 "proximity_camera"
             };
             set_string(&mut camera, "type", camera_type);
-            default_animations.push((String::new(), camera));
+            default_animations.push(camera);
         }
         if let Some(emotes_elem) = root.get("emotes") {
             let label = "emotes";
             let mut emotes = deep_copy(object(Some(emotes_elem), label)?);
             set_string(&mut emotes, "type", "emotes");
-            default_animations.push((String::new(), emotes));
+            default_animations.push(emotes);
         }
         // empty_hand → the emptyHand layer.
         if let Some(empty_hand) = root.get("empty_hand") {
@@ -2395,11 +3223,35 @@ pub mod compat_format {
         if let crate::json::Value::Object(out) = &mut defaults_out {
             out.push((
                 "default_animations".to_string(),
-                crate::json::Value::Object(default_animations),
+                crate::json::Value::Array(default_animations),
             ));
         }
-        out_members.push(("defaults".to_string(), defaults_out));
-        let mut out = crate::json::Value::Object(out_members);
+        let mut out = defaults_out;
+        if let crate::json::Value::Object(members) = &mut out {
+            let ordered: Vec<(String, crate::json::Value)> = std::mem::take(members);
+            let mut reordered: Vec<(String, crate::json::Value)> = Vec::new();
+            for key in [
+                "variables",
+                "static_when_using",
+                "default_animations",
+                "emptyHand",
+            ] {
+                if let Some(pos) = ordered.iter().position(|(k, _)| k == key) {
+                    reordered.push(ordered[pos].clone());
+                }
+            }
+            for entry in ordered {
+                if !reordered.iter().any(|(k, _)| k == &entry.0) {
+                    reordered.push(entry);
+                }
+            }
+            *members = reordered;
+        }
+        for (key, value) in out_members {
+            if let crate::json::Value::Object(members) = &mut out {
+                members.push((key, value));
+            }
+        }
         legacy_clip_names(&mut out);
         Ok(out)
     }
@@ -2498,7 +3350,11 @@ pub mod compat_format {
                 m.retain(|(k, _)| k != "defaults");
             }
             if let Some(retain) = sequence_defaults.get("base_pose_retain") {
-                let _ = retain; // BasePoseRetention.parse runs in the game layer.
+                // Java validates the retention here, at normalize time.
+                crate::signals::BasePoseRetention::parse(
+                    Some(retain),
+                    &format!("{}.sequence.defaults.base_pose_retain", label),
+                )?;
             }
             set_string(&mut merged, "type", "item_sequence");
             custom.push(merged);
@@ -2507,7 +3363,7 @@ pub mod compat_format {
         let parsed = animations(
             source_animations,
             sequence_defaults,
-            false,
+            has_sequence,
             &format!("{}.animations", label),
         )?;
         if let crate::json::Value::Array(items) = &parsed {
@@ -3456,5 +4312,204 @@ mod tests {
         );
         assert!(entry.get("left_overlay").is_none());
         assert!(entry.get("right_overlay").is_none());
+    }
+    #[test]
+    fn entries_ingest_from_the_java_array_shape() {
+        let root = crate::json::parse(
+            r#"{
+                "format_version": "2",
+                "defaults": {
+                    "animations": {
+                        "attack": {"clip": "swing"},
+                        "use_item": {"clip": "drink", "base_pose_retain": {"right_arm": 0.5}},
+                        "idle_events": {"variants": ["wave", {"clip": "clap", "name": "clap"}]},
+                        "emotes": {
+                            "menu_key": "key.keyboard.b",
+                            "entries": [
+                                {"animation": "wave", "display_name": "Wave", "keybind": "key.keyboard.h", "face": "cheerful"}
+                            ]
+                        }
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+        let normalized = compat_format::normalize(&root).unwrap();
+        // default_animations is an array of typed entries now.
+        let list = normalized
+            .get("default_animations")
+            .and_then(|v| v.as_array())
+            .expect("array default_animations");
+        let attack = list
+            .iter()
+            .find(|e| e.get("type").and_then(crate::json::Value::as_str) == Some("attack"))
+            .unwrap();
+        assert_eq!(
+            attack.get("name").and_then(crate::json::Value::as_str),
+            Some("swing")
+        );
+
+        let mut bindings = ItemAnimationBindings::new();
+        bindings.add(&normalized);
+        assert_eq!(
+            bindings.defaults.get("attack").map(String::as_str),
+            Some("swing")
+        );
+        // idle_events keeps its variants list; the ingest reads name or clip.
+        assert_eq!(bindings.variants.get("idleevents").map(Vec::len), Some(2));
+        // The retention came through the typed entry.
+        let retention = bindings.first_retention("", "", "useitem").unwrap();
+        assert_eq!(
+            retention.value("right_arm", false),
+            0.5,
+            "retention from the entry"
+        );
+        // Emote entries: menu key, id/display defaults, keybind fallback.
+        assert_eq!(bindings.emote_menu_key.as_deref(), Some("key.keyboard.b"));
+        assert_eq!(bindings.emote_bindings.len(), 1);
+        let emote = &bindings.emote_bindings[0];
+        assert_eq!(emote.id, "wave");
+        assert_eq!(emote.display_name, "Wave");
+        assert_eq!(emote.animation, "wave");
+        assert_eq!(emote.key.as_deref(), Some("key.keyboard.h"));
+        assert_eq!(emote.face.as_deref(), Some("cheerful"));
+    }
+
+    #[test]
+    fn normalize_orders_the_java_top_level_keys() {
+        let root = crate::json::parse(
+            r#"{
+                "format_version": "2",
+                "defaults": {"static_when_using": {"attack": {"clip": "s"}}},
+                "empty_hand": {"animations": {"attack": {"clip": "e"}}},
+                "items": {"minecraft:stick": {"animations": {"attack": {"clip": "i"}}}},
+                "item_groups": {"swords": {"animations": {"attack": {"clip": "g"}}}}
+            }"#,
+        )
+        .unwrap();
+        let out = compat_format::normalize(&root).unwrap();
+        let keys: Vec<&str> = out
+            .as_object()
+            .unwrap()
+            .iter()
+            .map(|(k, _)| k.as_str())
+            .collect();
+        assert_eq!(
+            keys,
+            vec![
+                "static_when_using",
+                "default_animations",
+                "emptyHand",
+                "item",
+                "itemSpecific"
+            ]
+        );
+        // The layers reach the bindings through the Java key names.
+        let mut bindings = ItemAnimationBindings::new();
+        bindings.add(&out);
+        assert_eq!(
+            bindings.empty_hand.get("attack").map(String::as_str),
+            Some("e")
+        );
+        assert_eq!(
+            bindings
+                .groups
+                .get("swords")
+                .and_then(|m| m.get("attack"))
+                .map(String::as_str),
+            Some("g")
+        );
+        assert_eq!(
+            bindings
+                .specific_items
+                .get("minecraft:stick")
+                .and_then(|m| m.get("attack"))
+                .map(String::as_str),
+            Some("i")
+        );
+    }
+
+    #[test]
+    fn sequences_retrigger_influences_and_blends_ingest_from_entries() {
+        // The normalized bindings document: typed entries under
+        // default_animations, with the settings the compat format does not
+        // carry.
+        let normalized = crate::json::parse(
+            r#"{
+                "default_animations": [
+                    {
+                        "type": "sequence_attack",
+                        "var_1": "s1",
+                        "var_2": "s2",
+                        "retrigger_progress": 0.4,
+                        "locomotion_influence": {"walk": 0.5, "sprint": 150, "jump": 2},
+                        "blending": {"from": 0.2, "to": 0.8},
+                        "blending_progression": 0.3,
+                        "timer_modifier": 0.5
+                    }
+                ]
+            }"#,
+        )
+        .unwrap();
+        let mut bindings = ItemAnimationBindings::new();
+        bindings.add(&normalized);
+        assert_eq!(
+            bindings
+                .default_sequences
+                .get("sequenceattack")
+                .map(|v| v.as_slice()),
+            Some(&["s1".to_string(), "s2".to_string()][..])
+        );
+        assert_eq!(bindings.default_retrigger.get("sequenceattack"), Some(&0.4));
+        let influence = bindings.default_influences.get("sequenceattack").unwrap();
+        assert_eq!(influence.walk, 0.5);
+        assert_eq!(influence.sprint, 1.0, "150 reads as 150% and clamps");
+        assert_eq!(influence.jump, 0.02, "2 reads as 200%: 2/100");
+        assert_eq!(influence.transition, 1.0);
+        let blend = bindings.default_blends.get("sequenceattack").unwrap();
+        assert_eq!(blend.from, 0.2);
+        assert_eq!(blend.to, 0.8);
+        assert_eq!(blend.duration_seconds, 0.3);
+        assert!(blend.condition, "absent condition is true");
+        let timer = bindings.default_timers.get("sequenceattack").unwrap();
+        assert_eq!(timer.modifier, 0.5);
+    }
+
+    #[test]
+    fn one_handed_index_walks_subanimations() {
+        let root = crate::json::parse(
+            r#"{
+                "format_version": "2",
+                "defaults": {
+                    "animations": {
+                        "attack": {
+                            "clip": "swing",
+                            "one_handed": "swing_one",
+                            "subanimations": [
+                                {"type": "use_item", "one_handed": {"clip": "drink_one"}}
+                            ]
+                        }
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+        let normalized = compat_format::normalize(&root).unwrap();
+        let mut bindings = ItemAnimationBindings::new();
+        bindings.add(&normalized);
+        assert_eq!(
+            bindings
+                .default_one_handed
+                .get("attack")
+                .map(String::as_str),
+            Some("swing_one")
+        );
+        assert_eq!(
+            bindings
+                .default_one_handed
+                .get("useitem")
+                .map(String::as_str),
+            Some("drink_one")
+        );
     }
 }

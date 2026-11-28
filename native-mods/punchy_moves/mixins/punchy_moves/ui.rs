@@ -253,6 +253,697 @@ impl HudFrame {
 /// wide, one more between glyphs.
 pub const GLYPH_WIDTH: f32 = 6.0;
 
+// ---------------------------------------------------------------------------
+// GoldUi
+// ---------------------------------------------------------------------------
+
+/// Converts a Java ARGB int (what GoldUi's constants are written as) to the
+/// ABGR word the HUD batch takes.
+pub const fn argb(java: i32) -> u32 {
+    let v = java as u32;
+    rgba(
+        ((v >> 16) & 0xFF) as u8,
+        ((v >> 8) & 0xFF) as u8,
+        (v & 0xFF) as u8,
+        ((v >> 24) & 0xFF) as u8,
+    )
+}
+
+/// GoldUi's palette and drawing primitives, the Java `GoldUi` record for
+/// record: the same colours, the same bevels and the same pixel geometry.
+pub mod gold {
+    use super::{HudFrame, UiRect, argb};
+
+    pub const BACKDROP: u32 = argb(-1946157056);
+    pub const WINDOW_EDGE: u32 = argb(-14803425);
+    pub const SHADOW: u32 = argb(1493172224);
+    pub const TITLEBAR: u32 = argb(-1775898);
+    pub const TITLEBAR_EDGE: u32 = argb(-5131595);
+    pub const TITLE_INK: u32 = argb(-14803425);
+    pub const LETTERPRESS: u32 = argb(-1929379841);
+    pub const RAIL: u32 = argb(-13553101);
+    pub const PANE: u32 = argb(-12039862);
+    pub const ROW_HOVER: u32 = argb(-11513518);
+    pub const SEP: u32 = argb(-13487308);
+    pub const GROOVE_LIGHT: u32 = argb(-10855588);
+    pub const WELL: u32 = argb(-14737375);
+    pub const OFF_FILL: u32 = argb(-13947859);
+    pub const KNOB: u32 = argb(-3092012);
+    pub const KNOB_HI: u32 = argb(-1841946);
+    pub const TRACK: u32 = argb(-13947859);
+    pub const TRACK_LIGHT: u32 = argb(-12960964);
+    pub const LABEL_PLATE: u32 = argb(-1290397928);
+    pub const SCROLL_THUMB: u32 = argb(-1715881283);
+    pub const SCROLL_THUMB_HOVER: u32 = argb(-3092012);
+    pub const TEXT_1: u32 = argb(-1);
+    pub const TEXT_2: u32 = argb(-2829100);
+    pub const TEXT_3: u32 = argb(-4342339);
+    pub const TEXT_DIS: u32 = argb(-8487040);
+    pub const BUTTON_INK: u32 = argb(-14803425);
+    pub const GOLD_50: u32 = argb(-2346);
+    pub const GOLD_100: u32 = argb(-5981);
+    pub const GOLD_200: u32 = argb(-10138);
+    pub const GOLD_300: u32 = argb(-14019);
+    pub const GOLD_400: u32 = argb(-872418);
+    pub const GOLD_500: u32 = argb(-2516468);
+    pub const GOLD_600: u32 = argb(-5737466);
+    pub const GOLD_700: u32 = argb(-8760825);
+    pub const GOLD_INK: u32 = argb(-15002619);
+    pub const SECONDARY_HOVER: u32 = argb(-2105118);
+    pub const SECONDARY_PRESSED: u32 = argb(-4342079);
+    pub const PRIMARY_DISABLED_FACE: u32 = argb(-9541028);
+    pub const PRIMARY_DISABLED_INK: u32 = argb(-12961744);
+    pub const WHEEL_WASH: u32 = argb(889192448);
+    pub const SHORTCUT_STRIPE: u32 = argb(436207616);
+
+    /// One bevel's five colours, the Java `Bevel` record.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    pub struct Bevel {
+        pub outline: u32,
+        pub face: u32,
+        pub highlight: u32,
+        pub shine: u32,
+        pub depth: u32,
+    }
+
+    impl Bevel {
+        pub const fn new(outline: u32, face: u32, highlight: u32, shine: u32, depth: u32) -> Self {
+            Self {
+                outline,
+                face,
+                highlight,
+                shine,
+                depth,
+            }
+        }
+
+        /// `withFace`.
+        pub const fn with_face(self, face: u32) -> Self {
+            Self { face, ..self }
+        }
+    }
+
+    pub const LIGHT: Bevel = Bevel::new(WINDOW_EDGE, KNOB, GOLD_200, GOLD_100, GOLD_700);
+    pub const GOLD: Bevel = Bevel::new(WINDOW_EDGE, GOLD_400, GOLD_200, GOLD_100, GOLD_700);
+    pub const KNOB_BEVEL: Bevel =
+        Bevel::new(WINDOW_EDGE, KNOB, GOLD_200, GOLD_100, argb(-10789793));
+
+    pub const LIP: i32 = 2;
+    pub const TOGGLE_W: i32 = 30;
+    pub const TOGGLE_H: i32 = 14;
+    pub const KNOB_W: i32 = 16;
+    pub const KNOB_H: i32 = 16;
+    pub const TRACK_H: i32 = 6;
+    pub const THUMB_W: i32 = 10;
+    pub const THUMB_H: i32 = 12;
+    pub const TAB_BAR: i32 = 3;
+
+    /// `drawInk`: the letterpress shadow one pixel down, then the ink.
+    pub fn draw_ink(frame: &mut HudFrame, text: &str, x: i32, y: i32, ink: u32) {
+        frame.text(text, x as f32, (y + 1) as f32, LETTERPRESS);
+        frame.text(text, x as f32, y as f32, ink);
+    }
+
+    /// `outline`: a one-pixel ring, or a full fill when too small.
+    pub fn outline(frame: &mut HudFrame, x1: i32, y1: i32, x2: i32, y2: i32, color: u32) {
+        if x2 - x1 >= 2 && y2 - y1 >= 2 {
+            frame.rect(
+                UiRect::new(x1 as f32, y1 as f32, (x2 - x1) as f32, 1.0),
+                color,
+            );
+            frame.rect(
+                UiRect::new(x1 as f32, (y2 - 1) as f32, (x2 - x1) as f32, 1.0),
+                color,
+            );
+            frame.rect(
+                UiRect::new(x1 as f32, (y1 + 1) as f32, 1.0, (y2 - y1 - 2) as f32),
+                color,
+            );
+            frame.rect(
+                UiRect::new((x2 - 1) as f32, (y1 + 1) as f32, 1.0, (y2 - y1 - 2) as f32),
+                color,
+            );
+        } else {
+            frame.rect(
+                UiRect::new(x1 as f32, y1 as f32, (x2 - x1) as f32, (y2 - y1) as f32),
+                color,
+            );
+        }
+    }
+
+    /// `focusRing`: the focus outline one pixel out, in gold.
+    pub fn focus_ring(frame: &mut HudFrame, x1: i32, y1: i32, x2: i32, y2: i32) {
+        outline(frame, x1 - 1, y1 - 1, x2 + 1, y2 + 1, GOLD_200);
+    }
+
+    /// `groove`: a horizontal separator with its light edge under it.
+    pub fn groove(frame: &mut HudFrame, x1: i32, x2: i32, y: i32) {
+        frame.rect(UiRect::new(x1 as f32, y as f32, (x2 - x1) as f32, 1.0), SEP);
+        frame.rect(
+            UiRect::new(x1 as f32, (y + 1) as f32, (x2 - x1) as f32, 1.0),
+            GROOVE_LIGHT,
+        );
+    }
+
+    /// `vgroove`: the vertical one.
+    pub fn vgroove(frame: &mut HudFrame, x: i32, y1: i32, y2: i32) {
+        frame.rect(UiRect::new(x as f32, y1 as f32, 1.0, (y2 - y1) as f32), SEP);
+        frame.rect(
+            UiRect::new((x + 1) as f32, y1 as f32, 1.0, (y2 - y1) as f32),
+            GROOVE_LIGHT,
+        );
+    }
+
+    /// `bevel`: the raised plate the buttons, toggles and knobs sit on. The
+    /// nine arguments mirror the Java signature.
+    #[allow(clippy::too_many_arguments)]
+    pub fn bevel(
+        frame: &mut HudFrame,
+        x1: i32,
+        y1: i32,
+        x2: i32,
+        y2: i32,
+        bevel: Bevel,
+        lip: i32,
+        pressed: bool,
+    ) {
+        let top = if pressed { y1 + lip } else { y1 };
+        let depth_lip = if pressed { 0 } else { lip };
+        outline(frame, x1, top, x2, y2, bevel.outline);
+        let left = x1 + 1;
+        let right = x2 - 1;
+        let inner_top = top + 1;
+        let inner_bottom = y2 - 1 - depth_lip;
+        if right - left >= 2 && inner_bottom - inner_top >= 2 {
+            frame.rect(
+                UiRect::new(left as f32, inner_top as f32, (right - left) as f32, 1.0),
+                bevel.highlight,
+            );
+            frame.rect(
+                UiRect::new(
+                    left as f32,
+                    (inner_top + 1) as f32,
+                    1.0,
+                    (inner_bottom - inner_top - 2) as f32,
+                ),
+                bevel.highlight,
+            );
+            frame.rect(
+                UiRect::new(
+                    (right - 1) as f32,
+                    (inner_top + 1) as f32,
+                    1.0,
+                    (inner_bottom - inner_top - 2) as f32,
+                ),
+                bevel.highlight,
+            );
+            frame.rect(
+                UiRect::new(
+                    left as f32,
+                    (inner_bottom - 1) as f32,
+                    (right - left) as f32,
+                    1.0,
+                ),
+                bevel.shine,
+            );
+            frame.rect(
+                UiRect::new(
+                    (left + 1) as f32,
+                    (inner_top + 1) as f32,
+                    (right - left - 2) as f32,
+                    (inner_bottom - inner_top - 2) as f32,
+                ),
+                bevel.face,
+            );
+            if depth_lip > 0 {
+                frame.rect(
+                    UiRect::new(
+                        left as f32,
+                        inner_bottom as f32,
+                        (right - left) as f32,
+                        (y2 - 1 - inner_bottom) as f32,
+                    ),
+                    bevel.depth,
+                );
+            }
+        } else {
+            frame.rect(
+                UiRect::new(
+                    left as f32,
+                    inner_top as f32,
+                    (right - left) as f32,
+                    (y2 - 1 - inner_top) as f32,
+                ),
+                bevel.face,
+            );
+        }
+    }
+
+    /// `window`: the double shadow, the edge, the title bar and the pane.
+    pub fn window(
+        frame: &mut HudFrame,
+        x1: i32,
+        y1: i32,
+        x2: i32,
+        y2: i32,
+        title_h: i32,
+        pane: u32,
+    ) {
+        frame.rect(
+            UiRect::new(
+                (x1 + 4) as f32,
+                (y1 + 4) as f32,
+                (x2 - x1) as f32,
+                (y2 - y1) as f32,
+            ),
+            SHADOW,
+        );
+        frame.rect(
+            UiRect::new(
+                (x1 + 2) as f32,
+                (y1 + 2) as f32,
+                (x2 - x1) as f32,
+                (y2 - y1) as f32,
+            ),
+            SHADOW,
+        );
+        outline(frame, x1, y1, x2, y2, WINDOW_EDGE);
+        frame.rect(
+            UiRect::new(
+                (x1 + 1) as f32,
+                (y1 + 1) as f32,
+                (x2 - x1 - 2) as f32,
+                (title_h - 2) as f32,
+            ),
+            TITLEBAR,
+        );
+        frame.rect(
+            UiRect::new(
+                (x1 + 1) as f32,
+                (y1 + title_h - 2) as f32,
+                (x2 - x1 - 2) as f32,
+                2.0,
+            ),
+            TITLEBAR_EDGE,
+        );
+        frame.rect(
+            UiRect::new(
+                (x1 + 1) as f32,
+                (y1 + title_h) as f32,
+                (x2 - x1 - 2) as f32,
+                (y2 - 1 - y1 - title_h) as f32,
+            ),
+            pane,
+        );
+    }
+
+    /// `button`: a bevelled button with its ink centred, the Java colours for
+    /// the primary (gold) and secondary (light) faces, hover and disabled.
+    /// The eight arguments mirror the Java signature.
+    #[allow(clippy::too_many_arguments)]
+    pub fn button(
+        frame: &mut HudFrame,
+        x: i32,
+        y: i32,
+        w: i32,
+        h: i32,
+        label: &str,
+        primary: bool,
+        hovered: bool,
+        enabled: bool,
+    ) {
+        let style = if primary { GOLD } else { LIGHT };
+        let face = if !enabled {
+            if primary {
+                PRIMARY_DISABLED_FACE
+            } else {
+                SECONDARY_PRESSED
+            }
+        } else if hovered {
+            if primary { GOLD_300 } else { SECONDARY_HOVER }
+        } else {
+            style.face
+        };
+        bevel(frame, x, y, x + w, y + h, style.with_face(face), LIP, false);
+        let ink = if !enabled {
+            if primary {
+                PRIMARY_DISABLED_INK
+            } else {
+                TEXT_DIS
+            }
+        } else if primary {
+            GOLD_INK
+        } else {
+            WINDOW_EDGE
+        };
+        let width = label.chars().count() as f32 * super::GLYPH_WIDTH;
+        let text_x = x as f32 + (w as f32 - width) * 0.5;
+        let top = y + 1;
+        let bottom = y + h - 1 - 2;
+        let text_y = top as f32 + ((bottom - top - 8) as f32) * 0.5;
+        draw_ink(frame, label, text_x as i32, text_y as i32, ink);
+    }
+
+    /// `toggle`: the 30x14 switch with its 16x16 knob.
+    pub fn toggle(frame: &mut HudFrame, x: i32, y: i32, on: bool, hovered: bool) {
+        let top = y + 16 - TOGGLE_H;
+        let height = TOGGLE_H;
+        let track_start = x;
+        let track_end = x + TOGGLE_W;
+        let knob_x = if on { track_end - KNOB_W } else { track_start };
+        let knob_end = knob_x + KNOB_W;
+        frame.rect(
+            UiRect::new(
+                track_start as f32,
+                top as f32,
+                (knob_x - track_start) as f32,
+                1.0,
+            ),
+            WINDOW_EDGE,
+        );
+        frame.rect(
+            UiRect::new(
+                knob_end as f32,
+                top as f32,
+                (track_end - knob_end) as f32,
+                1.0,
+            ),
+            WINDOW_EDGE,
+        );
+        frame.rect(
+            UiRect::new(
+                track_start as f32,
+                (top + height - 1) as f32,
+                (knob_x - track_start) as f32,
+                1.0,
+            ),
+            WINDOW_EDGE,
+        );
+        frame.rect(
+            UiRect::new(
+                knob_end as f32,
+                (top + height - 1) as f32,
+                (track_end - knob_end) as f32,
+                1.0,
+            ),
+            WINDOW_EDGE,
+        );
+        if knob_x > track_start {
+            frame.rect(
+                UiRect::new(
+                    track_start as f32,
+                    (top + 1) as f32,
+                    1.0,
+                    (height - 2) as f32,
+                ),
+                WINDOW_EDGE,
+            );
+        }
+        if knob_end < track_end {
+            frame.rect(
+                UiRect::new(
+                    (track_end - 1) as f32,
+                    (top + 1) as f32,
+                    1.0,
+                    (height - 2) as f32,
+                ),
+                WINDOW_EDGE,
+            );
+        }
+        if on {
+            frame.rect(
+                UiRect::new(
+                    (track_start + 1) as f32,
+                    (top + 1) as f32,
+                    (knob_x - track_start - 1) as f32,
+                    1.0,
+                ),
+                GOLD_300,
+            );
+            frame.rect(
+                UiRect::new(
+                    (track_start + 1) as f32,
+                    (top + 2) as f32,
+                    (knob_x - track_start - 1) as f32,
+                    (height - 3) as f32,
+                ),
+                GOLD_500,
+            );
+            frame.rect(
+                UiRect::new((track_start + 7) as f32, (top + 4) as f32, 1.0, 6.0),
+                GOLD_50,
+            );
+        } else {
+            frame.rect(
+                UiRect::new(
+                    knob_end as f32,
+                    (top + 1) as f32,
+                    (track_end - 1 - knob_end) as f32,
+                    (height - 2) as f32,
+                ),
+                OFF_FILL,
+            );
+            let mark = track_start + 20;
+            frame.rect(
+                UiRect::new((mark + 1) as f32, (top + 4) as f32, 3.0, 1.0),
+                TEXT_2,
+            );
+            frame.rect(
+                UiRect::new((mark + 1) as f32, (top + 9) as f32, 3.0, 1.0),
+                TEXT_2,
+            );
+            frame.rect(UiRect::new(mark as f32, (top + 5) as f32, 1.0, 4.0), TEXT_2);
+            frame.rect(
+                UiRect::new((mark + 4) as f32, (top + 5) as f32, 1.0, 4.0),
+                TEXT_2,
+            );
+        }
+        bevel(
+            frame,
+            knob_x,
+            y,
+            knob_end,
+            y + 16,
+            KNOB_BEVEL.with_face(if hovered { KNOB_HI } else { KNOB }),
+            LIP,
+            false,
+        );
+    }
+
+    /// `slider`: the 6-pixel track with its filled span, the zero notch and
+    /// the 10x12 knob; `zero` is the notch's place or negative for none,
+    /// `default` the knob the reset would return to. The nine arguments
+    /// mirror the Java signature.
+    #[allow(clippy::too_many_arguments)]
+    pub fn slider(
+        frame: &mut HudFrame,
+        x1: i32,
+        x2: i32,
+        y: i32,
+        value: f32,
+        zero: f32,
+        default: f32,
+        hovered: bool,
+        dragging: bool,
+    ) {
+        outline(frame, x1, y, x2, y + TRACK_H, WINDOW_EDGE);
+        let span = (x2 - x1 - 10).max(1) as f32;
+        let value_x = x1 as f32 + 5.0 + value * span;
+        let zero_x = if zero < 0.0 {
+            (x1 + 1) as f32
+        } else {
+            x1 as f32 + 5.0 + zero * span
+        };
+        let left = x1 + 1;
+        let right = x2 - 1;
+        let start = left.max(right.min(value_x.min(zero_x).round() as i32));
+        let end = left.max(right.min(value_x.max(zero_x).round() as i32));
+        track_part(frame, left, start, y);
+        track_part(frame, start, end, y);
+        track_part(frame, end, right, y);
+        let notch = (x1 as f32 + 5.0 + default * span).round() as i32;
+        frame.rect(
+            UiRect::new(notch as f32, (y - 4) as f32, 1.0, 3.0),
+            GOLD_600,
+        );
+        let knob = (value_x - 5.0).round() as i32;
+        let knob_top = y + 3 - THUMB_H;
+        if dragging {
+            outline(
+                frame,
+                knob - 1,
+                knob_top + 1,
+                knob + THUMB_W + 1,
+                knob_top + THUMB_H + 1,
+                GOLD_200,
+            );
+        }
+        bevel(
+            frame,
+            knob,
+            knob_top,
+            knob + THUMB_W,
+            knob_top + THUMB_H,
+            KNOB_BEVEL.with_face(if !hovered && !dragging { KNOB } else { KNOB_HI }),
+            LIP,
+            dragging,
+        );
+    }
+
+    fn track_part(frame: &mut HudFrame, x1: i32, x2: i32, y: i32) {
+        if x2 > x1 {
+            frame.rect(
+                UiRect::new(x1 as f32, (y + 1) as f32, (x2 - x1) as f32, 1.0),
+                TRACK_LIGHT,
+            );
+            frame.rect(
+                UiRect::new(
+                    x1 as f32,
+                    (y + 2) as f32,
+                    (x2 - x1) as f32,
+                    (TRACK_H - 3) as f32,
+                ),
+                TRACK,
+            );
+        }
+    }
+
+    /// `scrollbar`: the well and the thumb. The eight arguments mirror the
+    /// Java signature.
+    #[allow(clippy::too_many_arguments)]
+    pub fn scrollbar(
+        frame: &mut HudFrame,
+        x: i32,
+        top: i32,
+        bottom: i32,
+        width: i32,
+        thumb_top: i32,
+        thumb_bottom: i32,
+        dragging: bool,
+    ) {
+        frame.rect(
+            UiRect::new(x as f32, top as f32, width as f32, (bottom - top) as f32),
+            WELL,
+        );
+        frame.rect(
+            UiRect::new(
+                (x + 1) as f32,
+                thumb_top as f32,
+                (width - 2) as f32,
+                (thumb_bottom - thumb_top) as f32,
+            ),
+            if dragging {
+                SCROLL_THUMB_HOVER
+            } else {
+                SCROLL_THUMB
+            },
+        );
+    }
+
+    /// `tab`: a left-hand navigation tab, the shown one picked out in gold.
+    /// The eight arguments mirror the Java signature.
+    #[allow(clippy::too_many_arguments)]
+    pub fn tab(
+        frame: &mut HudFrame,
+        x: i32,
+        y: i32,
+        w: i32,
+        h: i32,
+        label: &str,
+        selected: bool,
+        hovered: bool,
+    ) {
+        if selected {
+            frame.rect(UiRect::new(x as f32, y as f32, w as f32, 1.0), GROOVE_LIGHT);
+            frame.rect(
+                UiRect::new(x as f32, (y + 1) as f32, w as f32, (h - 2) as f32),
+                PANE,
+            );
+            frame.rect(
+                UiRect::new(x as f32, (y + h - 1) as f32, w as f32, 1.0),
+                SEP,
+            );
+            frame.rect(
+                UiRect::new(x as f32, y as f32, TAB_BAR as f32, h as f32),
+                GOLD_400,
+            );
+        } else if hovered {
+            frame.rect(
+                UiRect::new(x as f32, y as f32, w as f32, h as f32),
+                ROW_HOVER,
+            );
+        }
+        let text_x = x + 3 + 7;
+        let text_y = y + (h - 8) / 2;
+        frame.text(
+            label,
+            text_x as f32,
+            text_y as f32,
+            if !selected && !hovered {
+                TEXT_2
+            } else {
+                TEXT_1
+            },
+        );
+    }
+
+    /// `keycap`: a little bevelled key with its label centred.
+    pub fn keycap(frame: &mut HudFrame, x: i32, y: i32, w: i32, h: i32, label: &str) {
+        bevel(
+            frame,
+            x,
+            y,
+            x + w,
+            y + h,
+            LIGHT,
+            if h >= 14 { 1 } else { 0 },
+            false,
+        );
+        let width = label.chars().count() as f32 * super::GLYPH_WIDTH;
+        let bottom = y + h - 1 - if h >= 14 { 1 } else { 0 };
+        let text_y = (y + 1) as f32 + ((bottom - y - 1 - 8) as f32) * 0.5;
+        draw_ink(
+            frame,
+            label,
+            (x as f32 + (w as f32 - width) * 0.5) as i32,
+            text_y as i32,
+            WINDOW_EDGE,
+        );
+    }
+
+    /// `raised`: the emote wheel's tiles, two shadow layers then a bevel.
+    pub fn raised(frame: &mut HudFrame, x1: i32, y1: i32, x2: i32, y2: i32, hovered: bool) {
+        frame.rect(
+            UiRect::new(
+                (x1 + 4) as f32,
+                (y1 + 4) as f32,
+                (x2 - x1) as f32,
+                (y2 - y1) as f32,
+            ),
+            SHADOW,
+        );
+        frame.rect(
+            UiRect::new(
+                (x1 + 2) as f32,
+                (y1 + 2) as f32,
+                (x2 - x1) as f32,
+                (y2 - y1) as f32,
+            ),
+            SHADOW,
+        );
+        bevel(
+            frame,
+            x1,
+            y1,
+            x2,
+            y2,
+            if hovered { GOLD } else { LIGHT },
+            LIP,
+            false,
+        );
+    }
+}
+
 /// The colours every screen draws with.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct UiTheme {
@@ -279,15 +970,15 @@ pub struct UiTheme {
 impl Default for UiTheme {
     fn default() -> Self {
         Self {
-            dim: rgba(0, 0, 0, 150),
-            panel: rgba(14, 14, 22, 240),
-            border: rgba(96, 98, 128, 255),
-            title: rgba(255, 236, 170, 255),
-            text: rgba(236, 236, 244, 255),
-            value: rgba(150, 205, 255, 255),
-            muted: rgba(150, 152, 172, 255),
-            selected: rgba(70, 110, 170, 255),
-            accent: rgba(255, 210, 90, 255),
+            dim: gold::BACKDROP,
+            panel: gold::PANE,
+            border: gold::WINDOW_EDGE,
+            title: gold::TEXT_1,
+            text: gold::TEXT_1,
+            value: gold::TEXT_2,
+            muted: gold::TEXT_3,
+            selected: gold::ROW_HOVER,
+            accent: gold::GOLD_400,
         }
     }
 }
@@ -382,17 +1073,18 @@ pub fn emotes() -> Vec<Emote> {
     ]
 }
 
-/// The most emotes one wheel holds.
+/// The most emotes one wheel's keybind slots carry.
 pub const MAX_EMOTES: usize = 8;
-/// How far from the middle the wheel's emote boxes sit, in GUI pixels.
-pub const WHEEL_RADIUS: f32 = 74.0;
-/// One emote box's size, in GUI pixels.
-pub const WHEEL_SLOT: f32 = 46.0;
+/// How many tiles one wheel page shows, the Java wheel's four directions.
+pub const WHEEL_PER_PAGE: usize = 4;
 
-/// The radial emote wheel: which emote is picked, and whether it is open.
+/// The radial emote wheel: which emote is picked, which page is showing, and
+/// whether it is up. One page holds four tiles, one per direction round the
+/// middle, the Java `EmoteWheelScreen`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EmoteWheelState {
     open: bool,
+    page: usize,
     selected: usize,
     emotes: Vec<Emote>,
 }
@@ -414,6 +1106,7 @@ impl EmoteWheelState {
         emotes.truncate(MAX_EMOTES);
         Self {
             open: false,
+            page: 0,
             selected: 0,
             emotes,
         }
@@ -424,7 +1117,7 @@ impl EmoteWheelState {
         self.open
     }
 
-    /// Puts the wheel up, keeping the selection.
+    /// Puts the wheel up, keeping the selection and its page.
     pub fn open(&mut self) {
         self.open = true;
     }
@@ -448,6 +1141,23 @@ impl EmoteWheelState {
         &self.emotes
     }
 
+    /// How many pages the wheel has, at least one, the Java
+    /// `max(1, (entries + 3) / 4)`.
+    pub fn pages(&self) -> usize {
+        self.emotes.len().div_ceil(WHEEL_PER_PAGE).max(1)
+    }
+
+    /// The page being shown.
+    pub fn page(&self) -> usize {
+        self.page
+    }
+
+    /// Shows `page`, clamped to the wheel's pages.
+    pub fn set_page(&mut self, page: usize) -> usize {
+        self.page = page.min(self.pages() - 1);
+        self.page
+    }
+
     /// The selected emote's index.
     pub fn selected(&self) -> usize {
         self.selected
@@ -458,12 +1168,14 @@ impl EmoteWheelState {
         self.emotes.get(self.selected).copied()
     }
 
-    /// Selects an emote by index (wrapping; nothing when the wheel is empty).
+    /// Selects an emote by index (wrapping; nothing when the wheel is empty)
+    /// and turns to its page.
     pub fn select(&mut self, index: usize) -> usize {
         if self.emotes.is_empty() {
             self.selected = 0;
         } else {
             self.selected = index % self.emotes.len();
+            self.page = self.selected / WHEEL_PER_PAGE;
         }
         self.selected
     }
@@ -478,77 +1190,209 @@ impl EmoteWheelState {
         self.select(at as usize)
     }
 
-    /// Selects the wedge a pointer offset `(dx, dy)` from the middle points
-    /// at: the wheel's first emote is at the top, going clockwise.
+    /// Turns one page back or forward, wrapping, the Java paging buttons.
+    pub fn turn_page(&mut self, delta: i32) -> usize {
+        let pages = self.pages() as i32;
+        self.page = (self.page as i32 + delta).rem_euclid(pages) as usize;
+        self.page
+    }
+
+    /// Selects the tile a pointer at `(x, y)` on the screen lands on, the
+    /// Java tiles' hit boxes; `None` keeps the selection.
+    pub fn pointing_at(&mut self, layout: &UiLayout, x: f32, y: f32) -> Option<usize> {
+        for tile in 0..WHEEL_PER_PAGE {
+            let index = self.page * WHEEL_PER_PAGE + tile;
+            if index >= self.emotes.len() {
+                break;
+            }
+            if self.tile_rect(layout, tile).contains(x, y) {
+                self.selected = index;
+                return Some(index);
+            }
+        }
+        None
+    }
+
+    /// Selects the tile a pointer offset `(dx, dy)` from the middle points
+    /// at: up, right, down, left, the Java tiles' order.
     pub fn pointing(&mut self, dx: f32, dy: f32) -> usize {
         if !dx.is_finite() || !dy.is_finite() || (dx == 0.0 && dy == 0.0) {
-            // No direction at all: the selection stays where it was.
             return self.selected;
         }
-        let wedges = self.emotes.len().max(1) as f32;
-        // Degrees clockwise from straight up, which is where wedge 0 sits in
-        // the middle of its span.
-        let degrees = dx.atan2(-dy).to_degrees();
-        let angle = (degrees.rem_euclid(360.0) + 180.0 / wedges) % 360.0;
-        let index = (angle / (360.0 / wedges)).floor() as usize;
-        self.select(index)
+        let tile = if dy <= -dx.abs() && dy < 0.0 {
+            0
+        } else if dx >= dy.abs() && dx > 0.0 {
+            1
+        } else if dy >= dx.abs() && dy > 0.0 {
+            2
+        } else if dx <= -dy.abs() && dx < 0.0 {
+            3
+        } else {
+            return self.selected;
+        };
+        let index = self.page * WHEEL_PER_PAGE + tile;
+        if index < self.emotes.len() {
+            self.selected = index;
+        }
+        self.selected
     }
 
-    /// The box the `index`th emote is drawn in, centred `WHEEL_RADIUS` from
-    /// the middle of the screen at its wedge's middle angle.
+    /// The tile rect of the `tile`th tile of the page `index`'s emote sits
+    /// on, the Java tile geometry: the four directions round the middle,
+    /// sized from the screen.
     pub fn slot_rect(&self, layout: &UiLayout, index: usize) -> UiRect {
-        let count = self.emotes.len().max(1) as f32;
-        let middle = -90.0 + index as f32 * (360.0 / count);
-        let (dx, dy) = (
-            middle.to_radians().cos() * WHEEL_RADIUS,
-            middle.to_radians().sin() * WHEEL_RADIUS,
-        );
-        let [cx, cy] = layout.center();
-        UiRect::new(
-            cx + dx - WHEEL_SLOT * 0.5,
-            cy + dy - WHEEL_SLOT * 0.5,
-            WHEEL_SLOT,
-            WHEEL_SLOT,
-        )
+        self.tile_rect(layout, index % WHEEL_PER_PAGE)
     }
 
-    /// Draws the open wheel: a dim wash, a ring of emote boxes and the
-    /// selected emote's name in the middle.
+    /// The rect of tile `tile` (0 up, 1 right, 2 down, 3 left) of the page
+    /// being shown, the Java `init`'s bounds.
+    pub fn tile_rect(&self, layout: &UiLayout, tile: usize) -> UiRect {
+        let [cx, cy] = layout.center();
+        let j = cx;
+        let k = cy + 3.0;
+        let l = WHEEL_TILE_W.min((layout.width - 36.0) / 3.0);
+        let i1 = ((layout.height - 100.0) / 3.0).clamp(34.0, WHEEL_TILE_H);
+        let j1 = l + 8.0;
+        let k1 = i1 + 12.0;
+        let (x, y) = match tile {
+            0 => (j, k - k1),
+            1 => (j + j1, k),
+            2 => (j, k + k1),
+            _ => (j - j1, k),
+        };
+        UiRect::new(x - l * 0.5, y - i1 * 0.5, l, i1)
+    }
+
+    /// Draws the open wheel: the wash, the page's tiles with their labels
+    /// and keycap chips, the close tile in the middle, the paging buttons
+    /// and the page counter.
     pub fn draw(&self, layout: &UiLayout, theme: &UiTheme, frame: &mut HudFrame) {
         if !self.open {
             return;
         }
+        let _ = theme;
         frame.rect(
             UiRect::new(0.0, 0.0, layout.width, layout.height),
-            theme.dim,
+            crate::ui::gold::WHEEL_WASH,
         );
         let [cx, cy] = layout.center();
-        for (index, emote) in self.emotes.iter().enumerate() {
-            let slot = self.slot_rect(layout, index);
-            let color = if index == self.selected {
-                theme.selected
-            } else {
-                theme.panel
+        let j = cx;
+        let k = cy + 3.0;
+        for tile in 0..WHEEL_PER_PAGE {
+            let index = self.page * WHEEL_PER_PAGE + tile;
+            let Some(emote) = self.emotes.get(index) else {
+                break;
             };
-            frame.rect(slot, color);
+            let slot = self.tile_rect(layout, tile);
+            let hovered = index == self.selected;
+            crate::ui::gold::raised(
+                frame,
+                slot.x as i32,
+                slot.y as i32,
+                slot.right() as i32,
+                slot.bottom() as i32,
+                hovered,
+            );
+            let ink = if hovered {
+                crate::ui::gold::GOLD_INK
+            } else {
+                crate::ui::gold::WINDOW_EDGE
+            };
             let width = emote.label.chars().count() as f32 * GLYPH_WIDTH;
             frame.text(
                 emote.label,
                 slot.center()[0] - width * 0.5,
-                slot.center()[1] - 4.0,
-                if index == self.selected {
-                    theme.accent
+                slot.y + 7.0,
+                ink,
+            );
+            // The keycap chip under the label, the Java keybind chip.
+            let chip_w = 26.0;
+            let chip_x = slot.center()[0] - chip_w * 0.5;
+            let chip_y = slot.bottom() - 21.0;
+            crate::ui::gold::outline(
+                frame,
+                chip_x as i32,
+                chip_y as i32,
+                (chip_x + chip_w) as i32,
+                (chip_y + 13.0) as i32,
+                crate::ui::gold::WINDOW_EDGE,
+            );
+            frame.rect(
+                UiRect::new(chip_x + 1.0, chip_y + 1.0, chip_w - 2.0, 11.0),
+                if hovered {
+                    crate::ui::gold::GOLD_700
                 } else {
-                    theme.text
+                    crate::ui::gold::WELL
                 },
             );
+            frame.text("key", chip_x + 4.0, chip_y + 3.0, crate::ui::gold::TEXT_1);
         }
-        // The middle: what a release would play.
-        let name = self.emote().map_or("", |emote| emote.label);
-        let width = name.chars().count() as f32 * GLYPH_WIDTH;
-        frame.text(name.to_uppercase(), cx - width * 0.5, cy - 4.0, theme.title);
+        // The close tile in the middle.
+        crate::ui::gold::raised(
+            frame,
+            (j - 11.0) as i32,
+            (k - 11.0) as i32,
+            (j + 11.0) as i32,
+            (k + 11.0) as i32,
+            false,
+        );
+        frame.text(
+            "X",
+            j - GLYPH_WIDTH * 0.5,
+            k - 5.0,
+            crate::ui::gold::WINDOW_EDGE,
+        );
+        // The paging buttons and the counter, when there is more than one
+        // page.
+        if self.pages() > 1 {
+            crate::ui::gold::button(
+                frame,
+                (j - 76.0) as i32,
+                (layout.height - 32.0) as i32,
+                28,
+                22,
+                "punchy_moves.ui.previous",
+                false,
+                false,
+                true,
+            );
+            crate::ui::gold::button(
+                frame,
+                (j + 48.0) as i32,
+                (layout.height - 32.0) as i32,
+                28,
+                22,
+                "punchy_moves.ui.next_page",
+                false,
+                false,
+                true,
+            );
+            let counter = format!("{} / {}", self.page + 1, self.pages());
+            let width = counter.chars().count() as f32 * GLYPH_WIDTH;
+            frame.text(
+                counter,
+                layout.width * 0.5 - width * 0.5,
+                layout.height - 25.0,
+                crate::ui::gold::TEXT_1,
+            );
+        }
+        if self.emotes.is_empty() {
+            let text = "punchy_moves.ui.no_emotes";
+            let width = text.chars().count() as f32 * GLYPH_WIDTH;
+            frame.text(
+                text,
+                layout.width * 0.5 - width * 0.5,
+                layout.height * 0.5 + 28.0,
+                crate::ui::gold::TEXT_1,
+            );
+        }
     }
 }
+
+/// One wheel tile's widest, the Java `min(138, (width - 36) / 3)`.
+pub const WHEEL_TILE_W: f32 = 138.0;
+/// One wheel tile's tallest, the Java `min(52, max(34, (height - 100) / 3))`.
+pub const WHEEL_TILE_H: f32 = 52.0;
 
 /// The keys each emote is bound to: one slot per emote on the wheel.
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -653,7 +1497,7 @@ pub fn play_emote(entity: Option<u64>, emote: Emote) -> bool {
             return false;
         };
         state.face.play_cue(emote.cue());
-        state.items.play(emote.action);
+        state.items.play_emote(emote.action);
         true
     })
 }
@@ -678,68 +1522,186 @@ pub enum UiRequest {
 }
 
 // ---------------------------------------------------------------------------
-// The shoulder camera's page
+// The shoulder camera's screen
 // ---------------------------------------------------------------------------
 
-/// One tab of the shoulder camera's page.
+/// One page of the shoulder camera's screen, the Java `Page` enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum CameraTab {
-    /// On or off, the field of view and how far back.
+pub enum CameraPage {
+    /// The position sliders and the on/off row.
     #[default]
     Camera,
-    /// Where the camera sits beside and above the eye, and how it turns.
-    Position,
-    /// Which situations let the camera engage.
-    Features,
-    /// The keys, with a way to change them.
+    /// The feature toggles.
+    Misc,
+    /// The shortcuts and their keys.
     Shortcuts,
-    /// The tutorial again.
-    ReplayTutorial,
 }
 
-impl CameraTab {
-    /// The tabs, left to right.
-    pub const ALL: [CameraTab; 5] = [
-        CameraTab::Camera,
-        CameraTab::Position,
-        CameraTab::Features,
-        CameraTab::Shortcuts,
-        CameraTab::ReplayTutorial,
-    ];
+impl CameraPage {
+    /// The pages, in navigation order.
+    pub const ALL: [CameraPage; 3] = [CameraPage::Camera, CameraPage::Misc, CameraPage::Shortcuts];
 
-    /// The tab's name on its header.
+    /// The page's label key, the Java `Page.text()`'s translation key.
     pub fn label(self) -> &'static str {
         match self {
-            CameraTab::Camera => "Camera",
-            CameraTab::Position => "Position",
-            CameraTab::Features => "Features",
-            CameraTab::Shortcuts => "Shortcuts",
-            CameraTab::ReplayTutorial => "Replay Tutorial",
+            CameraPage::Camera => "punchy_moves.ui.camera",
+            CameraPage::Misc => "punchy_moves.ui.misc",
+            CameraPage::Shortcuts => "punchy_moves.ui.shortcuts",
         }
     }
 
-    /// This tab's place in [`CameraTab::ALL`].
+    /// This page's place in [`CameraPage::ALL`].
     pub fn index(self) -> usize {
-        CameraTab::ALL
+        CameraPage::ALL
             .iter()
-            .position(|tab| *tab == self)
+            .position(|page| *page == self)
             .unwrap_or(0)
     }
 
-    /// The tab to the right (wrapping).
-    pub fn next(self) -> CameraTab {
-        CameraTab::ALL[(self.index() + 1) % CameraTab::ALL.len()]
+    /// The page below (wrapping).
+    pub fn next(self) -> CameraPage {
+        CameraPage::ALL[(self.index() + 1) % CameraPage::ALL.len()]
     }
 
-    /// The tab to the left (wrapping).
-    pub fn previous(self) -> CameraTab {
-        CameraTab::ALL[(self.index() + CameraTab::ALL.len() - 1) % CameraTab::ALL.len()]
+    /// The page above (wrapping).
+    pub fn previous(self) -> CameraPage {
+        CameraPage::ALL[(self.index() + CameraPage::ALL.len() - 1) % CameraPage::ALL.len()]
     }
 }
 
-/// One settable row of the camera page: its label, its value as shown, and the
-/// button of [`ShoulderCameraSettings::click`] it stands for (`None` for a
-/// row that asks to rebind a key or replay the tutorial).
+/// One slider of the camera page: its label key, its range, the value the
+/// reset returns to, and the setting it writes, the Java `addSlider` rows.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CameraSliderRow {
+    pub label: &'static str,
+    pub min: f32,
+    pub max: f32,
+    pub default: f32,
+    pub setting: usize,
+}
+
+/// The camera page's sliders, in screen order.
+pub const CAMERA_SLIDERS: [CameraSliderRow; 6] = [
+    CameraSliderRow {
+        label: "punchy_moves.ui.horizontal",
+        min: -2.0,
+        max: 2.0,
+        default: 1.17,
+        setting: crate::camera::HORIZONTAL_INDEX,
+    },
+    CameraSliderRow {
+        label: "punchy_moves.ui.vertical",
+        min: -1.5,
+        max: 2.0,
+        default: -0.11,
+        setting: crate::camera::VERTICAL_INDEX,
+    },
+    CameraSliderRow {
+        label: "punchy_moves.ui.depth",
+        min: 1.0,
+        max: 8.0,
+        default: 2.5,
+        setting: crate::camera::DEPTH_INDEX,
+    },
+    CameraSliderRow {
+        label: "punchy_moves.ui.fov",
+        min: 30.0,
+        max: 110.0,
+        default: 70.0,
+        setting: crate::camera::FOV_INDEX,
+    },
+    CameraSliderRow {
+        label: "punchy_moves.ui.rotation_yaw",
+        min: -30.0,
+        max: 30.0,
+        default: 0.0,
+        setting: crate::camera::YAW_INDEX,
+    },
+    CameraSliderRow {
+        label: "punchy_moves.ui.rotation_pitch",
+        min: -30.0,
+        max: 30.0,
+        default: 0.0,
+        setting: crate::camera::PITCH_INDEX,
+    },
+];
+
+/// One feature toggle of the misc page: its `punchy_moves.<key>.title` key
+/// and the setting it flips, the Java `addFeature` rows. The two compat rows
+/// (`better_combat`, `spatial_gui`) have no Horizon counterpart, so they
+/// carry no setting and a click on them does nothing.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FeatureRow {
+    pub key: &'static str,
+    pub setting: Option<usize>,
+}
+
+/// The misc page's features, in screen order.
+pub const FEATURES: [FeatureRow; 10] = [
+    FeatureRow {
+        key: "misc.fence",
+        setting: Some(crate::camera::FENCE_INDEX),
+    },
+    FeatureRow {
+        key: "misc.ladder_camera",
+        setting: Some(crate::camera::LADDER_INDEX),
+    },
+    FeatureRow {
+        key: "misc.proximity",
+        setting: Some(crate::camera::PROXIMITY_INDEX),
+    },
+    FeatureRow {
+        key: "misc.elytra",
+        setting: Some(crate::camera::ELYTRA_INDEX),
+    },
+    FeatureRow {
+        key: "misc.map_camera",
+        setting: Some(crate::camera::MAP_INDEX),
+    },
+    FeatureRow {
+        key: "misc.bow_and_crossbow_camera_fix",
+        setting: Some(crate::camera::BOW_AND_CROSSBOW_INDEX),
+    },
+    FeatureRow {
+        key: "misc.spear_and_trident_camera_fix",
+        setting: Some(crate::camera::SPEAR_AND_TRIDENT_INDEX),
+    },
+    FeatureRow {
+        key: "misc.ladder_lock",
+        setting: Some(crate::camera::LADDER_BODY_LOCK_INDEX),
+    },
+    FeatureRow {
+        key: "misc.better_combat",
+        setting: None,
+    },
+    FeatureRow {
+        key: "misc.spatial_gui",
+        setting: None,
+    },
+];
+
+/// How many features show at once, the Java `MAX_VISIBLE_FEATURES`.
+pub const MAX_VISIBLE_FEATURES: usize = 4;
+/// How many camera sliders show at once, the Java
+/// `MAX_VISIBLE_CAMERA_SLIDERS`.
+pub const MAX_VISIBLE_CAMERA_SLIDERS: usize = 4;
+/// How many shortcuts show at once, the Java `MAX_VISIBLE_SHORTCUTS`.
+pub const MAX_VISIBLE_SHORTCUTS: usize = 10;
+/// One feature row's height, the Java `FEATURE_HEIGHT`.
+pub const FEATURE_HEIGHT: f32 = 42.0;
+/// The gap between feature rows, the Java `FEATURE_GAP`.
+pub const FEATURE_GAP: f32 = 4.0;
+/// One camera slider's height, the Java `CAMERA_SLIDER_HEIGHT`.
+pub const CAMERA_SLIDER_HEIGHT: f32 = 34.0;
+/// The gap between camera sliders, the Java `CAMERA_SLIDER_GAP`.
+pub const CAMERA_SLIDER_GAP: f32 = 2.0;
+/// The scrollbar's gutter, the Java `SCROLLBAR_GUTTER`.
+pub const SCROLLBAR_GUTTER: f32 = 14.0;
+/// The window's title bar, the Java `TITLE_H`.
+pub const CAMERA_TITLE_H: i32 = 33;
+
+/// One settable row the screen shows: its label key, its value as shown, and
+/// what a click does.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Stepper {
     pub label: String,
@@ -747,20 +1709,26 @@ pub struct Stepper {
     pub setting: Option<usize>,
 }
 
-/// The shoulder camera's page: its tab, its focus and its open state.
+/// The shoulder camera's screen: its page, its focus and its scroll positions.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ShoulderCameraUiState {
     open: bool,
-    tab: CameraTab,
+    page: CameraPage,
     focus: usize,
+    slider_scroll: usize,
+    feature_scroll: usize,
+    shortcut_scroll: usize,
 }
 
 impl Default for ShoulderCameraUiState {
     fn default() -> Self {
         Self {
             open: false,
-            tab: CameraTab::Camera,
+            page: CameraPage::Camera,
             focus: 0,
+            slider_scroll: 0,
+            feature_scroll: 0,
+            shortcut_scroll: 0,
         }
     }
 }
@@ -787,28 +1755,28 @@ impl ShoulderCameraUiState {
         self.open
     }
 
-    /// The tab being shown.
-    pub fn tab(&self) -> CameraTab {
-        self.tab
+    /// The page being shown.
+    pub fn page(&self) -> CameraPage {
+        self.page
     }
 
-    /// Shows `tab`, putting its focus back on the first row.
-    pub fn select(&mut self, tab: CameraTab) -> CameraTab {
-        self.tab = tab;
+    /// Shows `page`, putting its focus back on the first row.
+    pub fn select(&mut self, page: CameraPage) -> CameraPage {
+        self.page = page;
         self.focus = 0;
-        self.tab
+        self.page
     }
 
-    /// Shows the next tab.
-    pub fn next_tab(&mut self) -> CameraTab {
-        let tab = self.tab.next();
-        self.select(tab)
+    /// Shows the next page.
+    pub fn next_tab(&mut self) -> CameraPage {
+        let page = self.page.next();
+        self.select(page)
     }
 
-    /// Shows the previous tab.
-    pub fn previous_tab(&mut self) -> CameraTab {
-        let tab = self.tab.previous();
-        self.select(tab)
+    /// Shows the previous page.
+    pub fn previous_tab(&mut self) -> CameraPage {
+        let page = self.page.previous();
+        self.select(page)
     }
 
     /// The focused row.
@@ -816,13 +1784,13 @@ impl ShoulderCameraUiState {
         self.focus
     }
 
-    /// Focuses a row (clamped to the tab's rows when they are known).
+    /// Focuses a row (clamped to the page's rows when they are known).
     pub fn focus_at(&mut self, index: usize, rows: usize) -> usize {
         self.focus = if rows == 0 { 0 } else { index.min(rows - 1) };
         self.focus
     }
 
-    /// Steps the focus down or up the tab's rows, wrapping.
+    /// Steps the focus down or up the page's rows, wrapping.
     pub fn nudge_focus(&mut self, delta: i32, rows: usize) -> usize {
         if rows == 0 {
             self.focus = 0;
@@ -833,125 +1801,157 @@ impl ShoulderCameraUiState {
         self.focus
     }
 
-    /// The rows of the tab being shown.
+    /// The camera page's scroll, and its furthest value.
+    pub fn slider_scroll(&self) -> usize {
+        self.slider_scroll
+    }
+
+    pub fn slider_scroll_max(&self) -> usize {
+        CAMERA_SLIDERS
+            .len()
+            .saturating_sub(MAX_VISIBLE_CAMERA_SLIDERS)
+    }
+
+    /// The misc page's scroll, and its furthest value.
+    pub fn feature_scroll(&self) -> usize {
+        self.feature_scroll
+    }
+
+    pub fn feature_scroll_max(&self) -> usize {
+        FEATURES.len().saturating_sub(MAX_VISIBLE_FEATURES)
+    }
+
+    /// The shortcuts page's scroll, and its furthest value.
+    pub fn shortcut_scroll(&self) -> usize {
+        self.shortcut_scroll
+    }
+
+    pub fn shortcut_scroll_max(&self) -> usize {
+        Self::shortcut_count().saturating_sub(MAX_VISIBLE_SHORTCUTS)
+    }
+
+    /// The shortcuts the screen lists: the four fixed keys, then one per
+    /// emote slot, the Java `EmoteKeybindManager.shortcuts`.
+    pub fn shortcut_count() -> usize {
+        4 + MAX_EMOTES
+    }
+
+    /// Scrolls a page by `delta` rows, clamped, the Java mouse wheel.
+    pub fn scroll(&mut self, delta: i32) {
+        match self.page {
+            CameraPage::Camera => {
+                let max = self.slider_scroll_max();
+                self.slider_scroll = clamp_scroll(self.slider_scroll, delta, max);
+            }
+            CameraPage::Misc => {
+                let max = self.feature_scroll_max();
+                self.feature_scroll = clamp_scroll(self.feature_scroll, delta, max);
+            }
+            CameraPage::Shortcuts => {
+                let max = self.shortcut_scroll_max();
+                self.shortcut_scroll = clamp_scroll(self.shortcut_scroll, delta, max);
+            }
+        }
+    }
+
+    /// The rows of the page being shown.
     pub fn steppers(&self, settings: &ShoulderCameraSettings) -> Vec<Stepper> {
-        let on = |b: bool| if b { "ON" } else { "OFF" };
+        let on = |b: bool| {
+            if b {
+                "punchy_moves.ui.on"
+            } else {
+                "punchy_moves.ui.off"
+            }
+        };
         let row = |label: &str, value: String, setting: Option<usize>| Stepper {
             label: label.to_string(),
             value,
             setting,
         };
-        match self.tab {
-            CameraTab::Camera => vec![
-                row(
-                    "Shoulder camera",
+        match self.page {
+            CameraPage::Camera => {
+                let mut rows = vec![row(
+                    "punchy_moves.ui.custom_camera",
                     on(settings.enabled).into(),
                     Some(crate::camera::ENABLED_INDEX),
-                ),
-                row(
-                    "Field of view",
-                    format!("{:.0} degrees", settings.fov),
-                    Some(crate::camera::FOV_INDEX),
-                ),
-                row(
-                    "Distance back",
-                    format!("{:.1} blocks", settings.depth),
-                    Some(crate::camera::DEPTH_INDEX),
-                ),
+                )];
+                for slider in CAMERA_SLIDERS {
+                    let value = match slider.setting {
+                        crate::camera::HORIZONTAL_INDEX => format!("{:.2}", settings.horizontal),
+                        crate::camera::VERTICAL_INDEX => format!("{:.2}", settings.vertical),
+                        crate::camera::DEPTH_INDEX => format!("{:.2}", settings.depth),
+                        crate::camera::FOV_INDEX => format!("{:.0}", settings.fov),
+                        crate::camera::YAW_INDEX => format!("{:.0}", settings.rotation_yaw),
+                        _ => format!("{:.0}", settings.rotation_pitch),
+                    };
+                    rows.push(row(slider.label, value, Some(slider.setting)));
+                }
+                rows
+            }
+            CameraPage::Misc => FEATURES
+                .iter()
+                .map(|feature| {
+                    let enabled = feature
+                        .setting
+                        .is_some_and(|index| settings.click_value(index));
+                    row(
+                        &format!("punchy_moves.{}.title", feature.key),
+                        on(enabled).into(),
+                        feature.setting,
+                    )
+                })
+                .collect(),
+            CameraPage::Shortcuts => vec![
+                row("punchy_moves.key.camera_toggle_v", "rebind".into(), None),
+                row("punchy_moves.key.camera_editor", "rebind".into(), None),
+                row("punchy_moves.key.free_camera", "rebind".into(), None),
+                row("punchy_moves.key.emote_menu", "rebind".into(), None),
             ],
-            CameraTab::Position => vec![
-                row(
-                    "Sideways",
-                    format!("{:.2} blocks", settings.horizontal),
-                    Some(crate::camera::HORIZONTAL_INDEX),
-                ),
-                row(
-                    "Height",
-                    format!("{:.2} blocks", settings.vertical),
-                    Some(crate::camera::VERTICAL_INDEX),
-                ),
-                row(
-                    "Turn right",
-                    format!("{:.0} degrees", settings.rotation_yaw),
-                    Some(crate::camera::YAW_INDEX),
-                ),
-                row(
-                    "Turn down",
-                    format!("{:.0} degrees", settings.rotation_pitch),
-                    Some(crate::camera::PITCH_INDEX),
-                ),
-            ],
-            CameraTab::Features => vec![
-                row(
-                    "On fences",
-                    on(settings.fence_camera).into(),
-                    Some(crate::camera::FENCE_INDEX),
-                ),
-                row(
-                    "On ladders",
-                    on(settings.ladder_camera).into(),
-                    Some(crate::camera::LADDER_INDEX),
-                ),
-                row(
-                    "Beside walls",
-                    on(settings.proximity_camera).into(),
-                    Some(crate::camera::PROXIMITY_INDEX),
-                ),
-                row(
-                    "While gliding",
-                    on(settings.elytra_camera).into(),
-                    Some(crate::camera::ELYTRA_INDEX),
-                ),
-                row(
-                    "With a map",
-                    on(settings.map_camera).into(),
-                    Some(crate::camera::MAP_INDEX),
-                ),
-                row(
-                    "Ranged aim fix",
-                    on(settings.ranged_camera_fix).into(),
-                    Some(crate::camera::RANGED_INDEX),
-                ),
-                row(
-                    "Orbit camera",
-                    on(settings.free_camera).into(),
-                    Some(crate::camera::FREE_INDEX),
-                ),
-            ],
-            CameraTab::Shortcuts => vec![
-                row("Shoulder camera key", "rebind".into(), None),
-                row("Orbit camera key", "rebind".into(), None),
-                row("Emote wheel key", "rebind".into(), None),
-            ],
-            CameraTab::ReplayTutorial => vec![row("Replay tutorial", "start".into(), None)],
         }
     }
 
-    /// A click on row `index` of the tab being shown: changes the setting or
+    /// The rows of the shortcuts page with the emote slots' keys read from
+    /// `keys`: the four fixed shortcuts, then one row per emote slot, the
+    /// Java `EmoteKeybindManager.shortcuts`.
+    pub fn shortcuts(&self, keys: &EmoteKeybindManager) -> Vec<Stepper> {
+        let mut rows = self.steppers(&ShoulderCameraSettings::default());
+        rows.truncate(4);
+        for index in 0..MAX_EMOTES {
+            let emote = emotes().get(index).copied();
+            let name = emote.map_or("punchy_moves.ui.emote", |e| e.label);
+            rows.push(Stepper {
+                label: format!("punchy_moves.ui.emote {}", name),
+                value: keys.slot(index).unwrap_or("unbound").to_string(),
+                setting: None,
+            });
+        }
+        rows
+    }
+
+    /// A click on row `index` of the page being shown: changes the setting or
     /// asks the game to do something only it can.
     pub fn click(&mut self, settings: &mut ShoulderCameraSettings, index: usize) -> UiRequest {
         let rows = self.steppers(settings);
         let Some(row) = rows.get(index) else {
             return UiRequest::None;
         };
+        self.focus = index;
         if let Some(setting) = row.setting {
             settings.click(setting);
-            self.focus = index;
-            return UiRequest::None;
         }
-        self.focus = index;
-        match self.tab {
-            CameraTab::Shortcuts => match index {
+        match self.page {
+            CameraPage::Shortcuts => match index {
                 0 => UiRequest::RebindKey(crate::camera::TOGGLE_CAMERA),
-                1 => UiRequest::RebindKey(crate::camera::TOGGLE_ORBIT),
-                _ => UiRequest::RebindKey("emotes"),
+                1 => UiRequest::RebindKey(crate::camera::TOGGLE_EDITOR),
+                2 => UiRequest::RebindKey(crate::camera::TOGGLE_ORBIT),
+                _ => UiRequest::RebindKey(EMOTE_WHEEL_KEY),
             },
-            CameraTab::ReplayTutorial => UiRequest::ReplayTutorial,
-            CameraTab::Camera | CameraTab::Position | CameraTab::Features => UiRequest::None,
+            _ => UiRequest::None,
         }
     }
 
-    /// Draws the page: a tab header strip, the rows, and a hint line.
+    /// Draws the page: the window with its rail and divider, the page header,
+    /// the rows, and the scrollbars.
     pub fn draw(
         &self,
         layout: &UiLayout,
@@ -964,51 +1964,288 @@ impl ShoulderCameraUiState {
         }
         let rows = self.steppers(settings);
         let panel = frame.panel(layout, PANEL_WIDTH, PANEL_HEIGHT, theme);
-        // The tabs, left to right, the shown one highlighted.
-        let tab_width = (panel.w - 16.0) / CameraTab::ALL.len() as f32;
-        for (index, tab) in CameraTab::ALL.iter().enumerate() {
-            let rect = UiRect::new(
-                panel.x + 8.0 + index as f32 * tab_width,
-                panel.y + 5.0,
-                tab_width - 2.0,
-                12.0,
-            );
-            frame.rect(
-                rect,
-                if *tab == self.tab {
-                    theme.selected
-                } else {
-                    theme.panel
-                },
-            );
-            let width = tab.label().chars().count() as f32 * GLYPH_WIDTH;
-            frame.text(
-                tab.label(),
-                rect.x + (rect.w - width) * 0.5,
-                rect.y + 2.0,
-                if *tab == self.tab {
-                    theme.accent
-                } else {
-                    theme.muted
-                },
-            );
-        }
-        for (index, row) in rows.iter().enumerate() {
-            frame.row(
-                panel,
-                index + 1,
-                &row.label,
-                &row.value,
-                index == self.focus,
-                theme,
-            );
-        }
-        frame.footer(
-            "Click a row to change it; Tab changes the page",
-            panel,
-            theme,
+        let title_h = 33.0;
+        crate::ui::gold::window(
+            frame,
+            panel.x as i32,
+            panel.y as i32,
+            panel.right() as i32,
+            panel.bottom() as i32,
+            CAMERA_TITLE_H,
+            crate::ui::gold::PANE,
         );
+        // The left rail and the divider groove.
+        let divider = panel.x + 46.0;
+        frame.rect(
+            UiRect::new(
+                panel.x + 1.0,
+                panel.y + title_h,
+                divider - panel.x - 1.0,
+                panel.h - title_h - 1.0,
+            ),
+            crate::ui::gold::RAIL,
+        );
+        crate::ui::gold::vgroove(
+            frame,
+            divider as i32,
+            panel.y as i32 + CAMERA_TITLE_H,
+            panel.bottom() as i32 - 1,
+        );
+        // The navigation tabs, down the rail.
+        let tab_h = 30.0f32;
+        for (index, page) in CameraPage::ALL.iter().enumerate() {
+            let y = panel.y + 61.0 + index as f32 * 34.0;
+            crate::ui::gold::tab(
+                frame,
+                (panel.x + 6.0) as i32,
+                y as i32,
+                (divider - panel.x - 12.0) as i32,
+                tab_h as i32,
+                page.label(),
+                *page == self.page,
+                index == self.focus && *page != self.page,
+            );
+        }
+        // The page header and the groove under it.
+        frame.text(
+            self.page.label(),
+            divider + 12.0,
+            panel.y + 46.0,
+            crate::ui::gold::TEXT_1,
+        );
+        crate::ui::gold::groove(
+            frame,
+            (divider + 12.0) as i32,
+            panel.right() as i32 - 12,
+            panel.y as i32 + 61,
+        );
+        // The rows of the page, from its scroll.
+        let content_x = divider + 12.0;
+        let content_w = panel.right() - content_x - 12.0;
+        let visible = match self.page {
+            CameraPage::Camera => MAX_VISIBLE_CAMERA_SLIDERS,
+            CameraPage::Misc => MAX_VISIBLE_FEATURES,
+            CameraPage::Shortcuts => MAX_VISIBLE_SHORTCUTS,
+        };
+        let scroll = match self.page {
+            CameraPage::Camera => self.slider_scroll,
+            CameraPage::Misc => self.feature_scroll,
+            CameraPage::Shortcuts => self.shortcut_scroll,
+        };
+        let row_h = match self.page {
+            CameraPage::Camera => CAMERA_SLIDER_HEIGHT + CAMERA_SLIDER_GAP,
+            CameraPage::Misc => FEATURE_HEIGHT + FEATURE_GAP,
+            CameraPage::Shortcuts => 16.0,
+        };
+        let mut y = panel.y + 70.0 + 44.0;
+        for (index, row) in rows.iter().enumerate().skip(scroll).take(visible) {
+            let focused = index == self.focus;
+            if self.page == CameraPage::Misc {
+                if focused {
+                    frame.rect(
+                        UiRect::new(content_x, y, content_w, FEATURE_HEIGHT),
+                        crate::ui::gold::ROW_HOVER,
+                    );
+                }
+                frame.text(
+                    row.label.as_str(),
+                    content_x + 8.0,
+                    y + 8.0,
+                    crate::ui::gold::TEXT_1,
+                );
+                frame.text(
+                    row.value.as_str(),
+                    content_x + 8.0,
+                    y + 20.0,
+                    crate::ui::gold::TEXT_2,
+                );
+                let toggle_x = (content_x + content_w - 30.0 - 8.0) as i32;
+                let enabled = row.setting.is_some_and(|s| settings.click_value(s));
+                crate::ui::gold::toggle(
+                    frame,
+                    toggle_x,
+                    y as i32 + (FEATURE_HEIGHT as i32 - 16) / 2,
+                    enabled,
+                    focused,
+                );
+                crate::ui::gold::groove(
+                    frame,
+                    content_x as i32,
+                    (content_x + content_w) as i32,
+                    (y + FEATURE_HEIGHT + 1.0) as i32,
+                );
+            } else if self.page == CameraPage::Camera {
+                frame.text(row.label.as_str(), content_x, y, crate::ui::gold::TEXT_1);
+                frame.text(
+                    row.value.as_str(),
+                    content_x + content_w - 40.0,
+                    y,
+                    crate::ui::gold::TEXT_2,
+                );
+                if let Some(setting) = row.setting {
+                    let slider = CAMERA_SLIDERS
+                        .iter()
+                        .find(|slider| slider.setting == setting);
+                    if let Some(slider) = slider {
+                        let value = (settings_value(settings, setting) - slider.min)
+                            / (slider.max - slider.min);
+                        let zero = if slider.min < 0.0 && slider.max > 0.0 {
+                            -slider.min / (slider.max - slider.min)
+                        } else {
+                            -1.0
+                        };
+                        let default = (slider.default.clamp(slider.min, slider.max) - slider.min)
+                            / (slider.max - slider.min);
+                        crate::ui::gold::slider(
+                            frame,
+                            content_x as i32,
+                            (content_x + content_w - SCROLLBAR_GUTTER) as i32,
+                            (y + 20.0) as i32,
+                            value.clamp(0.0, 1.0),
+                            zero,
+                            default,
+                            focused,
+                            false,
+                        );
+                    }
+                }
+            } else {
+                if focused {
+                    frame.rect(
+                        UiRect::new(content_x, y, content_w, row_h),
+                        crate::ui::gold::ROW_HOVER,
+                    );
+                }
+                frame.text(
+                    row.label.as_str(),
+                    content_x + 4.0,
+                    y + 3.0,
+                    crate::ui::gold::TEXT_1,
+                );
+                crate::ui::gold::keycap(
+                    frame,
+                    (content_x + content_w * 0.62) as i32,
+                    y as i32,
+                    (content_w * 0.3) as i32,
+                    14,
+                    row.value.as_str(),
+                );
+            }
+            y += row_h;
+        }
+        // The scrollbars, when a page scrolls.
+        match self.page {
+            CameraPage::Camera if self.slider_scroll_max() > 0 => {
+                let (top, bottom, thumb) = scrollbar_geometry(
+                    panel.y + 70.0 + 44.0,
+                    panel.bottom() - 38.0,
+                    CAMERA_SLIDERS.len(),
+                    MAX_VISIBLE_CAMERA_SLIDERS,
+                    self.slider_scroll,
+                );
+                crate::ui::gold::scrollbar(
+                    frame,
+                    (content_x + content_w - 9.0) as i32,
+                    top,
+                    bottom,
+                    8,
+                    thumb,
+                    thumb
+                        + thumb_height(
+                            CAMERA_SLIDERS.len(),
+                            MAX_VISIBLE_CAMERA_SLIDERS,
+                            bottom - top,
+                        ),
+                    false,
+                );
+            }
+            CameraPage::Misc if self.feature_scroll_max() > 0 => {
+                let (top, bottom, thumb) = scrollbar_geometry(
+                    panel.y + 70.0,
+                    panel.bottom() - 38.0,
+                    FEATURES.len(),
+                    MAX_VISIBLE_FEATURES,
+                    self.feature_scroll,
+                );
+                crate::ui::gold::scrollbar(
+                    frame,
+                    (content_x + content_w - 9.0) as i32,
+                    top,
+                    bottom,
+                    8,
+                    thumb,
+                    thumb + thumb_height(FEATURES.len(), MAX_VISIBLE_FEATURES, bottom - top),
+                    false,
+                );
+            }
+            _ => {}
+        }
+        frame.footer("punchy_moves.ui.settings_hint", panel, theme);
     }
+}
+
+/// The value a settings row reads, for the screen's rows.
+fn settings_value(settings: &ShoulderCameraSettings, index: usize) -> f32 {
+    match index {
+        crate::camera::HORIZONTAL_INDEX => settings.horizontal,
+        crate::camera::VERTICAL_INDEX => settings.vertical,
+        crate::camera::DEPTH_INDEX => settings.depth,
+        crate::camera::FOV_INDEX => settings.fov,
+        crate::camera::YAW_INDEX => settings.rotation_yaw,
+        crate::camera::PITCH_INDEX => settings.rotation_pitch,
+        _ => 0.0,
+    }
+}
+
+/// Whether the settings row `index` reads on, for the toggle rows.
+trait ClickValue {
+    fn click_value(&self, index: usize) -> bool;
+}
+
+impl ClickValue for ShoulderCameraSettings {
+    fn click_value(&self, index: usize) -> bool {
+        match index {
+            crate::camera::ENABLED_INDEX => self.enabled,
+            crate::camera::FENCE_INDEX => self.fence_camera,
+            crate::camera::LADDER_INDEX => self.ladder_camera,
+            crate::camera::PROXIMITY_INDEX => self.proximity_camera,
+            crate::camera::ELYTRA_INDEX => self.elytra_camera,
+            crate::camera::MAP_INDEX => self.map_camera,
+            crate::camera::BOW_AND_CROSSBOW_INDEX => self.bow_and_crossbow_camera_fix,
+            crate::camera::SPEAR_AND_TRIDENT_INDEX => self.spear_and_trident_camera_fix,
+            crate::camera::LADDER_BODY_LOCK_INDEX => self.ladder_body_lock,
+            _ => false,
+        }
+    }
+}
+
+/// Steps a scroll by `delta` rows (positive moves down the list), clamped to
+/// `0..=max`; the Java wheel clamps the same way.
+fn clamp_scroll(current: usize, delta: i32, max: usize) -> usize {
+    (current as i32 + delta).clamp(0, max as i32) as usize
+}
+
+/// A scrollbar's track and thumb top, the Java `Scrollbar` geometry.
+fn scrollbar_geometry(
+    top: f32,
+    bottom: f32,
+    count: usize,
+    visible: usize,
+    scroll: usize,
+) -> (i32, i32, i32) {
+    let top = top as i32;
+    let bottom = bottom as i32;
+    let max = count.saturating_sub(visible).max(1);
+    let track = (bottom - top).max(1);
+    let thumb = thumb_height(count, visible, track);
+    let movable = (track - thumb).max(1);
+    let at = top + (movable as f32 * scroll as f32 / max as f32).round() as i32;
+    (top, bottom, at)
+}
+
+/// A scrollbar's thumb height, the Java `max(18, track * visible / count)`.
+fn thumb_height(count: usize, visible: usize, track: i32) -> i32 {
+    ((track as usize * visible / count.max(1)) as i32).max(18)
 }
 
 /// How wide a settings panel is, in GUI pixels.
@@ -1032,42 +2269,87 @@ pub const SWATCHES: [[u8; 3]; 8] = [
     [178, 116, 214],
 ];
 
-/// The picker's channels, in focus order.
-pub const COLOR_CHANNELS: usize = 6;
+/// The picker's channels, in focus order: hue, saturation, brightness.
+pub const COLOR_CHANNELS: usize = 3;
 
-/// A colour picker over one RGB colour, with HSV, hex and swatches.
+/// The colour square's side, the Java `SQUARE`.
+pub const PICKER_SQUARE: i32 = 128;
+/// The hue bar's width, the Java `BAR`.
+pub const PICKER_BAR: i32 = 12;
+/// The gap between the square and the bar, the Java `GAP`.
+pub const PICKER_GAP: i32 = 6;
+/// The picker window's widest, the Java `min(width - 12, 334)`.
+pub const PICKER_MAX_W: f32 = 334.0;
+/// Its tallest, the Java `min(height - 12, 217)`.
+pub const PICKER_MAX_H: f32 = 217.0;
+
+/// A colour picker over one RGB colour, the Java `ColorPickerScreen`'s
+/// model: a hue bar, a saturation-brightness square, a hex field and
+/// presets.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ColorPickerState {
     open: bool,
-    rgb: [f32; 3],
+    /// The hue, `0.0..=1.0` round the wheel.
+    hue: f32,
+    /// The saturation, `0.0..=1.0`.
+    saturation: f32,
+    /// The brightness, `0.0..=1.0`.
+    brightness: f32,
+    /// The colour the picker opened with, RGB bytes.
+    original: [u8; 3],
+    /// Which picker part the pointer drags: 1 the square, 2 the bar.
+    dragging: i32,
     focus: usize,
 }
 
 impl Default for ColorPickerState {
     fn default() -> Self {
-        Self {
-            open: false,
-            rgb: [0.80, 0.58, 0.42],
-            focus: 0,
-        }
+        Self::new()
     }
 }
 
 impl ColorPickerState {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            open: false,
+            hue: 0.0,
+            saturation: 0.0,
+            brightness: 0.0,
+            original: [0, 0, 0],
+            dragging: 0,
+            focus: 0,
+        }
     }
 
     pub fn is_open(&self) -> bool {
         self.open
     }
 
-    pub fn open(&mut self) {
+    /// Puts the picker up over `rgb`, remembering it as the colour the
+    /// cancel returns to, the Java constructor.
+    pub fn open_over(&mut self, rgb: [u8; 3]) {
         self.open = true;
+        self.original = rgb;
+        self.dragging = 0;
+        let [h, s, v] = rgb_to_hsv([
+            rgb[0] as f32 / 255.0,
+            rgb[1] as f32 / 255.0,
+            rgb[2] as f32 / 255.0,
+        ]);
+        self.hue = h / 360.0;
+        self.saturation = s;
+        self.brightness = v;
     }
 
-    pub fn close(&mut self) {
+    pub fn open(&mut self) {
+        self.open_over(self.rgb());
+    }
+
+    /// Closes, handing back the colour it opened with (the Java cancel).
+    pub fn close(&mut self) -> [u8; 3] {
         self.open = false;
+        self.dragging = 0;
+        self.original
     }
 
     pub fn toggle(&mut self) -> bool {
@@ -1075,42 +2357,66 @@ impl ColorPickerState {
         self.open
     }
 
-    /// The colour as RGB bytes.
+    /// The colour as RGB bytes, the Java `rgb()`.
     pub fn rgb(&self) -> [u8; 3] {
+        let [r, g, b] = hsv_to_rgb([self.hue * 360.0, self.saturation, self.brightness]);
         [
-            (self.rgb[0].clamp(0.0, 1.0) * 255.0).round() as u8,
-            (self.rgb[1].clamp(0.0, 1.0) * 255.0).round() as u8,
-            (self.rgb[2].clamp(0.0, 1.0) * 255.0).round() as u8,
+            (r.clamp(0.0, 1.0) * 255.0).round() as u8,
+            (g.clamp(0.0, 1.0) * 255.0).round() as u8,
+            (b.clamp(0.0, 1.0) * 255.0).round() as u8,
         ]
     }
 
-    /// Sets the colour from RGB bytes.
+    /// Sets the colour from RGB bytes, the Java `set`: the hue only moves
+    /// when the new colour has some saturation, so greys keep their hue.
     pub fn set_rgb(&mut self, rgb: [u8; 3]) {
-        self.rgb = [
+        let [h, s, v] = rgb_to_hsv([
             rgb[0] as f32 / 255.0,
             rgb[1] as f32 / 255.0,
             rgb[2] as f32 / 255.0,
-        ];
+        ]);
+        if s > 0.0 {
+            self.hue = h / 360.0;
+        }
+        self.saturation = s;
+        self.brightness = v;
+    }
+
+    /// The hue, `0.0..=1.0` round the wheel.
+    pub fn hue(&self) -> f32 {
+        self.hue
+    }
+
+    /// The saturation, `0.0..=1.0`.
+    pub fn saturation(&self) -> f32 {
+        self.saturation
+    }
+
+    /// The brightness, `0.0..=1.0`.
+    pub fn brightness(&self) -> f32 {
+        self.brightness
     }
 
     /// The colour as hue (degrees), saturation and value.
     pub fn hsv(&self) -> [f32; 3] {
-        rgb_to_hsv(self.rgb)
+        [self.hue * 360.0, self.saturation, self.brightness]
     }
 
     /// Sets the colour from hue (degrees), saturation and value.
     pub fn set_hsv(&mut self, hsv: [f32; 3]) {
-        self.rgb = hsv_to_rgb(hsv);
+        self.hue = (hsv[0] / 360.0).rem_euclid(1.0);
+        self.saturation = hsv[1].clamp(0.0, 1.0);
+        self.brightness = hsv[2].clamp(0.0, 1.0);
     }
 
-    /// The colour as `#RRGGBB`.
+    /// The colour as `#RRGGBB`, the Java `hexOf`.
     pub fn hex(&self) -> String {
         let [r, g, b] = self.rgb();
         format!("#{:02X}{:02X}{:02X}", r, g, b)
     }
 
     /// Sets the colour from `#RRGGBB` or `RRGGBB`; `false` when the text is
-    /// not a colour (the colour is left alone).
+    /// not a colour (the colour is left alone), the Java hex responder.
     pub fn set_hex(&mut self, text: &str) -> bool {
         let text = text.trim().trim_start_matches('#');
         if text.len() != 6 || !text.chars().all(|c| c.is_ascii_hexdigit()) {
@@ -1126,8 +2432,17 @@ impl ColorPickerState {
         }
     }
 
-    /// The focused channel (0 red, 1 green, 2 blue, 3 hue, 4 saturation,
-    /// 5 value).
+    /// The colour the picker opened with.
+    pub fn original(&self) -> [u8; 3] {
+        self.original
+    }
+
+    /// The picker part the pointer drags: 0 none, 1 the square, 2 the bar.
+    pub fn dragging(&self) -> i32 {
+        self.dragging
+    }
+
+    /// The focused channel (0 hue, 1 saturation, 2 brightness).
     pub fn focus(&self) -> usize {
         self.focus
     }
@@ -1145,35 +2460,20 @@ impl ColorPickerState {
         self.focus
     }
 
-    /// Moves the focused channel by `delta`: RGB channels take `-1.0..=1.0`
-    /// steps, hue takes degrees and saturation and value take fractions.
+    /// Moves the focused channel by `delta`: hue takes degrees, saturation
+    /// and brightness take fractions.
     pub fn step(&mut self, delta: f32) {
         if !delta.is_finite() {
             return;
         }
         match self.focus {
-            0 => self.rgb[0] = (self.rgb[0] + delta).clamp(0.0, 1.0),
-            1 => self.rgb[1] = (self.rgb[1] + delta).clamp(0.0, 1.0),
-            2 => self.rgb[2] = (self.rgb[2] + delta).clamp(0.0, 1.0),
-            3 => {
-                let mut hsv = self.hsv();
-                hsv[0] = (hsv[0] + delta).rem_euclid(360.0);
-                self.set_hsv(hsv);
-            }
-            4 => {
-                let mut hsv = self.hsv();
-                hsv[1] = (hsv[1] + delta).clamp(0.0, 1.0);
-                self.set_hsv(hsv);
-            }
-            _ => {
-                let mut hsv = self.hsv();
-                hsv[2] = (hsv[2] + delta).clamp(0.0, 1.0);
-                self.set_hsv(hsv);
-            }
+            0 => self.hue = (self.hue + delta / 360.0).rem_euclid(1.0),
+            1 => self.saturation = (self.saturation + delta).clamp(0.0, 1.0),
+            _ => self.brightness = (self.brightness + delta).clamp(0.0, 1.0),
         }
     }
 
-    /// Takes a swatch's colour.
+    /// Takes a swatch's colour, the Java preset clicks.
     pub fn select_swatch(&mut self, index: usize) {
         if let Some(swatch) = SWATCHES.get(index) {
             self.set_rgb(*swatch);
@@ -1185,42 +2485,223 @@ impl ColorPickerState {
         SWATCHES
     }
 
-    /// Draws the picker: the six channels, the hex line and the swatch strip.
+    /// The colour square's rect on the layout, the Java `squareX`/`squareY`.
+    pub fn square(&self, layout: &UiLayout) -> UiRect {
+        let panel = UiRect::new(
+            (layout.width - PICKER_MAX_W) * 0.5,
+            (layout.height - PICKER_MAX_H) * 0.5,
+            PICKER_MAX_W,
+            PICKER_MAX_H,
+        );
+        UiRect::new(
+            panel.x + 10.0,
+            panel.y + 29.0 + 8.0,
+            PICKER_SQUARE as f32,
+            PICKER_SQUARE as f32,
+        )
+    }
+
+    /// The hue bar's rect, the Java `barX`.
+    pub fn bar(&self, layout: &UiLayout) -> UiRect {
+        let square = self.square(layout);
+        UiRect::new(
+            square.right() + PICKER_GAP as f32,
+            square.y,
+            PICKER_BAR as f32,
+            PICKER_SQUARE as f32,
+        )
+    }
+
+    /// A click or drag at `(x, y)`: picks from the square or the bar, the
+    /// Java `pickAt`. `start` begins a drag; `true` when it landed somewhere.
+    pub fn pick_at(&mut self, layout: &UiLayout, x: f32, y: f32, start: bool) -> bool {
+        let square = self.square(layout);
+        let bar = self.bar(layout);
+        let on_square = x >= square.x && x < square.right() && y >= square.y && y < square.bottom();
+        let on_bar =
+            x >= bar.x - 2.0 && x < bar.right() + 2.0 && y >= square.y && y < square.bottom();
+        if start {
+            self.dragging = if on_square {
+                1
+            } else if on_bar {
+                2
+            } else {
+                0
+            };
+        }
+        if self.dragging == 1 {
+            self.saturation = clamp01((x - square.x) / (PICKER_SQUARE - 1) as f32);
+            self.brightness = 1.0 - clamp01((y - square.y) / (PICKER_SQUARE - 1) as f32);
+        } else if self.dragging == 2 {
+            self.hue = clamp01((y - square.y) / (PICKER_SQUARE - 1) as f32);
+            // A pure white picked off the corner gets some colour back.
+            if self.saturation < 0.05 && self.brightness > 0.95 {
+                self.saturation = 0.6;
+            }
+        } else {
+            return false;
+        }
+        true
+    }
+
+    /// Lets go of the drag.
+    pub fn release(&mut self) {
+        self.dragging = 0;
+    }
+
+    /// Draws the picker: the window, the hue bar's six segments, the square,
+    /// the sample swatches and the hex line.
     pub fn draw(&self, layout: &UiLayout, theme: &UiTheme, frame: &mut HudFrame) {
         if !self.open {
             return;
         }
-        let panel = frame.panel(layout, PANEL_WIDTH, PANEL_HEIGHT, theme);
-        frame.title("Face colour", panel, theme);
-        let hsv = self.hsv();
-        let [r, g, b] = self.rgb();
-        let rows = [
-            ("Red", format!("{}", r)),
-            ("Green", format!("{}", g)),
-            ("Blue", format!("{}", b)),
-            ("Hue", format!("{:.0} degrees", hsv[0])),
-            ("Saturation", format!("{:.0}%", hsv[1] * 100.0)),
-            ("Value", format!("{:.0}%", hsv[2] * 100.0)),
-        ];
-        for (index, (label, value)) in rows.iter().enumerate() {
-            frame.row(panel, index, label, value, index == self.focus, theme);
-        }
-        frame.row(panel, rows.len(), "Hex", &self.hex(), false, theme);
-        // The colour itself and the swatches, along the bottom.
-        let [rr, gg, bb] = self.rgb();
-        let preview = UiRect::new(panel.x + 8.0, panel.bottom() - 26.0, 24.0, 18.0);
-        frame.rect(preview, rgba(rr, gg, bb, 255));
-        for (index, swatch) in SWATCHES.iter().enumerate() {
-            let rect = UiRect::new(
-                preview.right() + 8.0 + index as f32 * 24.0,
-                preview.y,
-                20.0,
-                18.0,
+        let panel = frame.panel(layout, PICKER_MAX_W, PICKER_MAX_H, theme);
+        crate::ui::gold::window(
+            frame,
+            panel.x as i32,
+            panel.y as i32,
+            panel.right() as i32,
+            panel.bottom() as i32,
+            29,
+            crate::ui::gold::PANE,
+        );
+        frame.text(
+            "punchy_moves.ui.face_colour",
+            panel.x + 12.0,
+            panel.y + 10.0,
+            crate::ui::gold::TITLE_INK,
+        );
+        let square = self.square(layout);
+        let bar = self.bar(layout);
+        // The square, one column per x in the hue, darkening downward (the
+        // HUD has no gradient, so the shade steps in eighths).
+        let [r, g, b] = hsv_to_rgb([self.hue * 360.0, 1.0, 1.0]);
+        let hue_color = rgba((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8, 255);
+        frame.rect(square, hue_color);
+        for step in 0..8 {
+            let shade = 1.0 - step as f32 / 8.0;
+            frame.rect(
+                UiRect::new(
+                    square.x,
+                    square.y + step as f32 * (square.h / 8.0),
+                    square.w,
+                    square.h / 8.0,
+                ),
+                rgba(
+                    (r * shade * 255.0) as u8,
+                    (g * shade * 255.0) as u8,
+                    (b * shade * 255.0) as u8,
+                    255,
+                ),
             );
-            frame.rect(rect, rgba(swatch[0], swatch[1], swatch[2], 255));
-            frame.rect(UiRect::new(rect.x, rect.y, rect.w, 1.0), theme.border);
         }
+        crate::ui::gold::outline(
+            frame,
+            square.x as i32 - 1,
+            square.y as i32 - 1,
+            square.right() as i32 + 1,
+            square.bottom() as i32 + 1,
+            crate::ui::gold::WINDOW_EDGE,
+        );
+        // The cursor on the square.
+        let cursor_x = square.x + self.saturation * (PICKER_SQUARE - 1) as f32;
+        let cursor_y = square.y + (1.0 - self.brightness) * (PICKER_SQUARE - 1) as f32;
+        let cursor_ink = if self.brightness > 0.5 {
+            crate::ui::gold::TEXT_DIS
+        } else {
+            crate::ui::gold::TEXT_1
+        };
+        crate::ui::gold::outline(
+            frame,
+            cursor_x as i32 - 3,
+            cursor_y as i32 - 3,
+            cursor_x as i32 + 4,
+            cursor_y as i32 + 4,
+            cursor_ink,
+        );
+        // The hue bar, six segments, the Java loop.
+        for segment in 0..6 {
+            let [r, g, b] = hsv_to_rgb([(segment as f32 + 0.5) / 6.0 * 360.0, 1.0, 1.0]);
+            let y1 = square.y + segment as f32 * (square.h / 6.0);
+            let y2 = square.y + (segment + 1) as f32 * (square.h / 6.0);
+            frame.rect(
+                UiRect::new(bar.x, y1, bar.w, y2 - y1),
+                rgba((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8, 255),
+            );
+        }
+        crate::ui::gold::outline(
+            frame,
+            bar.x as i32 - 1,
+            square.y as i32 - 1,
+            bar.right() as i32 + 1,
+            square.bottom() as i32 + 1,
+            crate::ui::gold::WINDOW_EDGE,
+        );
+        // The hue cursor.
+        let hue_y = square.y + self.hue * (PICKER_SQUARE - 1) as f32;
+        frame.rect(
+            UiRect::new(bar.x - 2.0, hue_y - 1.0, bar.w + 4.0, 2.0),
+            crate::ui::gold::TEXT_1,
+        );
+        // The sample, the original and the hex well.
+        let sample_x = bar.right() + PICKER_GAP as f32 + 4.0;
+        let sample_w = panel.right() - 10.0 - sample_x;
+        let [r, g, b] = self.rgb();
+        frame.rect(
+            UiRect::new(sample_x, square.y, sample_w, 18.0),
+            rgba(r, g, b, 255),
+        );
+        let [r, g, b] = self.original;
+        frame.rect(
+            UiRect::new(sample_x, square.y + 18.0, sample_w, 16.0),
+            rgba(r, g, b, 255),
+        );
+        crate::ui::gold::outline(
+            frame,
+            sample_x as i32 - 1,
+            square.y as i32 - 1,
+            (sample_x + sample_w) as i32 + 1,
+            square.y as i32 + 35,
+            crate::ui::gold::WINDOW_EDGE,
+        );
+        frame.rect(
+            UiRect::new(sample_x, square.y + 40.0, sample_w, 18.0),
+            crate::ui::gold::WELL,
+        );
+        frame.text(
+            self.hex(),
+            sample_x + 4.0,
+            square.y + 46.0,
+            crate::ui::gold::TEXT_1,
+        );
+        // The presets.
+        for (index, swatch) in SWATCHES.iter().enumerate() {
+            let x = sample_x + (index % 4) as f32 * 15.0;
+            let y = square.y + 64.0 + (index / 4) as f32 * 15.0;
+            frame.rect(
+                UiRect::new(x, y, 12.0, 12.0),
+                rgba(swatch[0], swatch[1], swatch[2], 255),
+            );
+            crate::ui::gold::outline(
+                frame,
+                x as i32 - 1,
+                y as i32 - 1,
+                x as i32 + 13,
+                y as i32 + 13,
+                if *swatch == self.rgb() {
+                    crate::ui::gold::GOLD_200
+                } else {
+                    crate::ui::gold::WINDOW_EDGE
+                },
+            );
+        }
+        let _ = theme;
     }
+}
+
+/// Clamps to `0.0..=1.0`, the Java `clamp`.
+fn clamp01(value: f32) -> f32 {
+    value.clamp(0.0, 1.0)
 }
 
 /// RGB in `0.0..=1.0` to hue in degrees, saturation and value.
@@ -1440,42 +2921,112 @@ impl FaceCanvasState {
 // The tutorial
 // ---------------------------------------------------------------------------
 
-/// One step of the tutorial.
+/// One key hint of a step: which key mapping's suffix to look up, and the
+/// label shown beside it, the Java `KeyHint`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TutorialStep {
-    pub title: &'static str,
-    pub body: &'static str,
-    pub hint: &'static str,
+pub struct KeyHint {
+    /// The key mapping's name suffix, the part after `key.punchy_moves.`.
+    pub mapping: &'static str,
+    /// The label key beside the keycap.
+    pub label: &'static str,
 }
 
-/// The tutorial's steps, in order.
-pub const TUTORIAL_STEPS: [TutorialStep; 5] = [
+/// One step of the tutorial: its area, its key hints, and the tab its open
+/// button shows, the Java `Step` record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TutorialStep {
+    /// The area key, shown small and uppercase above the title.
+    pub area: &'static str,
+    /// The key hints, wrapped left to right.
+    pub keys: &'static [KeyHint],
+    /// The camera page's tab the open button shows, if any.
+    pub tab: Option<&'static str>,
+    /// The open button's label key, if the step has one.
+    pub open_label: Option<&'static str>,
+}
+
+/// The tutorial's step count, the Java `STEPS`.
+pub const TUTORIAL_STEPS: usize = 7;
+
+/// The tutorial's steps, in order, the Java `GUIDE`.
+pub const GUIDE: [TutorialStep; TUTORIAL_STEPS] = [
     TutorialStep {
-        title: "The shoulder camera",
-        body: "Punchy Moves puts the camera over your shoulder instead of behind your head.",
-        hint: "Set a key in Options > Mods, then press it while playing.",
+        area: "guide",
+        keys: &[],
+        tab: None,
+        open_label: None,
     },
     TutorialStep {
-        title: "The emote wheel",
-        body: "Hold the wheel key and point at an emote, then let go to play it.",
-        hint: "The wheel's wedges follow your mouse; the number keys pick one.",
+        area: "camera",
+        keys: &[
+            KeyHint {
+                mapping: "camera_toggle_v",
+                label: "key.camera",
+            },
+            KeyHint {
+                mapping: "free_camera",
+                label: "key.orbit",
+            },
+        ],
+        tab: None,
+        open_label: None,
     },
     TutorialStep {
-        title: "Your face",
-        body: "The face blinks, follows what you do and reacts to a fall or a charge.",
-        hint: "Open Face colour and Face canvas to change its look.",
+        area: "emotes",
+        keys: &[KeyHint {
+            mapping: "emote_menu",
+            label: "key.emotes",
+        }],
+        tab: None,
+        open_label: None,
     },
     TutorialStep {
-        title: "The near fade",
-        body: "Geometry closer than the fade distance fades out through a 4x4 dither.",
-        hint: "The fade keeps your own body from filling the screen.",
+        area: "settings",
+        keys: &[KeyHint {
+            mapping: "camera_editor",
+            label: "key.settings",
+        }],
+        tab: Some("camera"),
+        open_label: Some("open.settings"),
     },
     TutorialStep {
-        title: "All set",
-        body: "Everything here is on the shoulder camera's page and in Options > Mods.",
-        hint: "Choose Replay Tutorial there to see this again.",
+        area: "camera_settings",
+        keys: &[],
+        tab: Some("camera"),
+        open_label: Some("open.camera"),
+    },
+    TutorialStep {
+        area: "camera_settings",
+        keys: &[],
+        tab: Some("camera"),
+        open_label: Some("open.camera"),
+    },
+    TutorialStep {
+        area: "shortcuts",
+        keys: &[],
+        tab: Some("shortcuts"),
+        open_label: Some("open.shortcuts"),
     },
 ];
+
+/// The tutorial window's widest, in GUI pixels, the Java `MAX_W`.
+pub const TUTORIAL_MAX_W: f32 = 440.0;
+/// Its shortest, the Java `MIN_H`.
+pub const TUTORIAL_MIN_H: f32 = 180.0;
+/// The title bar's height, the Java `TITLE_BAR`.
+pub const TUTORIAL_TITLE_BAR: i32 = 29;
+/// The padding round the body, the Java `PAD`.
+pub const TUTORIAL_PAD: i32 = 12;
+/// The footer's height, the Java `FOOT`.
+pub const TUTORIAL_FOOT: i32 = 38;
+/// A button's height, the Java `BUTTON_H`.
+pub const TUTORIAL_BUTTON_H: i32 = 22;
+/// A text line's height, the Java `LINE`.
+pub const TUTORIAL_LINE: i32 = 11;
+/// A keycap's height, the Java `KEY_H`.
+pub const TUTORIAL_KEY_H: i32 = 16;
+/// A progress segment's height, the Java `SEGMENT_H`.
+pub const TUTORIAL_SEGMENT_H: i32 = 6;
 
 /// The tutorial: which step it is on, and whether it is up.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -1507,24 +3058,28 @@ impl TutorialState {
     /// The step being shown, if the tutorial is up.
     pub fn current(&self) -> Option<TutorialStep> {
         if self.open {
-            TUTORIAL_STEPS.get(self.step).copied()
+            GUIDE.get(self.step).copied()
         } else {
             None
         }
+    }
+
+    /// Jumps to a step (the progress track's clicks); past the end closes.
+    pub fn go(&mut self, step: usize) -> bool {
+        if step >= TUTORIAL_STEPS {
+            self.close();
+            self.step = 0;
+            return true;
+        }
+        self.step = step;
+        false
     }
 
     /// Moves on; `true` when the last step is done and the tutorial closed.
     // A step forward, not an iterator's item: the name reads as the page does.
     #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> bool {
-        if self.step + 1 >= TUTORIAL_STEPS.len() {
-            self.open = false;
-            self.step = 0;
-            true
-        } else {
-            self.step += 1;
-            false
-        }
+        self.go(self.step + 1)
     }
 
     /// Goes back; `false` at the first step.
@@ -1537,50 +3092,260 @@ impl TutorialState {
         }
     }
 
+    /// Skips the tutorial out (the Java `skip` button, and `onClose`).
     pub fn close(&mut self) {
         self.open = false;
     }
 
-    /// Draws the step, its hint and its place in the run.
+    /// The x of the left edge of progress segment `index`, the Java
+    /// `segmentX`: the track runs the panel's inner width, each segment
+    /// overlapping the next by two pixels.
+    pub fn segment_x(&self, panel: UiRect, index: usize) -> f32 {
+        panel.x
+            + TUTORIAL_PAD as f32
+            + index as f32 * ((panel.w - TUTORIAL_PAD as f32 * 2.0 + 2.0) / TUTORIAL_STEPS as f32)
+    }
+
+    /// The progress segment a click at `(x, y)` lands on, or `None`, the
+    /// Java `segmentAt`.
+    pub fn segment_at(&self, panel: UiRect, x: f32, y: f32) -> Option<usize> {
+        let track_y = panel.y + TUTORIAL_TITLE_BAR as f32 + 8.0;
+        if y < track_y - 3.0 || y >= track_y + TUTORIAL_SEGMENT_H as f32 + 3.0 {
+            return None;
+        }
+        for index in 0..TUTORIAL_STEPS {
+            let start = self.segment_x(panel, index);
+            let end = self.segment_x(panel, index + 1) - 2.0;
+            if x >= start && x < end {
+                return Some(index);
+            }
+        }
+        None
+    }
+
+    /// Draws the step: the window, the step counter, the progress track, the
+    /// area, the title, the keycaps and the body, and the footer groove.
     pub fn draw(&self, layout: &UiLayout, theme: &UiTheme, frame: &mut HudFrame) {
         let Some(step) = self.current() else {
             return;
         };
-        let panel = frame.panel(layout, PANEL_WIDTH, 120.0, theme);
-        frame.title(step.title, panel, theme);
-        frame.text(step.body, panel.x + 10.0, panel.y + 34.0, theme.text);
-        frame.text(step.hint, panel.x + 10.0, panel.y + 52.0, theme.muted);
-        let place = format!("{}/{}", self.step + 1, TUTORIAL_STEPS.len());
-        let width = place.chars().count() as f32 * GLYPH_WIDTH;
+        let _ = layout;
+        let width = TUTORIAL_MAX_W.min(theme_width(panel_width_cap()));
+        let height = TUTORIAL_MIN_H;
+        let panel = frame.panel(layout, width, height, theme);
+        crate::ui::gold::window(
+            frame,
+            panel.x as i32,
+            panel.y as i32,
+            panel.right() as i32,
+            panel.bottom() as i32,
+            TUTORIAL_TITLE_BAR,
+            crate::ui::gold::PANE,
+        );
+        // The step counter, top right; the window title, top left.
+        let counter = format!(
+            "punchy_moves.tutorial.step {}/{}",
+            self.step + 1,
+            TUTORIAL_STEPS
+        );
+        let counter_width = counter.chars().count() as f32 * GLYPH_WIDTH;
+        crate::ui::gold::draw_ink(
+            frame,
+            &counter,
+            (panel.right() - TUTORIAL_PAD as f32 - counter_width) as i32,
+            panel.y as i32 + 10,
+            crate::ui::gold::TITLE_INK,
+        );
+        crate::ui::gold::draw_ink(
+            frame,
+            "punchy_moves.tutorial.window",
+            panel.x as i32 + TUTORIAL_PAD,
+            panel.y as i32 + 10,
+            crate::ui::gold::TITLE_INK,
+        );
+        // The progress track: one segment per step, the passed ones gold.
+        let track_y = panel.y + TUTORIAL_TITLE_BAR as f32 + 8.0;
+        for index in 0..TUTORIAL_STEPS {
+            let start = self.segment_x(panel, index);
+            let end = self.segment_x(panel, index + 1) - 2.0;
+            let passed = index <= self.step;
+            crate::ui::gold::outline(
+                frame,
+                start as i32,
+                track_y as i32,
+                end as i32,
+                (track_y + TUTORIAL_SEGMENT_H as f32) as i32,
+                crate::ui::gold::WINDOW_EDGE,
+            );
+            frame.rect(
+                UiRect::new(start + 1.0, track_y + 1.0, end - start - 2.0, 1.0),
+                if passed {
+                    crate::ui::gold::GOLD_300
+                } else {
+                    crate::ui::gold::TRACK_LIGHT
+                },
+            );
+            frame.rect(
+                UiRect::new(
+                    start + 1.0,
+                    track_y + 2.0,
+                    end - start - 2.0,
+                    TUTORIAL_SEGMENT_H as f32 - 2.0,
+                ),
+                if passed {
+                    crate::ui::gold::GOLD_500
+                } else {
+                    crate::ui::gold::TRACK
+                },
+            );
+        }
+        // The area, then the title.
+        let mut body_y = track_y + TUTORIAL_SEGMENT_H as f32 + 12.0;
         frame.text(
-            place,
-            panel.right() - width - 10.0,
-            panel.y + 34.0,
-            theme.value,
+            step.area.to_uppercase(),
+            panel.x + TUTORIAL_PAD as f32,
+            body_y,
+            crate::ui::gold::GOLD_300,
         );
-        frame.footer(
-            "Enter for the next step, Backspace for the last",
-            panel,
-            theme,
+        body_y += 14.0;
+        frame.text(
+            step_title(self.step),
+            panel.x + TUTORIAL_PAD as f32,
+            body_y,
+            crate::ui::gold::TEXT_1,
         );
+        body_y += TUTORIAL_LINE as f32;
+        // The keycaps, then the body.
+        if !step.keys.is_empty() {
+            body_y += 5.0;
+            let mut x = panel.x + TUTORIAL_PAD as f32;
+            for hint in step.keys {
+                let cap_w = 22.0f32
+                    .max((hint.mapping.chars().count() as f32 * GLYPH_WIDTH + 12.0).min(120.0));
+                crate::ui::gold::keycap(
+                    frame,
+                    x as i32,
+                    body_y as i32,
+                    cap_w as i32,
+                    TUTORIAL_KEY_H,
+                    hint.mapping,
+                );
+                frame.text(
+                    hint.label,
+                    x + cap_w + 6.0,
+                    body_y + 4.0,
+                    crate::ui::gold::TEXT_2,
+                );
+                x += cap_w + 6.0 + hint.label.chars().count() as f32 * GLYPH_WIDTH + 16.0;
+            }
+            body_y += TUTORIAL_KEY_H as f32 + 8.0;
+        }
+        frame.text(
+            step_body(self.step),
+            panel.x + TUTORIAL_PAD as f32,
+            body_y,
+            crate::ui::gold::TEXT_2,
+        );
+        // The footer groove and the step's buttons, as labels.
+        crate::ui::gold::groove(
+            frame,
+            panel.x as i32 + 1,
+            panel.right() as i32 - 1,
+            (panel.bottom() - TUTORIAL_FOOT as f32) as i32,
+        );
+        let finish = self.step + 1 >= TUTORIAL_STEPS;
+        let next_label = if finish {
+            "punchy_moves.tutorial.finish"
+        } else {
+            "punchy_moves.tutorial.next"
+        };
+        let next_w = 64.0f32.max(next_label.chars().count() as f32 * GLYPH_WIDTH + 24.0);
+        crate::ui::gold::button(
+            frame,
+            (panel.right() - TUTORIAL_PAD as f32 - next_w) as i32,
+            (panel.bottom() - TUTORIAL_FOOT as f32 + 9.0) as i32,
+            next_w as i32,
+            TUTORIAL_BUTTON_H,
+            next_label,
+            true,
+            false,
+            true,
+        );
+        if self.step > 0 {
+            let back_w = 64.0f32
+                .max("punchy_moves.tutorial.back".chars().count() as f32 * GLYPH_WIDTH + 24.0);
+            crate::ui::gold::button(
+                frame,
+                (panel.right() - TUTORIAL_PAD as f32 - next_w - 6.0 - back_w) as i32,
+                (panel.bottom() - TUTORIAL_FOOT as f32 + 9.0) as i32,
+                back_w as i32,
+                TUTORIAL_BUTTON_H,
+                "punchy_moves.tutorial.back",
+                false,
+                false,
+                true,
+            );
+        }
+        if !finish {
+            frame.text(
+                "punchy_moves.tutorial.skip",
+                panel.x + TUTORIAL_PAD as f32 - 4.0,
+                panel.bottom() - TUTORIAL_FOOT as f32 + 16.0,
+                crate::ui::gold::TEXT_3,
+            );
+        }
     }
+}
+
+/// The step's title line, the Java `title.<step>` key.
+fn step_title(step: usize) -> String {
+    let area = GUIDE.get(step).map_or("guide", |s| s.area);
+    format!("punchy_moves.tutorial.title.{}", area)
+}
+
+/// The step's body line, the Java `body.<step>` key.
+fn step_body(step: usize) -> String {
+    let area = GUIDE.get(step).map_or("guide", |s| s.area);
+    format!("punchy_moves.tutorial.body.{}", area)
+}
+
+/// The widest a panel may be, in GUI pixels (the HUD caps its own width).
+fn panel_width_cap() -> f32 {
+    480.0
+}
+
+/// The width a panel of `want` takes under the cap.
+fn theme_width(want: f32) -> f32 {
+    want.min(panel_width_cap())
 }
 
 // ---------------------------------------------------------------------------
 // The near-camera dither
 // ---------------------------------------------------------------------------
 
-/// The 4x4 Bayer matrix: each cell's threshold in sixteenths, in reading order.
-pub const BAYER_4X4: [[u8; 4]; 4] = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
+/// The 4x4 ordered-dither matrix the entity shader carries, in reading order:
+/// the Java `PUNCHY_ORDER`, each of `0..=15` once.
+pub const PUNCHY_ORDER: [u8; 16] = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
 
-/// The Bayer threshold of a screen pixel, `0..=15`.
-pub fn bayer4(x: u32, y: u32) -> u8 {
-    BAYER_4X4[(y & 3) as usize][(x & 3) as usize]
+/// The threshold the entity shader discards at, the fixed `>= 6` of
+/// `entity_dither.fsh`.
+pub const PUNCHY_THRESHOLD: u8 = 6;
+
+/// The threshold of a screen pixel, `0..=15`, the shader's
+/// `PUNCHY_ORDER[punchyPixel.y * 4 + punchyPixel.x]`.
+pub fn punchy_order(x: u32, y: u32) -> u8 {
+    PUNCHY_ORDER[((y & 3) * 4 + (x & 3)) as usize]
+}
+
+/// Whether the entity shader discards the pixel: the fixed
+/// `PUNCHY_ORDER[...] >= 6` of `entity_dither.fsh`, every entity, every frame.
+pub fn punchy_discard(x: u32, y: u32) -> bool {
+    punchy_order(x, y) >= PUNCHY_THRESHOLD
 }
 
 /// Whether a screen pixel draws at `alpha`: a pixel whose threshold is below
 /// the alpha shows, so a dithered shape covers the share of the screen its
-/// alpha asks for.
+/// alpha asks for. Reads the same 4x4 order the shader does.
 pub fn dither(x: u32, y: u32, alpha: f32) -> bool {
     if !alpha.is_finite() || alpha <= 0.0 {
         return false;
@@ -1588,7 +3353,7 @@ pub fn dither(x: u32, y: u32, alpha: f32) -> bool {
     if alpha >= 1.0 {
         return true;
     }
-    (bayer4(x, y) as f32) < alpha * 16.0
+    f32::from(punchy_order(x, y)) < alpha * 16.0
 }
 
 /// How the mod fades its own geometry out as it comes close to the camera.
@@ -2043,41 +3808,55 @@ mod tests {
     }
 
     #[test]
-    fn pointing_picks_the_wedge_under_the_mouse() {
+    fn pointing_picks_the_tile_under_the_offset() {
         let mut wheel = EmoteWheelState::new();
-        // Eight wedges: up is the first, then clockwise.
+        // Four tiles a page: up, right, down, left.
         assert_eq!(wheel.pointing(0.0, -100.0), 0);
-        assert_eq!(wheel.pointing(100.0, -100.0), 1);
-        assert_eq!(wheel.pointing(100.0, 0.0), 2);
-        assert_eq!(wheel.pointing(100.0, 100.0), 3);
-        assert_eq!(wheel.pointing(0.0, 100.0), 4);
-        assert_eq!(wheel.pointing(-100.0, 100.0), 5);
-        assert_eq!(wheel.pointing(-100.0, 0.0), 6);
-        assert_eq!(wheel.pointing(-100.0, -100.0), 7);
+        assert_eq!(wheel.pointing(100.0, 0.0), 1);
+        assert_eq!(wheel.pointing(0.0, 100.0), 2);
+        assert_eq!(wheel.pointing(-100.0, 0.0), 3);
         // No offset keeps the selection, and a broken one does not move it.
         wheel.select(3);
         assert_eq!(wheel.pointing(0.0, 0.0), 3);
         assert_eq!(wheel.pointing(f32::NAN, 1.0), 3);
+        // A diagonal keeps the nearest axis.
+        assert_eq!(wheel.pointing(100.0, -100.0), 0);
     }
 
     #[test]
-    fn the_wheels_slots_sit_round_the_middle() {
-        let wheel = EmoteWheelState::new();
-        let [cx, cy] = layout().center();
-        let top = wheel.slot_rect(&layout(), 0);
+    fn the_wheel_pages_four_tiles_at_a_time() {
+        let mut wheel = EmoteWheelState::new();
+        assert_eq!(wheel.pages(), 2, "eight emotes, four a page");
+        // The page's tiles sit up, right, down, left round the middle.
+        let l = layout();
+        let [cx, cy] = l.center();
+        let top = wheel.tile_rect(&l, 0);
         assert!(top.center()[1] < cy);
         assert!((top.center()[0] - cx).abs() < 1e-3);
-        let bottom = wheel.slot_rect(&layout(), MAX_EMOTES / 2);
+        let right = wheel.tile_rect(&l, 1);
+        assert!(right.center()[0] > cx);
+        let bottom = wheel.tile_rect(&l, 2);
         assert!(bottom.center()[1] > cy);
-        // Every slot is the same size and clear of the next.
-        for index in 0..MAX_EMOTES {
-            let slot = wheel.slot_rect(&layout(), index);
-            assert_eq!(slot.w, WHEEL_SLOT);
-            assert_eq!(slot.h, WHEEL_SLOT);
-            let distance =
-                ((slot.center()[0] - cx).powi(2) + (slot.center()[1] - cy).powi(2)).sqrt();
-            assert!((distance - WHEEL_RADIUS).abs() < 1e-3);
-        }
+        let left = wheel.tile_rect(&l, 3);
+        assert!(left.center()[0] < cx);
+        // Selecting an emote turns to its page.
+        wheel.select(5);
+        assert_eq!(wheel.page(), 1);
+        assert_eq!(wheel.selected(), 5);
+        // Paging wraps and stays in range.
+        assert_eq!(wheel.turn_page(1), 0);
+        assert_eq!(wheel.turn_page(-1), 1);
+        wheel.set_page(99);
+        assert_eq!(wheel.page(), 1);
+        // A pointer over a tile of the shown page picks it.
+        let rect = wheel.tile_rect(&l, 2);
+        let [x, y] = rect.center();
+        assert_eq!(wheel.pointing_at(&l, x, y), Some(6));
+        // A pointer off the tiles keeps the selection.
+        assert_eq!(wheel.pointing_at(&l, 2.0, 2.0), None);
+        // An empty wheel still has one page.
+        let empty = EmoteWheelState::with_emotes(Vec::new());
+        assert_eq!(empty.pages(), 1);
     }
 
     #[test]
@@ -2127,7 +3906,7 @@ mod tests {
         crate::engine::with_engine(|engine| {
             let state = engine.state(77).unwrap();
             assert_eq!(state.face.expression(), emote.expression);
-            assert_eq!(state.items.action(), emote.action);
+            assert_eq!(state.items.emote(), Some(emote.action));
         });
         // An emote needs a player the engine knows.
         assert!(!play_emote(Some(4242), emote));
@@ -2135,23 +3914,54 @@ mod tests {
     }
 
     #[test]
-    fn the_camera_page_has_five_tabs_and_five_screens() {
+    fn the_camera_screen_has_three_pages() {
         let settings = ShoulderCameraSettings::default();
         let mut page = ShoulderCameraUiState::new();
         assert!(!page.is_open());
-        assert_eq!(page.tab(), CameraTab::Camera);
+        assert_eq!(page.page(), CameraPage::Camera);
 
-        // Every tab names rows, and its label is unique.
-        for tab in CameraTab::ALL {
+        // Every page names rows, and its label is unique.
+        for tab in CameraPage::ALL {
             page.select(tab);
             let rows = page.steppers(&settings);
             assert!(!rows.is_empty(), "{:?} has no rows", tab);
             assert!(!tab.label().is_empty());
         }
-        assert_eq!(CameraTab::Camera.next(), CameraTab::Position);
-        assert_eq!(CameraTab::Camera.previous(), CameraTab::ReplayTutorial);
-        assert_eq!(CameraTab::ReplayTutorial.next(), CameraTab::Camera);
-        assert_eq!(CameraTab::ALL.len(), 5);
+        assert_eq!(CameraPage::Camera.next(), CameraPage::Misc);
+        assert_eq!(CameraPage::Camera.previous(), CameraPage::Shortcuts);
+        assert_eq!(CameraPage::Shortcuts.next(), CameraPage::Camera);
+        assert_eq!(CameraPage::ALL.len(), 3);
+
+        // The camera page carries the on/off row and the six sliders.
+        page.select(CameraPage::Camera);
+        assert_eq!(page.steppers(&settings).len(), 7);
+        assert_eq!(CAMERA_SLIDERS.len(), 6);
+        assert_eq!(CAMERA_SLIDERS[0].default, 1.17);
+        assert_eq!(CAMERA_SLIDERS[1].default, -0.11);
+        assert_eq!(CAMERA_SLIDERS[2].default, 2.5);
+        assert_eq!(CAMERA_SLIDERS[3].default, 70.0);
+        assert_eq!(
+            (CAMERA_SLIDERS[3].min, CAMERA_SLIDERS[3].max),
+            (30.0, 110.0)
+        );
+
+        // The misc page carries the ten features, four at a time.
+        page.select(CameraPage::Misc);
+        assert_eq!(page.steppers(&settings).len(), 10);
+        assert_eq!(MAX_VISIBLE_FEATURES, 4);
+        assert_eq!(page.feature_scroll_max(), 6);
+        assert_eq!(
+            FEATURES[8].setting, None,
+            "better_combat has no Horizon setting"
+        );
+        assert_eq!(
+            FEATURES[9].setting, None,
+            "spatial_gui has no Horizon setting"
+        );
+
+        // The shortcuts page asks for the four keys.
+        page.select(CameraPage::Shortcuts);
+        assert_eq!(page.steppers(&settings).len(), 4);
 
         // The focus stays inside the rows it walks.
         page.focus_at(99, 3);
@@ -2163,10 +3973,10 @@ mod tests {
     }
 
     #[test]
-    fn clicking_the_camera_page_changes_its_settings() {
+    fn clicking_the_camera_screen_changes_its_settings() {
         let mut settings = ShoulderCameraSettings::default();
         let mut page = ShoulderCameraUiState::new();
-        page.select(CameraTab::Camera);
+        page.select(CameraPage::Camera);
 
         // The first row is the camera's on/off switch.
         assert_eq!(page.click(&mut settings, 0), UiRequest::None);
@@ -2174,27 +3984,59 @@ mod tests {
         page.click(&mut settings, 0);
         assert!(settings.enabled);
 
-        // A features row toggles its own flag.
-        page.select(CameraTab::Features);
-        let rows = page.steppers(&settings);
-        assert_eq!(rows.len(), 7);
+        // A feature row toggles its own flag; the compat rows do nothing.
+        page.select(CameraPage::Misc);
         page.click(&mut settings, 0);
-        assert!(settings.fence_camera);
+        assert!(!settings.fence_camera);
+        assert_eq!(page.click(&mut settings, 8), UiRequest::None);
 
-        // Shortcuts and Replay Tutorial ask the game to do something.
-        page.select(CameraTab::Shortcuts);
+        // The shortcuts page asks for the four keys.
+        page.select(CameraPage::Shortcuts);
         assert_eq!(
             page.click(&mut settings, 0),
             UiRequest::RebindKey(crate::camera::TOGGLE_CAMERA)
         );
         assert_eq!(
             page.click(&mut settings, 1),
+            UiRequest::RebindKey(crate::camera::TOGGLE_EDITOR)
+        );
+        assert_eq!(
+            page.click(&mut settings, 2),
             UiRequest::RebindKey(crate::camera::TOGGLE_ORBIT)
         );
-        page.select(CameraTab::ReplayTutorial);
-        assert_eq!(page.click(&mut settings, 0), UiRequest::ReplayTutorial);
+        assert_eq!(
+            page.click(&mut settings, 3),
+            UiRequest::RebindKey(EMOTE_WHEEL_KEY)
+        );
         // A row past the page does nothing.
         assert_eq!(page.click(&mut settings, 99), UiRequest::None);
+    }
+
+    #[test]
+    fn the_camera_screen_scrolls_its_pages() {
+        let mut page = ShoulderCameraUiState::new();
+        page.select(CameraPage::Misc);
+        assert_eq!(page.feature_scroll_max(), 6);
+        page.scroll(1);
+        assert_eq!(page.feature_scroll(), 1);
+        for _ in 0..10 {
+            page.scroll(1);
+        }
+        assert_eq!(page.feature_scroll(), 6);
+        for _ in 0..10 {
+            page.scroll(-1);
+        }
+        assert_eq!(page.feature_scroll(), 0);
+        page.select(CameraPage::Camera);
+        assert_eq!(page.slider_scroll_max(), 2);
+        page.scroll(5);
+        assert_eq!(page.slider_scroll(), 2);
+        page.select(CameraPage::Shortcuts);
+        // The four fixed keys plus one row per emote slot, ten at a time.
+        assert_eq!(ShoulderCameraUiState::shortcut_count(), 4 + MAX_EMOTES);
+        assert_eq!(page.shortcut_scroll_max(), 2);
+        page.scroll(3);
+        assert_eq!(page.shortcut_scroll(), 2);
     }
 
     #[test]
@@ -2226,7 +4068,7 @@ mod tests {
                 _ => None,
             })
             .collect::<Vec<_>>();
-        for tab in CameraTab::ALL {
+        for tab in CameraPage::ALL {
             assert!(labels.contains(&tab.label()), "{} missing", tab.label());
         }
     }
@@ -2245,31 +4087,28 @@ mod tests {
         assert!(!picker.set_hex("zzzzzz"));
         assert_eq!(picker.rgb(), [255, 0, 0]);
 
-        // Steps move the focused channel and stop at its end.
+        // Saturation steps down from pure red toward white and stops there.
         picker.focus_at(1);
-        picker.step(0.25);
-        assert_eq!(picker.rgb(), [255, 64, 0]);
+        picker.step(-0.75);
+        assert_eq!(picker.rgb(), [255, 191, 191]);
         picker.step(-4.0);
-        assert_eq!(picker.rgb(), [255, 0, 0]);
+        assert_eq!(picker.rgb(), [255, 255, 255]);
 
         // Hue focus turns the colour round.
         picker.set_hex("#FF0000");
-        picker.focus_at(3);
+        picker.focus_at(0);
         picker.step(120.0);
         assert_eq!(picker.rgb(), [0, 255, 0]);
         picker.step(-240.0);
         assert_eq!(picker.rgb(), [0, 0, 255]);
 
-        // Saturation and value.
+        // Brightness down to black.
         picker.set_hex("#FF0000");
-        picker.focus_at(4);
-        picker.step(-1.0);
-        assert_eq!(picker.rgb(), [255, 255, 255]);
-        picker.focus_at(5);
+        picker.focus_at(2);
         picker.step(-1.0);
         assert_eq!(picker.rgb(), [0, 0, 0]);
 
-        // Focus wraps through six channels.
+        // Focus wraps through three channels.
         picker.focus_at(0);
         assert_eq!(picker.nudge_focus(-1), COLOR_CHANNELS - 1);
         assert_eq!(picker.nudge_focus(1), 0);
@@ -2307,6 +4146,77 @@ mod tests {
         assert!((grey[2] - 0.5).abs() < 1e-6);
         // Black is no value at all.
         assert_eq!(rgb_to_hsv([0.0, 0.0, 0.0])[2], 0.0);
+    }
+
+    #[test]
+    fn the_picker_keeps_the_hue_of_greys_and_opens_over_a_colour() {
+        let mut picker = ColorPickerState::new();
+        // Opening remembers the colour the cancel returns to.
+        picker.open_over([0x33, 0x66, 0x99]);
+        assert_eq!(picker.original(), [0x33, 0x66, 0x99]);
+        assert_eq!(picker.rgb(), [0x33, 0x66, 0x99]);
+        // A grey keeps its hue: red to white to green stays green-hued.
+        picker.set_hex("#FF0000");
+        picker.set_hex("#808080");
+        let hue = picker.hsv()[0];
+        picker.set_hex("#00FF00");
+        picker.set_hex("#FFFFFF");
+        picker.set_hex("#FF0000");
+        let _ = hue;
+        // The Java rule: a set with saturation keeps the new hue, a grey
+        // keeps the old one.
+        picker.set_hex("#40FF40");
+        let green_hue = picker.hsv()[0];
+        picker.set_hex("#202020");
+        assert!(
+            (picker.hsv()[0] - green_hue).abs() < 1e-3,
+            "grey kept the hue"
+        );
+        picker.set_hex("#FF0000");
+        assert!(
+            (picker.hsv()[0] - 0.0).abs() < 1e-3,
+            "saturated set took the hue"
+        );
+    }
+
+    #[test]
+    fn the_picker_picks_from_the_square_and_the_bar() {
+        let mut picker = ColorPickerState::new();
+        picker.open_over([0, 0, 0]);
+        let l = layout();
+        let square = picker.square(&l);
+        // Top right of the square: full saturation, full brightness.
+        assert!(picker.pick_at(&l, square.right() - 1.0, square.y + 1.0, true));
+        assert_eq!(picker.dragging(), 1);
+        assert!(picker.saturation() > 0.95, "{}", picker.saturation());
+        assert!(picker.brightness() > 0.95, "{}", picker.brightness());
+        // Bottom left: no saturation, no brightness.
+        picker.pick_at(&l, square.x, square.bottom() - 1.0, false);
+        assert!(picker.saturation() < 0.05);
+        assert!(picker.brightness() < 0.05);
+        // The bar sets the hue; a near-white pick gets colour back.
+        picker.set_hex("#FFFFFF");
+        let bar = picker.bar(&l);
+        picker.pick_at(
+            &l,
+            bar.center()[0],
+            square.y + (square.h - 1.0) * 0.25,
+            true,
+        );
+        assert_eq!(picker.dragging(), 2);
+        assert!((picker.hue() - 0.25).abs() < 0.02, "{}", picker.hue());
+        assert!(
+            (picker.saturation() - 0.6).abs() < 1e-4,
+            "the white got colour back"
+        );
+        // A click off both parts starts no drag.
+        picker.release();
+        assert!(!picker.pick_at(&l, 1.0, 1.0, true));
+        assert_eq!(picker.dragging(), 0);
+        // Closing hands back the original.
+        let original = picker.close();
+        assert_eq!(original, [0, 0, 0]);
+        assert!(!picker.is_open());
     }
 
     #[test]
@@ -2376,11 +4286,11 @@ mod tests {
 
         tutorial.start();
         assert_eq!(tutorial.step(), 0);
-        assert_eq!(tutorial.current().unwrap().title, TUTORIAL_STEPS[0].title);
+        assert_eq!(tutorial.current().unwrap().area, GUIDE[0].area);
         assert!(!tutorial.back());
 
         // Forward through every step; the last one closes it.
-        for step in 1..TUTORIAL_STEPS.len() {
+        for step in 1..TUTORIAL_STEPS {
             assert!(!tutorial.next());
             assert_eq!(tutorial.step(), step);
         }
@@ -2410,23 +4320,48 @@ mod tests {
     }
 
     #[test]
-    fn the_bayer_matrix_is_a_threshold_tile() {
-        // Every threshold appears exactly once.
+    fn gold_colours_read_the_java_ints() {
+        // Opaque white is -1 in Java.
+        assert_eq!(gold::TEXT_1, rgba(255, 255, 255, 255));
+        // The wheel's wash carries its alpha in the top byte, 0x35.
+        assert_eq!(gold::WHEEL_WASH, rgba(0, 0, 0, 0x35));
+        // The backdrop is 0x8C alpha over black.
+        assert_eq!(gold::BACKDROP, rgba(0, 0, 0, 0x8C));
+        // The gold ramp's deepest step, 0xFF7A5207 read as ARGB.
+        assert_eq!(gold::GOLD_700, rgba(0x7A, 0x52, 0x07, 0xFF));
+        // The bevels keep their five colours and swap a face.
+        assert_eq!(gold::GOLD.face, gold::GOLD_400);
+        assert_eq!(gold::GOLD.with_face(gold::KNOB).face, gold::KNOB);
+        assert_eq!(gold::GOLD.with_face(gold::KNOB).outline, gold::GOLD.outline);
+    }
+
+    #[test]
+    fn the_punchy_order_is_a_threshold_tile() {
+        // Every threshold appears exactly once, in the shader's order.
         let mut seen = [false; 16];
-        for row in BAYER_4X4 {
-            for value in row {
-                assert!(value < 16);
-                assert!(!seen[value as usize], "{} repeats", value);
-                seen[value as usize] = true;
-            }
+        for value in PUNCHY_ORDER {
+            assert!(value < 16);
+            assert!(!seen[value as usize], "{} repeats", value);
+            seen[value as usize] = true;
         }
         assert!(seen.iter().all(|v| *v));
-        // It tiles every 4 pixels.
-        assert_eq!(bayer4(0, 0), bayer4(4, 8));
-        assert_eq!(bayer4(1, 2), BAYER_4X4[2][1]);
-        // The tile's bright cells are spread, not stacked.
-        assert_eq!(BAYER_4X4[0][0], 0);
-        assert_eq!(BAYER_4X4[3][0], 15);
+        assert_eq!(
+            PUNCHY_ORDER,
+            [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5]
+        );
+        // It tiles every 4 pixels, read the shader's way.
+        assert_eq!(punchy_order(0, 0), punchy_order(4, 8));
+        assert_eq!(punchy_order(1, 2), PUNCHY_ORDER[2 * 4 + 1]);
+        // The shader's fixed cut: six of the sixteen cells survive.
+        assert_eq!(PUNCHY_THRESHOLD, 6);
+        let mut kept = 0;
+        for y in 0..4 {
+            for x in 0..4 {
+                kept += u32::from(!punchy_discard(x, y));
+            }
+        }
+        assert_eq!(kept, 6);
+        assert!(!punchy_discard(0, 0), "cell 0, order 0, survives");
     }
 
     #[test]
@@ -2543,9 +4478,9 @@ mod tests {
 
         // The camera page: Tab changes page, Escape closes.
         screens.camera.open();
-        let tab = screens.camera.tab();
+        let tab = screens.camera.page();
         screens.key("key.keyboard.tab", true);
-        assert_ne!(screens.camera.tab(), tab);
+        assert_ne!(screens.camera.page(), tab);
         screens.key("key.keyboard.escape", true);
         assert!(!screens.camera.is_open());
 
@@ -2578,7 +4513,8 @@ mod tests {
     fn resting_signals_hold_still() {
         let signals = resting_signals();
         assert!(!signals.moving);
-        assert!(!signals.is_acting());
-        assert_eq!(signals.locomotion(), 0.0);
+        assert!(!signals.mining);
+        assert!(!signals.charging_crossbow);
+        assert_eq!(signals.tick, crate::signals::NEVER);
     }
 }

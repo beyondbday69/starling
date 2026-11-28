@@ -1090,12 +1090,12 @@ impl FaceRig {
 /// Where the eyes look: across the walk, up a ladder and in water, down while
 /// mining.
 fn look_target(signals: &MotionSignals) -> [f32; 2] {
-    if signals.elytra || signals.swimming() {
-        [0.0, signals.swim_vertical.clamp(-1.0, 1.0)]
+    if signals.elytra || signals.surface_swimming || signals.submerged_swimming {
+        [0.0, signals.swim_vertical as f32]
     } else if signals.mining {
         [0.0, -0.8]
     } else if signals.climbing {
-        [0.0, signals.climb_direction.clamp(-1.0, 1.0)]
+        [0.0, signals.climb_direction as f32]
     } else if signals.crouching {
         [0.0, -0.35]
     } else {
@@ -1108,9 +1108,9 @@ fn look_target(signals: &MotionSignals) -> [f32; 2] {
 
 /// How strong a reaction the signals ask for, before the setting scales it.
 fn reaction_target(signals: &MotionSignals) -> f32 {
-    if signals.fall_weight > 0.35 {
+    if signals.fall_weight >= crate::signals::LIGHT {
         1.0
-    } else if signals.is_charging() {
+    } else if signals.charging_crossbow || signals.charging_spear || signals.charging_trident {
         0.6
     } else if signals.elytra && signals.elytra_speed > 1.0 {
         0.4
@@ -1132,7 +1132,7 @@ fn pick_cue(signals: &MotionSignals, settings: &FaceSettings) -> FaceCue {
             best = cue;
         }
     };
-    if signals.fall_weight > 0.35 * grumble.max(0.5) {
+    if signals.fall_weight >= crate::signals::LIGHT {
         candidate(FaceExpression::Hurt.cue());
     }
     if signals.mining || (signals.crouching && signals.moving && grumble > 1.0) {
@@ -1147,7 +1147,7 @@ fn pick_cue(signals: &MotionSignals, settings: &FaceSettings) -> FaceCue {
     if signals.elytra {
         candidate(FaceExpression::Fly.cue());
     }
-    if signals.swimming() {
+    if signals.surface_swimming || signals.submerged_swimming {
         candidate(FaceExpression::Swim.cue());
     }
     if signals.crouching && !signals.moving {
@@ -1578,7 +1578,7 @@ mod tests {
         rig.set_blink_in(100.0);
 
         let falling = MotionSignals {
-            fall_weight: 1.0,
+            fall_weight: crate::signals::HEAVY,
             ..MotionSignals::new()
         };
         for _ in 0..10 {
@@ -1614,7 +1614,7 @@ mod tests {
         let cases = [
             (
                 MotionSignals {
-                    fall_weight: 1.0,
+                    fall_weight: crate::signals::HEAVY,
                     running: true,
                     moving: true,
                     ..MotionSignals::new()
@@ -1683,7 +1683,7 @@ mod tests {
         assert_eq!(rig.expression(), FaceExpression::Happy);
         // Even a fall leaves it alone while it lasts.
         let falling = MotionSignals {
-            fall_weight: 1.0,
+            fall_weight: crate::signals::HEAVY,
             ..MotionSignals::new()
         };
         rig.update(&falling, &settings, 0.1);
